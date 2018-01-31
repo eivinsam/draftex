@@ -1,4 +1,8 @@
-var root = document.createElement('div');
+var caret = (function () {
+    var result = document.createElement('span');
+    result.classList.add('caret');
+    return result;
+})();
 function isAlpha(ch) {
     return (ch > 64 && ch < 91) || (ch > 96 && ch < 123);
 }
@@ -104,6 +108,8 @@ var symbols = {
 function collectEnviron(source, name, type) {
     var target = document.createElement(name == 'itemize' ? 'ul' : type);
     target.classList.add(name);
+    if (name == 'document')
+        target.appendChild(caret);
     for (var n = source.firstChild; n != null; n = source.firstChild) {
         var e = n;
         if (e.nodeType == Node.ELEMENT_NODE && e.classList.contains('command')) {
@@ -213,11 +219,33 @@ function parseLocal(event) {
     reader.onload = function () { return parseDocument(reader.result); };
     reader.readAsText(event.target.files[0]);
 }
+function stepright() {
+    if (caret.nextSibling != null) {
+        if (caret.nextSibling.nodeType == Node.TEXT_NODE) {
+            caret.parentElement.insertBefore(caret.nextSibling.splitText(caret.nextSibling.textContent.length - 1), caret);
+            caret.parentElement.normalize();
+        }
+        console.log('prev:', caret.previousSibling);
+        console.log('next:', caret.nextSibling);
+    }
+    else if (caret.parentNode != null) {
+        console.log('parent:', caret.parentNode);
+    }
+}
+function keydown(event) {
+    console.log(event);
+    switch (event.code) {
+        case "ArrowRight":
+            stepright();
+            return;
+    }
+}
 function main() {
     var selector = document.createElement('input');
     selector.type = 'file';
     document.body.appendChild(selector);
     selector.onchange = parseLocal;
+    document.body.onkeydown = keydown;
     var args = window.location.search.replace('?', '').split('&');
     for (var i = 0; i < args.length; i++) {
         var arg = args[i].split('=');

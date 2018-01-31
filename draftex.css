@@ -1,9 +1,18 @@
-﻿.root
+﻿.caret
+{
+    display: inline-block;
+    height: 1em;
+    width: 1px;
+    background-color: black;
+    vertical-align: text-top;
+}
+
+.root
 {
 }
 .document
 {
-    width: 42em;
+    max-width: 42em;
     margin: auto;
 }
 .title
@@ -26,7 +35,7 @@
 }
 .abstract
 {
-    width: 36em;
+    max-width: 36em;
     margin: auto;
 }
 

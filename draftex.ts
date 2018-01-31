@@ -1,4 +1,9 @@
-﻿const root = document.createElement('div');
+﻿const caret = (() =>
+{
+    const result = document.createElement('span');
+    result.classList.add('caret');
+    return result;
+})();
 
 function isAlpha(ch: number)
 {
@@ -137,6 +142,8 @@ function collectEnviron(source: HTMLElement, name: string, type: string)
 {
     const target = document.createElement(name == 'itemize' ? 'ul' : type);
     target.classList.add(name);
+    if (name == 'document')
+        target.appendChild(caret);
 
     for (let n = source.firstChild; n != null; n = source.firstChild)
     {
@@ -273,7 +280,32 @@ function parseLocal(event)
     reader.readAsText(event.target.files[0]);
 }
 
+function stepright()
+{
+    if (caret.nextSibling != null)
+    {
+        if (caret.nextSibling.nodeType == Node.TEXT_NODE)
+        {
+            caret.parentElement.insertBefore((caret.nextSibling as Text).splitText(caret.nextSibling.textContent.length-1), caret);
+            caret.parentElement.normalize();
+        }
+        console.log('prev:', caret.previousSibling);
+        console.log('next:', caret.nextSibling);
+    }
+    else if (caret.parentNode != null)
+    {
+        console.log('parent:', caret.parentNode);
+    }
+}
 
+function keydown(event)
+{
+    console.log(event);
+    switch (event.code)
+    {
+        case "ArrowRight": stepright(); return;
+    }
+}
 
 function main()
 {
@@ -283,6 +315,8 @@ function main()
     document.body.appendChild(selector);
 
     selector.onchange = parseLocal;
+
+    document.body.onkeydown = keydown;
 
     const args = window.location.search.replace('?', '').split('&');
     for (let i = 0; i < args.length; i++)

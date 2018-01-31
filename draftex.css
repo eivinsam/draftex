@@ -1,4 +1,50 @@
-﻿.command
+﻿.root
 {
-    background-color: blanchedalmond;
+    white-space: pre-line;
+}
+
+.comment::before
+{
+    content: '%';
+}
+.comment
+{
+    color: #ccf;
+}
+
+.bracket-curly::before
+{
+    color: #f08;
+    content: '{';
+}
+.bracket-curly
+{
+    color: black;
+}
+.bracket-curly::after
+{
+    color: #f08;
+    content: '}'
+}
+.bracket-square::before
+{
+    color: #f40;
+    content: '['
+}
+.bracket-square
+{
+    color: black;
+}
+.bracket-square::after
+{
+    color: #f40;
+    content: ']'
+}
+.command::before
+{
+    content: '\\';
+}
+.command
+{
+    color: #0d0;
 }

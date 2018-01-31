@@ -85,7 +85,7 @@ class Command
 }
 
 
-class Env
+class old_Env
 {
     readonly start: number;
     readonly element: HTMLElement;
@@ -97,7 +97,7 @@ class Env
         this.element.classList.add(name);
 
         let newline = false;
-        for ( ; this.end < text.length && this.end < 900; this.end++)
+        for ( ; this.end < text.length && this.end < 100; this.end++)
         {
             const first = text.charAt(this.end);
             switch (first)
@@ -110,7 +110,7 @@ class Env
                     this.end = cmd.end;
                     if (cmd.name == '[')
                     {
-                        const sub = new Env('[', text, this.end);
+                        const sub = new old_Env('[', text, this.end);
                         this.end = sub.end;
                         this.element.appendChild(sub.element);
 
@@ -123,7 +123,7 @@ class Env
                     }
                     else if (cmd.name == 'begin')
                     {
-                        const sub = new Env(cmd.args[0], text, this.end + 1);
+                        const sub = new old_Env(cmd.args[0], text, this.end + 1);
                         console.log('exiting evironment ' + cmd.args[0]);
                         this.end = sub.end;
                         this.element.appendChild(sub.element);
@@ -156,14 +156,14 @@ class Env
                         return;
                     else
                     {
-                        const sub = new Env('$', text, this.end + 1);
+                        const sub = new old_Env('$', text, this.end + 1);
                         this.end = sub.end;
                         this.element.appendChild(sub.element);
                     }
                     break;
                 case '{':
                     {
-                        const sub = new Env('block', text, this.end + 1);
+                        const sub = new old_Env('block', text, this.end + 1);
                         this.end = sub.end;
                         this.element.appendChild(sub.element);
                     }
@@ -187,6 +187,106 @@ class Env
 }
 
 
+class Env
+{
+    readonly start: number;
+    readonly end: number;
+    readonly element: HTMLElement;
+
+    constructor(public readonly name: string, text: string, offset: number)
+    {
+        const is_bracket = name.substring(0, 7) == 'bracket';
+        this.start = offset;
+        this.end = offset + (is_bracket ? 1 : 0);
+
+        this.element = document.createElement(is_bracket ? 'span' : 'div');
+        this.element.classList.add(name);
+
+        while (this.end < 700)//text.length)
+        {
+            const ch = text.charAt(this.end);
+            this.end++;
+            switch (ch)
+            {
+                case '%':
+                    let comment = text.substring(this.end, text.indexOf('\n'));
+                    this.element.appendChild(document.createElement('span'));
+                    this.element.lastElementChild.classList.add('comment');
+                    this.element.lastElementChild.textContent = comment;
+                    this.end = this.end + comment.length;
+                    break;
+                case '}':
+                    if (name != 'bracket-curly')
+                        console.log('right bracket type mismatch');
+                    return;
+                case ']':
+                    if (name != 'bracket-square')
+                        console.log('right bracket type mismatch');
+                    return;
+                case '{':
+                case '[':
+                    {
+                        const sub = new Env(ch == '[' ? 'bracket-square' : 'bracket-curly', text, this.end-1);
+                        this.end = sub.end;
+                        this.element.appendChild(sub.element);
+                        break;
+                    }
+                case '\\':
+                    let cmd_name = text.charAt(this.end);
+                    this.end++;
+                    if (isAlpha(cmd_name.charCodeAt(0)))
+                        for (; this.end < text.length && isAlpha(text.charCodeAt(this.end)); this.end++)
+                            cmd_name = cmd_name + text.charAt(this.end);
+                    this.element.appendChild(document.createElement('span'));
+                    this.element.lastElementChild.classList.add('command');
+                    this.element.lastElementChild.textContent = cmd_name;
+                    break;
+                default:
+                    {
+                        if (this.element.lastChild != null && this.element.lastChild.nodeType == Node.TEXT_NODE)
+                            this.element.lastChild.textContent = this.element.lastChild.textContent + ch;
+                        else
+                            this.element.appendChild(document.createTextNode(ch));
+                    }
+                    break;
+            }
+        }
+        for (let n = this.element.firstElementChild; n != null ; n = n.nextElementSibling)
+        {
+            if (n.classList.contains('command'))
+            {
+                const name = n.textContent;
+                const arg_count = argc[name];
+                if (arg_count !== undefined)
+                    console.log(name + '[' + arg_count + ']');
+                for (let rem = arg_count; rem > 0; rem--)
+                {
+                    let next = n.nextSibling;
+                    console.log(next);
+                    const a = next as HTMLElement;
+                    if (a != null)
+                    {
+                        if (a.classList.contains('bracket-square'))
+                        {
+                            this.element.removeChild(a);
+                            n.appendChild(a);
+                            rem++;
+                            continue;
+                        }
+                        if (a.classList.contains('bracket-curly'))
+                        {
+                            this.element.removeChild(a);
+                            n.appendChild(a);
+                            continue;
+                        }
+                    }
+                    console.log('expected ' + rem + ' more arguments to \\' + name);
+                    break;
+                }
+            }
+        }
+    }
+}
 
 
 function parseDocument(text: string)
@@ -203,6 +303,8 @@ function parse(event)
     reader.onload = () => parseDocument(reader.result);
     reader.readAsText(event.target.files[0]);
 }
+
+
 
 function main()
 {

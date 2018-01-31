@@ -1,7 +1,135 @@
 ﻿.root
 {
-    white-space: pre-line;
 }
+.document
+{
+    width: 42em;
+    margin: auto;
+}
+.title
+{
+    text-align: center;
+    font-size: 2em;
+    font-weight: bold;
+}
+.author
+{
+    text-align: center;
+    font-size: 1.5em;
+}
+.abstract::before
+{
+    display: block;
+    content: 'ABSTRACT';
+    font-size: 1.2em;
+    font-weight: bold;
+}
+.abstract
+{
+    width: 36em;
+    margin: auto;
+}
+
+.section
+{
+    font-size: 1.2em;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-top: 1em;
+    margin-bottom: 0.32em;
+}
+.subsection
+{
+    font-size: 1.1em;
+    font-weight: bold;
+    margin-top: 0.5em;
+    margin-bottom: 0.16em;
+}
+.subsubsection
+{
+    font-weight: bold;
+    margin-top: 0.25em;
+    margin-bottom: 0.08em;
+}
+
+.figure, .table
+{
+    margin-top: 1em;
+    margin-bottom: 1em;
+    margin-left: auto;
+    margin-right: auto;
+    border: solid 1pt black;
+}
+.tabular
+{
+    background-color: #ececec;
+}
+.caption
+{
+    font-weight: bold;
+    margin-top: 0.2em;
+    margin-bottom: 0.3em;
+}
+.text
+{
+    display: inline;
+    font-style: initial;
+}
+
+
+.cite::before
+{
+    content: '(';
+}
+.cite::after
+{
+    content: ')';
+}
+.cite
+{
+    display: inline;
+    background-color: #e8e8e8;
+}
+
+.label
+{
+    display: inline;
+    background-color: #efc;
+}
+
+.displaymath, .short-displaymath, .equation
+{
+    margin-top: 1em;
+    margin-bottom: 1em;
+    text-align: center;
+    font-style: italic;
+}
+.math, .short-math
+{
+    display: inline;
+    font-style: italic;
+}
+.floor, .ceil
+{
+    display: inline;
+}
+.floor::before
+{
+    content: "\230A"
+}
+.floor::after
+{
+    content: "\230B"
+}
+.ceil::before
+{
+    content: "\2308"
+}
+.ceil::after
+{
+    content: "\2309"
+}
+
 
 .comment::before
 {
@@ -20,6 +148,7 @@
 .bracket-curly
 {
     color: black;
+    background-color: rgba(255, 0, 128, 0.05)
 }
 .bracket-curly::after
 {
@@ -34,6 +163,7 @@
 .bracket-square
 {
     color: black;
+    background-color: rgba(255, 64, 0, 0.05)
 }
 .bracket-square::after
 {

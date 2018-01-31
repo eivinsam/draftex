@@ -2,162 +2,135 @@ var root = document.createElement('div');
 function isAlpha(ch) {
     return (ch > 64 && ch < 91) || (ch > 96 && ch < 123);
 }
-var argc = {
-    'documentclass': 1,
-    'usepackage': 1,
-    'setcounter': 2,
-    'newcommand': 2,
-    'begin': 1,
-    'end': 1,
-    'usetikzlibrary': 1,
-    'acmConference': 4,
-    'acmYear': 1,
-    'copyrightyear': 1,
-    'title': 1,
-    'author': 1,
-    'affiliation': 1,
-    'email': 1
-};
-function getBlock(text, offset) {
-    offset++;
-    var start = offset;
-    var depth = 1;
-    while (offset < text.length && depth > 0) {
-        switch (text.charAt(offset)) {
-            case '{':
-                depth++;
-                break;
-            case '}':
-                depth--;
-                break;
-            case ']':
-                if (depth == 1)
-                    depth--;
-                break;
-        }
-        offset++;
-    }
-    return text.substring(start, offset - 1);
+function destar(name) {
+    return name.replace('*', '');
 }
-var Command = /** @class */ (function () {
-    function Command(text, offset) {
-        this.start = offset;
-        while (isAlpha(text.charCodeAt(offset)))
-            offset++;
-        this.name = text.substring(this.start, offset);
-        this.args = [];
-        while (offset < text.length && text.charAt(offset) == ' ')
-            offset++;
-        if (text.charAt(offset) == '[') {
-            this.optarg = getBlock(text, offset);
-            offset = offset + this.optarg.length + 2;
-        }
-        while (offset < text.length && text.charAt(offset) == ' ')
-            offset++;
-        console.log(this.name + '[' + argc[this.name] + ']');
-        for (var rem = argc[this.name]; rem > 0; rem--) {
-            if (text.charAt(offset) != '{' && text.charAt(offset) != '[') {
-                console.log('too few arguments to command \\' + this.name);
-                return;
-            }
-            var contents = getBlock(text, offset);
-            this.args.push(contents);
-            offset = offset + contents.length + 2;
-            if (text.charAt(offset) == '[')
-                rem++;
-        }
-        this.end = offset - 1;
+function styleUnary(source, args, tag) {
+    if (tag === void 0) { tag = 'div'; }
+    var result = document.createElement(tag);
+    result.classList.add(destar(source.textContent));
+    var arg = args.firstChild;
+    if (arg != null && arg.nodeType == Node.ELEMENT_NODE && arg.classList.contains('bracket-curly')) {
+        args.removeChild(arg);
+        result.textContent = arg.textContent;
     }
-    return Command;
-}());
-var old_Env = /** @class */ (function () {
-    function old_Env(name, text, end) {
-        this.end = end;
-        console.log('entering environment ' + name);
-        this.element = document.createElement('div');
-        this.element.classList.add(name);
-        var newline = false;
-        for (; this.end < text.length && this.end < 100; this.end++) {
-            var first = text.charAt(this.end);
-            switch (first) {
-                case '%':
-                    this.end = text.indexOf('\n');
-                    break;
-                case '\\':
-                    if (newline)
-                        root.appendChild(document.createElement('br'));
-                    var cmd = new Command(text, this.end + 1);
-                    this.end = cmd.end;
-                    if (cmd.name == '[') {
-                        var sub = new old_Env('[', text, this.end);
-                        this.end = sub.end;
-                        this.element.appendChild(sub.element);
-                    }
-                    else if (cmd.name == ']') {
-                        if (name == '[')
-                            return;
-                        console.log('unexpected end of math mode');
-                    }
-                    else if (cmd.name == 'begin') {
-                        var sub = new old_Env(cmd.args[0], text, this.end + 1);
-                        console.log('exiting evironment ' + cmd.args[0]);
-                        this.end = sub.end;
-                        this.element.appendChild(sub.element);
-                    }
-                    else if (cmd.name == 'end') {
-                        if (name == 'root')
-                            console.log('too many ends');
-                        else if (name != cmd.args[0])
-                            console.log('begin/end mismatch');
-                        else
-                            return;
-                    }
-                    else {
-                        if (newline)
-                            this.element.appendChild(document.createElement('br'));
-                        var cmde = document.createElement('span');
-                        cmde.classList.add('command');
-                        cmde.textContent = '\\' + cmd.name;
-                        if (cmd.optarg)
-                            cmde.textContent = cmde.textContent + '[' + cmd.optarg + ']';
-                        for (var i = 0; i < cmd.args.length; i++)
-                            cmde.textContent = cmde.textContent + '{' + cmd.args[i] + '}';
-                        this.element.appendChild(cmde);
-                    }
-                    break;
-                case '$':
-                    if (name == '$')
-                        return;
-                    else {
-                        var sub = new old_Env('$', text, this.end + 1);
-                        this.end = sub.end;
-                        this.element.appendChild(sub.element);
-                    }
-                    break;
-                case '{':
-                    {
-                        var sub = new old_Env('block', text, this.end + 1);
-                        this.end = sub.end;
-                        this.element.appendChild(sub.element);
-                    }
-                    break;
-                case '}':
-                    if (name == 'block')
-                        return;
-                    console.log('curly brace mismatch');
-                    break;
-                case '\n':
-                    newline = true;
-                    continue;
-                default:
-                    //root.textContent = root.textContent + first;
-                    break;
-            }
-            newline = false;
+    return result;
+}
+function handleCommand(cmd, rest, target) {
+    if (cmd.textContent == 'begin') {
+        rest.removeChild(cmd);
+        var a = rest.firstChild;
+        if (a.nodeType == Node.ELEMENT_NODE && a.classList.contains('bracket-curly')) {
+            rest.removeChild(a);
+            target.appendChild(collectEnviron(rest, a.textContent, 'div'));
+        }
+        else
+            console.log('expected arguent after \\begin');
+        return true;
+    }
+    else if (cmd.textContent == '[') {
+        rest.removeChild(cmd);
+        target.appendChild(collectEnviron(rest, 'short-displaymath', 'div'));
+    }
+    else if (cmd.textContent == 'end' || cmd.textContent == ']') {
+        return false;
+    }
+    else {
+        rest.removeChild(cmd);
+        var style = styles[destar(cmd.textContent)];
+        if (style !== undefined) {
+            target.appendChild(style(cmd, rest));
+        }
+        else {
+            var sym = symbols[cmd.textContent];
+            if (sym !== undefined)
+                target.appendChild(document.createTextNode(sym));
+            else
+                target.appendChild(cmd);
         }
     }
-    return old_Env;
-}());
+    return true;
+}
+function styleItem(source, args) {
+    var result = document.createElement('li');
+    for (var n = args.firstChild; n != null; n = args.firstChild) {
+        var e = n;
+        if (e.nodeType == Node.ELEMENT_NODE && e.classList.contains('command')) {
+            if (e.textContent == 'item' || !handleCommand(e, args, result))
+                break;
+        }
+        else {
+            args.removeChild(n);
+            result.appendChild(n);
+        }
+    }
+    return result;
+}
+function styleLabel(source, args) {
+    var result = styleUnary(source, args);
+    result.id = result.textContent;
+    return result;
+}
+function styleRef(source, args) {
+    var result = styleUnary(source, args, 'a');
+    result.href = '#' + result.textContent;
+    return result;
+}
+var styles = {
+    'item': styleItem,
+    'label': styleLabel,
+    'ref': styleRef,
+    'autoref': styleRef,
+    'title': styleUnary,
+    'author': styleUnary,
+    'section': styleUnary,
+    'subsection': styleUnary,
+    'caption': styleUnary,
+    'cite': styleUnary,
+    'text': styleUnary,
+    'floor': styleUnary,
+    'ceil': styleUnary
+};
+var symbols = {
+    'Delta': 'Δ',
+    'phi': 'ϕ',
+    'sigma': 'σ',
+    'times': '×',
+    'prec': "\u227A",
+    'succ': "\u227B",
+    'lbrace': '{',
+    'rbrace': '}'
+};
+function collectEnviron(source, name, type) {
+    var target = document.createElement(name == 'itemize' ? 'ul' : type);
+    target.classList.add(name);
+    for (var n = source.firstChild; n != null; n = source.firstChild) {
+        var e = n;
+        if (e.nodeType == Node.ELEMENT_NODE && e.classList.contains('command')) {
+            if (!handleCommand(e, source, target)) {
+                source.removeChild(source.firstChild);
+                if (e.textContent == ']') {
+                }
+                else {
+                    var a = source.firstChild;
+                    if (a.nodeType == Node.ELEMENT_NODE && a.classList.contains('bracket-curly')) {
+                        source.removeChild(a);
+                        if (a.textContent != name)
+                            console.log('begin/end mismatch: ' + name + '/' + a.textContent);
+                    }
+                    else
+                        console.log('expected argument after \\end');
+                }
+                return target;
+            }
+        }
+        else {
+            source.removeChild(n);
+            target.appendChild(n);
+        }
+    }
+    return target;
+}
 var Env = /** @class */ (function () {
     function Env(name, text, offset) {
         this.name = name;
@@ -166,38 +139,45 @@ var Env = /** @class */ (function () {
         this.end = offset + (is_bracket ? 1 : 0);
         this.element = document.createElement(is_bracket ? 'span' : 'div');
         this.element.classList.add(name);
-        while (this.end < 700) {
+        outer_loop: while (this.end < text.length) {
             var ch = text.charAt(this.end);
             this.end++;
             switch (ch) {
                 case '%':
-                    var comment = text.substring(this.end, text.indexOf('\n'));
+                    var comment = text.substring(this.end, text.indexOf('\n', this.end));
                     this.element.appendChild(document.createElement('span'));
                     this.element.lastElementChild.classList.add('comment');
                     this.element.lastElementChild.textContent = comment;
                     this.end = this.end + comment.length;
                     break;
+                case '$':
+                    if (name == 'short-math')
+                        break outer_loop;
+                    var sub = new Env('short-math', text, this.end);
+                    this.end = sub.end;
+                    this.element.appendChild(sub.element);
+                    break;
                 case '}':
                     if (name != 'bracket-curly')
                         console.log('right bracket type mismatch');
-                    return;
+                    break outer_loop;
                 case ']':
                     if (name != 'bracket-square')
                         console.log('right bracket type mismatch');
-                    return;
+                    break outer_loop;
                 case '{':
                 case '[':
                     {
-                        var sub = new Env(ch == '[' ? 'bracket-square' : 'bracket-curly', text, this.end - 1);
-                        this.end = sub.end;
-                        this.element.appendChild(sub.element);
+                        var sub_1 = new Env(ch == '[' ? 'bracket-square' : 'bracket-curly', text, this.end - 1);
+                        this.end = sub_1.end;
+                        this.element.appendChild(sub_1.element);
                         break;
                     }
                 case '\\':
                     var cmd_name = text.charAt(this.end);
                     this.end++;
                     if (isAlpha(cmd_name.charCodeAt(0)))
-                        for (; this.end < text.length && isAlpha(text.charCodeAt(this.end)); this.end++)
+                        for (; this.end < text.length && (isAlpha(text.charCodeAt(this.end)) || text.charAt(this.end) == '*'); this.end++)
                             cmd_name = cmd_name + text.charAt(this.end);
                     this.element.appendChild(document.createElement('span'));
                     this.element.lastElementChild.classList.add('command');
@@ -213,34 +193,7 @@ var Env = /** @class */ (function () {
                     break;
             }
         }
-        for (var n = this.element.firstElementChild; n != null; n = n.nextElementSibling) {
-            if (n.classList.contains('command')) {
-                var name_1 = n.textContent;
-                var arg_count = argc[name_1];
-                if (arg_count !== undefined)
-                    console.log(name_1 + '[' + arg_count + ']');
-                for (var rem = arg_count; rem > 0; rem--) {
-                    var next = n.nextSibling;
-                    console.log(next);
-                    var a = next;
-                    if (a != null) {
-                        if (a.classList.contains('bracket-square')) {
-                            this.element.removeChild(a);
-                            n.appendChild(a);
-                            rem++;
-                            continue;
-                        }
-                        if (a.classList.contains('bracket-curly')) {
-                            this.element.removeChild(a);
-                            n.appendChild(a);
-                            continue;
-                        }
-                    }
-                    console.log('expected ' + rem + ' more arguments to \\' + name_1);
-                    break;
-                }
-            }
-        }
+        this.element = collectEnviron(this.element, name, this.element.tagName);
     }
     return Env;
 }());
@@ -250,7 +203,12 @@ function parseDocument(text) {
         document.body.removeChild(document.body.lastElementChild);
     document.body.appendChild(env.element);
 }
-function parse(event) {
+function parseUri(uri) {
+    fetch(uri)
+        .then(function (response) { return response.text(); })
+        .then(parseDocument);
+}
+function parseLocal(event) {
     var reader = new FileReader();
     reader.onload = function () { return parseDocument(reader.result); };
     reader.readAsText(event.target.files[0]);
@@ -259,6 +217,12 @@ function main() {
     var selector = document.createElement('input');
     selector.type = 'file';
     document.body.appendChild(selector);
-    selector.onchange = parse;
+    selector.onchange = parseLocal;
+    var args = window.location.search.replace('?', '').split('&');
+    for (var i = 0; i < args.length; i++) {
+        var arg = args[i].split('=');
+        if (arg.length == 2 && arg[0] == 'src')
+            parseUri(arg[1]);
+    }
 }
 //# sourceMappingURL=draftex.js.map

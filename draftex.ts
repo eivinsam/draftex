@@ -357,7 +357,7 @@ function parseDocument(text: string)
 
 function parseUri(uri: string)
 {
-    fetch(uri)
+    fetch(uri, { cache: 'no-store' })
         .then((response) => response.text())
         .then(parseDocument);
 }

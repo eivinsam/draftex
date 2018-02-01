@@ -286,7 +286,7 @@ function parseDocument(text) {
     document.body.appendChild(env.element);
 }
 function parseUri(uri) {
-    fetch(uri)
+    fetch(uri, { cache: 'no-store' })
         .then(function (response) { return response.text(); })
         .then(parseDocument);
 }

@@ -188,9 +188,21 @@ var Env = /** @class */ (function () {
                     if (isAlpha(cmd_name.charCodeAt(0)))
                         for (; this.end < text.length && (isAlpha(text.charCodeAt(this.end)) || text.charAt(this.end) == '*'); this.end++)
                             cmd_name = cmd_name + text.charAt(this.end);
-                    this.element.appendChild(document.createElement('span'));
-                    this.element.lastElementChild.classList.add('command');
-                    this.element.lastElementChild.textContent = cmd_name;
+                    if (cmd_name == '[') {
+                        var sub_2 = new Env('short-displaymath', text, this.end);
+                        this.end = sub_2.end;
+                        this.element.appendChild(sub_2.element);
+                    }
+                    else if (cmd_name == ']') {
+                        if (name != 'short-displaymath')
+                            console.log('\\[ / \\] mismatch');
+                        break outer_loop;
+                    }
+                    else {
+                        this.element.appendChild(document.createElement('span'));
+                        this.element.lastElementChild.classList.add('command');
+                        this.element.lastElementChild.textContent = cmd_name;
+                    }
                     break;
                 default:
                     if (ch.charCodeAt(0) <= 32) {
@@ -200,7 +212,7 @@ var Env = /** @class */ (function () {
                         for (var i = 0; i < spaces.length; i++)
                             if (spaces.charAt(i) == '\n')
                                 newlinec++;
-                        if (newlinec >= 2) {
+                        if (newlinec >= 2 && name != 'itemize') {
                             // push paragraph
                             var first = par == null ? this.element.firstChild : par.nextSibling;
                             while (first != null && first.nodeType != Node.TEXT_NODE)
@@ -218,6 +230,7 @@ var Env = /** @class */ (function () {
                                 first = new_first;
                             }
                             par.appendChild(last);
+                            par = collectEnviron(par, name, par.tagName);
                             this.element.appendChild(par);
                         }
                         else if (this.element.lastChild != null && this.element.lastChild.nodeType == Node.TEXT_NODE)

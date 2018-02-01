@@ -242,9 +242,24 @@ class Env
                     if (isAlpha(cmd_name.charCodeAt(0)))
                         for (; this.end < text.length && (isAlpha(text.charCodeAt(this.end)) || text.charAt(this.end) == '*'); this.end++)
                             cmd_name = cmd_name + text.charAt(this.end);
-                    this.element.appendChild(document.createElement('span'));
-                    this.element.lastElementChild.classList.add('command');
-                    this.element.lastElementChild.textContent = cmd_name;
+                    if (cmd_name == '[')
+                    {
+                        const sub = new Env('short-displaymath', text, this.end);
+                        this.end = sub.end;
+                        this.element.appendChild(sub.element);
+                    }
+                    else if (cmd_name == ']')
+                    {
+                        if (name != 'short-displaymath')
+                            console.log('\\[ / \\] mismatch');
+                        break outer_loop;
+                    }
+                    else
+                    {
+                        this.element.appendChild(document.createElement('span'));
+                        this.element.lastElementChild.classList.add('command');
+                        this.element.lastElementChild.textContent = cmd_name;
+                    }
                     break;
                 default:
                     if (ch.charCodeAt(0) <= 32)
@@ -255,7 +270,7 @@ class Env
                         for (let i = 0; i < spaces.length; i++)
                             if (spaces.charAt(i) == '\n')
                                 newlinec++;
-                        if (newlinec >= 2)
+                        if (newlinec >= 2 && name != 'itemize')
                         {
                             // push paragraph
                             let first = par == null ? this.element.firstChild : par.nextSibling;
@@ -275,6 +290,7 @@ class Env
                                 first = new_first;
                             }
                             par.appendChild(last);
+                            par = collectEnviron(par, name, par.tagName) as HTMLParagraphElement;
                             this.element.appendChild(par);
                         }
                         else if (this.element.lastChild != null && this.element.lastChild.nodeType == Node.TEXT_NODE)

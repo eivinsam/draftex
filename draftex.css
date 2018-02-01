@@ -1,4 +1,9 @@
-﻿.caret
+﻿p
+{
+    text-indent: 1em;
+}
+
+.caret
 {
     display: inline-block;
     height: 1em;

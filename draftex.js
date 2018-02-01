@@ -3,6 +3,12 @@ var caret = (function () {
     result.classList.add('caret');
     return result;
 })();
+function skipSpace(text, offset) {
+    if (offset === void 0) { offset = 0; }
+    while (offset < text.length && text.charCodeAt(offset) <= 32)
+        offset++;
+    return offset;
+}
 function isAlpha(ch) {
     return (ch > 64 && ch < 91) || (ch > 96 && ch < 123);
 }
@@ -21,22 +27,11 @@ function styleUnary(source, args, tag) {
     return result;
 }
 function handleCommand(cmd, rest, target) {
-    if (cmd.textContent == 'begin') {
-        rest.removeChild(cmd);
-        var a = rest.firstChild;
-        if (a.nodeType == Node.ELEMENT_NODE && a.classList.contains('bracket-curly')) {
-            rest.removeChild(a);
-            target.appendChild(collectEnviron(rest, a.textContent, 'div'));
-        }
-        else
-            console.log('expected arguent after \\begin');
-        return true;
-    }
-    else if (cmd.textContent == '[') {
+    if (cmd.textContent == '[') {
         rest.removeChild(cmd);
         target.appendChild(collectEnviron(rest, 'short-displaymath', 'div'));
     }
-    else if (cmd.textContent == 'end' || cmd.textContent == ']') {
+    else if (cmd.textContent == ']') {
         return false;
     }
     else {
@@ -139,12 +134,20 @@ function collectEnviron(source, name, type) {
 }
 var Env = /** @class */ (function () {
     function Env(name, text, offset) {
+        var _this = this;
         this.name = name;
         var is_bracket = name.substring(0, 7) == 'bracket';
         this.start = offset;
         this.end = offset + (is_bracket ? 1 : 0);
         this.element = document.createElement(is_bracket ? 'span' : 'div');
         this.element.classList.add(name);
+        var push_char = function (ch) {
+            if (_this.element.lastChild != null && _this.element.lastChild.nodeType == Node.TEXT_NODE)
+                _this.element.lastChild.textContent = _this.element.lastChild.textContent + ch;
+            else
+                _this.element.appendChild(document.createTextNode(ch));
+        };
+        var par = null;
         outer_loop: while (this.end < text.length) {
             var ch = text.charAt(this.end);
             this.end++;
@@ -190,16 +193,76 @@ var Env = /** @class */ (function () {
                     this.element.lastElementChild.textContent = cmd_name;
                     break;
                 default:
-                    {
-                        if (this.element.lastChild != null && this.element.lastChild.nodeType == Node.TEXT_NODE)
-                            this.element.lastChild.textContent = this.element.lastChild.textContent + ch;
-                        else
-                            this.element.appendChild(document.createTextNode(ch));
+                    if (ch.charCodeAt(0) <= 32) {
+                        var spaces = text.substring(this.end - 1, skipSpace(text, this.end));
+                        this.end = this.end + spaces.length - 1;
+                        var newlinec = 0;
+                        for (var i = 0; i < spaces.length; i++)
+                            if (spaces.charAt(i) == '\n')
+                                newlinec++;
+                        if (newlinec >= 2) {
+                            // push paragraph
+                            var first = par == null ? this.element.firstChild : par.nextSibling;
+                            while (first != null && first.nodeType != Node.TEXT_NODE)
+                                first = first.nextSibling;
+                            if (first == null)
+                                continue;
+                            par = document.createElement('p');
+                            this.element.insertBefore(par, first);
+                            var last = this.element.lastChild;
+                            while (last.nodeType != Node.TEXT_NODE)
+                                last = last.previousSibling;
+                            while (first != last) {
+                                var new_first = first.nextSibling;
+                                par.appendChild(first);
+                                first = new_first;
+                            }
+                            par.appendChild(last);
+                            this.element.appendChild(par);
+                        }
+                        else if (this.element.lastChild != null && this.element.lastChild.nodeType == Node.TEXT_NODE)
+                            push_char(' ');
                     }
+                    else
+                        push_char(ch);
                     break;
+            }
+            var envcmd = this.element.lastChild == null ? null : this.element.lastChild.previousSibling;
+            if (envcmd != null && envcmd.nodeType == Node.ELEMENT_NODE && envcmd.classList.contains('command')) {
+                if (envcmd.textContent == 'begin') {
+                    var arg = this.element.lastChild;
+                    if (arg.nodeType != Node.ELEMENT_NODE || !arg.classList.contains('bracket-curly'))
+                        throw new Error('argument expected after \\begin');
+                    this.element.removeChild(arg);
+                    this.element.removeChild(envcmd);
+                    var sub = new Env(arg.textContent, text, this.end);
+                    this.end = sub.end;
+                    this.element.appendChild(sub.element);
+                }
+                else if (envcmd.textContent == 'end') {
+                    var arg = this.element.lastChild;
+                    if (!arg.classList.contains('bracket-curly'))
+                        throw new Error('argument expected after \\end');
+                    this.element.removeChild(arg);
+                    this.element.removeChild(envcmd);
+                    break;
+                }
             }
         }
         this.element = collectEnviron(this.element, name, this.element.tagName);
+        //else
+        //{
+        //    const last_par = document.createElement('p');
+        //    for (let n = par.nextSibling; n != null; n = par.nextSibling)
+        //        last_par.appendChild(n);
+        //    this.element.appendChild(last_par);
+        //    for (let n = this.element.firstElementChild as HTMLElement; n != null; n = n.nextElementSibling as HTMLElement)
+        //    {
+        //        const new_n = collectEnviron(n, name, n.tagName);
+        //        this.element.replaceChild(new_n, n);
+        //        n = new_n;
+        //    }
+        //}
     }
     return Env;
 }());
@@ -222,8 +285,15 @@ function parseLocal(event) {
 function stepright() {
     if (caret.nextSibling != null) {
         if (caret.nextSibling.nodeType == Node.TEXT_NODE) {
-            caret.parentElement.insertBefore(caret.nextSibling.splitText(caret.nextSibling.textContent.length - 1), caret);
-            caret.parentElement.normalize();
+            var spacec = skipSpace(caret.nextSibling.textContent);
+            var split_pos = caret.nextSibling.textContent.length - (spacec == 0 ? 1 : spacec);
+            if (split_pos > 0) {
+                caret.parentElement.insertBefore(caret.nextSibling.splitText(split_pos), caret);
+                caret.parentElement.normalize();
+            }
+            else {
+                caret.parentElement.insertBefore(caret.nextSibling, caret);
+            }
         }
         console.log('prev:', caret.previousSibling);
         console.log('next:', caret.nextSibling);

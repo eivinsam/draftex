@@ -12,280 +12,146 @@ function skipSpace(text, offset) {
 function isAlpha(ch) {
     return (ch > 64 && ch < 91) || (ch > 96 && ch < 123);
 }
+function isDigit(ch) {
+    return (ch >= 48 && ch < 58);
+}
 function destar(name) {
     return name.replace('*', '');
 }
-function styleUnary(source, args, tag) {
-    if (tag === void 0) { tag = 'div'; }
-    var result = document.createElement(tag);
-    result.classList.add(destar(source.textContent));
-    var arg = args.firstChild;
-    if (arg != null && arg.nodeType == Node.ELEMENT_NODE && arg.classList.contains('bracket-curly')) {
-        args.removeChild(arg);
-        result.textContent = arg.textContent;
-    }
-    return result;
+function appendText(text, out) {
+    if (out.lastChild == null || out.lastChild.nodeType != Node.TEXT_NODE)
+        out.appendChild(document.createTextNode(text));
+    else
+        out.lastChild.appendData(text);
 }
-function handleCommand(cmd, rest, target) {
-    if (cmd.textContent == '[') {
-        rest.removeChild(cmd);
-        target.appendChild(collectEnviron(rest, 'short-displaymath', 'div'));
-    }
-    else if (cmd.textContent == ']') {
-        return false;
-    }
-    else {
-        rest.removeChild(cmd);
-        var style = styles[destar(cmd.textContent)];
-        if (style !== undefined) {
-            target.appendChild(style(cmd, rest));
-        }
-        else {
-            var sym = symbols[cmd.textContent];
-            if (sym !== undefined)
-                target.appendChild(document.createTextNode(sym));
-            else
-                target.appendChild(cmd);
-        }
-    }
-    return true;
-}
-function styleItem(source, args) {
-    var result = document.createElement('li');
-    for (var n = args.firstChild; n != null; n = args.firstChild) {
-        var e = n;
-        if (e.nodeType == Node.ELEMENT_NODE && e.classList.contains('command')) {
-            if (e.textContent == 'item' || !handleCommand(e, args, result))
-                break;
-        }
-        else {
-            args.removeChild(n);
-            result.appendChild(n);
-        }
-    }
-    return result;
-}
-function styleLabel(source, args) {
-    var result = styleUnary(source, args);
-    result.id = result.textContent;
-    return result;
-}
-function styleRef(source, args) {
-    var result = styleUnary(source, args, 'a');
-    result.href = '#' + result.textContent;
-    return result;
-}
-var styles = {
-    'item': styleItem,
-    'label': styleLabel,
-    'ref': styleRef,
-    'autoref': styleRef,
-    'title': styleUnary,
-    'author': styleUnary,
-    'section': styleUnary,
-    'subsection': styleUnary,
-    'caption': styleUnary,
-    'cite': styleUnary,
-    'text': styleUnary,
-    'floor': styleUnary,
-    'ceil': styleUnary
+var commands = {
+    'begin': parseBegin,
+    'newcommand': parseNewcommand,
+    'title': styledArg,
+    'author': styledArg,
+    'section': styledArg,
+    'subsection': styledArg,
+    'subsubsection': styledArg,
+    'caption': styledArg,
+    'cite': styledArg,
+    'emph': styledArg,
+    'ref': parseRef,
+    'autoref': parseRef,
+    'label': parseLabel,
+    'overline': styledArg,
+    'mbox': styledArg,
+    'text': styledArg,
+    'textrm': styledArg,
+    'textbf': styledArg,
+    'mathbf': styledArg,
+    'boldsymbol': styledArg,
+    'operatorname': styledArg,
+    'mathcal': parseMathcal,
+    'mathbb': parseMathbb,
+    'frac': parseFraction
 };
 var symbols = {
+    'alpha': 'ɑ',
+    'delta': 'δ',
     'Delta': 'Δ',
     'phi': 'ϕ',
     'sigma': 'σ',
+    'Sigma': 'Σ',
+    'sum': 'Σ',
+    'theta': 'θ',
+    'Theta': 'Θ',
     'times': '×',
+    'in': '∈',
+    'leq': '&le;',
     'prec': "\u227A",
     'succ': "\u227B",
     'lbrace': '{',
-    'rbrace': '}'
+    'rbrace': '}',
+    ' ': '␣',
+    ',': '␣',
+    'rightarrow': '→',
+    'sim': '~'
 };
-function collectEnviron(source, name, type) {
-    var target = document.createElement(name == 'itemize' ? 'ul' : type);
-    target.classList.add(name);
-    if (name == 'document')
-        target.appendChild(caret);
-    for (var n = source.firstChild; n != null; n = source.firstChild) {
-        var e = n;
-        if (e.nodeType == Node.ELEMENT_NODE && e.classList.contains('command')) {
-            if (!handleCommand(e, source, target)) {
-                source.removeChild(source.firstChild);
-                if (e.textContent == ']') {
-                }
-                else {
-                    var a = source.firstChild;
-                    if (a.nodeType == Node.ELEMENT_NODE && a.classList.contains('bracket-curly')) {
-                        source.removeChild(a);
-                        if (a.textContent != name)
-                            console.log('begin/end mismatch: ' + name + '/' + a.textContent);
-                    }
-                    else
-                        console.log('expected argument after \\end');
-                }
-                return target;
-            }
-        }
-        else {
-            source.removeChild(n);
-            target.appendChild(n);
-        }
-    }
-    return target;
-}
-var Env = /** @class */ (function () {
-    function Env(name, text, offset) {
-        var _this = this;
-        this.name = name;
-        var is_bracket = name.substring(0, 7) == 'bracket';
-        this.start = offset;
-        this.end = offset + (is_bracket ? 1 : 0);
-        this.element = document.createElement(is_bracket ? 'span' : 'div');
-        this.element.classList.add(name);
-        var push_char = function (ch) {
-            if (_this.element.lastChild != null && _this.element.lastChild.nodeType == Node.TEXT_NODE)
-                _this.element.lastChild.textContent = _this.element.lastChild.textContent + ch;
-            else
-                _this.element.appendChild(document.createTextNode(ch));
-        };
-        var par = null;
-        outer_loop: while (this.end < text.length) {
-            var ch = text.charAt(this.end);
-            this.end++;
-            switch (ch) {
-                case '%':
-                    var comment = text.substring(this.end, text.indexOf('\n', this.end));
-                    this.element.appendChild(document.createElement('span'));
-                    this.element.lastElementChild.classList.add('comment');
-                    this.element.lastElementChild.textContent = comment;
-                    this.end = this.end + comment.length;
-                    break;
-                case '$':
-                    if (name == 'short-math')
-                        break outer_loop;
-                    var sub = new Env('short-math', text, this.end);
-                    this.end = sub.end;
-                    this.element.appendChild(sub.element);
-                    break;
-                case '}':
-                    if (name != 'bracket-curly')
-                        console.log('right bracket type mismatch');
-                    break outer_loop;
-                case ']':
-                    if (name != 'bracket-square')
-                        console.log('right bracket type mismatch');
-                    break outer_loop;
-                case '{':
-                case '[':
-                    {
-                        var sub_1 = new Env(ch == '[' ? 'bracket-square' : 'bracket-curly', text, this.end - 1);
-                        this.end = sub_1.end;
-                        this.element.appendChild(sub_1.element);
-                        break;
-                    }
-                case '\\':
-                    var cmd_name = text.charAt(this.end);
-                    this.end++;
-                    if (isAlpha(cmd_name.charCodeAt(0)))
-                        for (; this.end < text.length && (isAlpha(text.charCodeAt(this.end)) || text.charAt(this.end) == '*'); this.end++)
-                            cmd_name = cmd_name + text.charAt(this.end);
-                    if (cmd_name == '[') {
-                        var sub_2 = new Env('short-displaymath', text, this.end);
-                        this.end = sub_2.end;
-                        this.element.appendChild(sub_2.element);
-                    }
-                    else if (cmd_name == ']') {
-                        if (name != 'short-displaymath')
-                            console.log('\\[ / \\] mismatch');
-                        break outer_loop;
-                    }
-                    else {
-                        this.element.appendChild(document.createElement('span'));
-                        this.element.lastElementChild.classList.add('command');
-                        this.element.lastElementChild.textContent = cmd_name;
-                    }
-                    break;
-                default:
-                    if (ch.charCodeAt(0) <= 32) {
-                        var spaces = text.substring(this.end - 1, skipSpace(text, this.end));
-                        this.end = this.end + spaces.length - 1;
-                        var newlinec = 0;
-                        for (var i = 0; i < spaces.length; i++)
-                            if (spaces.charAt(i) == '\n')
-                                newlinec++;
-                        if (newlinec >= 2 && name != 'itemize') {
-                            // push paragraph
-                            var first = par == null ? this.element.firstChild : par.nextSibling;
-                            while (first != null && first.nodeType != Node.TEXT_NODE)
-                                first = first.nextSibling;
-                            if (first == null)
-                                continue;
-                            par = document.createElement('p');
-                            this.element.insertBefore(par, first);
-                            var last = this.element.lastChild;
-                            while (last.nodeType != Node.TEXT_NODE)
-                                last = last.previousSibling;
-                            while (first != last) {
-                                var new_first = first.nextSibling;
-                                par.appendChild(first);
-                                first = new_first;
-                            }
-                            par.appendChild(last);
-                            par = collectEnviron(par, name, par.tagName);
-                            this.element.appendChild(par);
-                        }
-                        else if (this.element.lastChild != null && this.element.lastChild.nodeType == Node.TEXT_NODE)
-                            push_char(' ');
-                    }
-                    else
-                        push_char(ch);
-                    break;
-            }
-            var envcmd = this.element.lastChild == null ? null : this.element.lastChild.previousSibling;
-            if (envcmd != null && envcmd.nodeType == Node.ELEMENT_NODE && envcmd.classList.contains('command')) {
-                if (envcmd.textContent == 'begin') {
-                    var arg = this.element.lastChild;
-                    if (arg.nodeType != Node.ELEMENT_NODE || !arg.classList.contains('bracket-curly'))
-                        throw new Error('argument expected after \\begin');
-                    this.element.removeChild(arg);
-                    this.element.removeChild(envcmd);
-                    var sub = new Env(arg.textContent, text, this.end);
-                    this.end = sub.end;
-                    this.element.appendChild(sub.element);
-                }
-                else if (envcmd.textContent == 'end') {
-                    var arg = this.element.lastChild;
-                    if (!arg.classList.contains('bracket-curly'))
-                        throw new Error('argument expected after \\end');
-                    this.element.removeChild(arg);
-                    this.element.removeChild(envcmd);
-                    break;
-                }
-            }
-        }
-        this.element = collectEnviron(this.element, name, this.element.tagName);
-        //else
-        //{
-        //    const last_par = document.createElement('p');
-        //    for (let n = par.nextSibling; n != null; n = par.nextSibling)
-        //        last_par.appendChild(n);
-        //    this.element.appendChild(last_par);
-        //    for (let n = this.element.firstElementChild as HTMLElement; n != null; n = n.nextElementSibling as HTMLElement)
-        //    {
-        //        const new_n = collectEnviron(n, name, n.tagName);
-        //        this.element.replaceChild(new_n, n);
-        //        n = new_n;
-        //    }
-        //}
-    }
-    return Env;
-}());
+var SPACE = ' '.charCodeAt(0);
 var COMMAND = '\\'.charCodeAt(0);
 var COMMENT = '%'.charCodeAt(0);
+var ARGUMENT = '#'.charCodeAt(0);
+var MATHMODE = '$'.charCodeAt(0);
+var TABULATE = '&'.charCodeAt(0);
 var NEWLINE = '\n'.charCodeAt(0);
 var CURLY_IN = '{'.charCodeAt(0);
 var CURLY_OUT = '}'.charCodeAt(0);
 var SQUARE_IN = '['.charCodeAt(0);
 var SQUARE_OUT = ']'.charCodeAt(0);
+var SUBSCRIPT = '_'.charCodeAt(0);
+var SUPERSCRIPT = '^'.charCodeAt(0);
+function fixedFromCharCode(codePt) {
+    if (codePt > 0xFFFF) {
+        codePt -= 0x10000;
+        return String.fromCharCode(0xD800 + (codePt >> 10), 0xDC00 + (codePt & 0x3FF));
+    }
+    else {
+        return String.fromCharCode(codePt);
+    }
+}
+var mathbb_lookup = {
+    'C': '\u2102',
+    'H': '\u210d',
+    'N': '\u2115',
+    'P': '\u2119',
+    'Q': '\u211a',
+    'R': '\u211d',
+    'Z': '\u2124'
+};
+function parseMathbb(text, next, name, out) {
+    var src = readCurly(text, next);
+    var dst = out.appendChild(document.createElement('span'));
+    dst.className = 'mathbb';
+    for (var i = 0; i < src.length; i++) {
+        var lu = mathbb_lookup[src.charAt(i)];
+        if (lu !== undefined)
+            appendText(lu, dst);
+        else
+            appendText(fixedFromCharCode(src.charCodeAt(i) + (0x1d538 - 0x41)), dst);
+    }
+    return next + src.length + 2;
+}
+var mathcal_lookup = {
+    'B': '\u212c',
+    'E': '\u2130',
+    'F': '\u2131',
+    'H': '\u210b',
+    'I': '\u2110',
+    'L': '\u2112',
+    'K': '\u2133',
+    'R': '\u211b',
+    'e': '\u212f',
+    'g': '\u210a',
+    'o': '\u2134'
+};
+function parseMathcal(text, next, name, out) {
+    var src = readCurly(text, next);
+    var dst = out.appendChild(document.createElement('span'));
+    dst.className = 'mathcal';
+    for (var i = 0; i < src.length; i++) {
+        var lu = mathcal_lookup[src.charAt(i)];
+        if (lu !== undefined)
+            appendText(lu, dst);
+        else
+            appendText(fixedFromCharCode(src.charCodeAt(i) + (0x1d49c - 0x41)), dst);
+    }
+    return next + src.length + 2;
+}
+function parseFraction(text, next, name, out) {
+    var table = out.appendChild(document.createElement('div'));
+    table.className = 'frac';
+    next = parseCurly(text, next, table);
+    table.appendChild(document.createElement('hr'));
+    next = parseCurly(text, next, table);
+    table.firstElementChild.className = 'numerator';
+    table.lastElementChild.className = 'denominator';
+    return next;
+}
 function parseComment(text, next, out) {
     var last = next;
     while (text.charCodeAt(last) != NEWLINE)
@@ -295,52 +161,281 @@ function parseComment(text, next, out) {
     comment.textContent = text.substring(next, last);
     return last;
 }
-//const cmds =
-//    {
-//        'documentclass': parse1opt1arg
-//    };
-function parseCommand(text, next, out) {
-    var name = text.charAt(next);
+function createSpan(classname, content) {
+    var result = document.createElement('span');
+    result.classList.add(classname);
+    result.appendChild(content);
+    return result;
+}
+function createTextSpan(classname, content) {
+    return createSpan(classname, document.createTextNode(content));
+}
+function readSquare(text, next) {
+    if (next >= text.length || text.charCodeAt(next) != SQUARE_IN)
+        return null;
+    next++;
+    var end = text.indexOf(']', next);
+    if (end >= text.length)
+        throw new Error('missing right square bracket');
+    return text.substring(next, end);
+}
+function readCurly(text, next) {
+    if (next >= text.length || text.charCodeAt(next) != CURLY_IN)
+        throw new Error('expected group');
+    next++;
+    var end = text.indexOf('}', next);
+    if (end >= text.length)
+        throw new Error('missing group end');
+    return text.substring(next, end);
+}
+function parseCurly(text, next, out) {
+    if (next >= text.length || text.charCodeAt(next) != CURLY_IN)
+        throw new Error('expected group');
+    next++;
+    return parseEnv(text, next, 'curly', 'span', out);
+}
+function parseSubsup(text, next, out) {
+    var sub = out.appendChild(document.createElement(text.charCodeAt(next) == SUPERSCRIPT ? 'sup' : 'sub'));
+    next++;
+    if (next >= text.length)
+        throw new Error('expected more characters after subscript');
+    switch (text.charCodeAt(next)) {
+        case CURLY_IN:
+            next = parseCurly(text, next, sub);
+            // unpack braces
+            for (var n = sub.firstElementChild.firstChild; n != null; n = n.nextSibling)
+                sub.appendChild(n);
+            sub.firstElementChild.remove();
+            break;
+        case COMMAND:
+            var cmd = readCommand(text, next + 1);
+            next = next + 1 + cmd.length;
+            next = parseCommand(text, next, cmd, sub);
+            break;
+        default:
+            sub.textContent = text.charAt(next);
+            next++;
+            break;
+    }
+    return next;
+}
+function styledArg(text, next, name, out) {
+    next = parseCurly(text, next, out);
+    out.lastElementChild.className = name;
+    return next;
+}
+function parseLabel(text, next, name, out) {
+    var id = readCurly(text, next);
+    var span = out.appendChild(document.createElement('span'));
+    span.id = id;
+    span.className = 'label';
+    span.textContent = id;
+    return next + id.length + 2;
+}
+function parseRef(text, next, name, out) {
+    var target = readCurly(text, next);
+    var anchor = out.appendChild(document.createElement('a'));
+    anchor.href = '#' + target;
+    anchor.textContent = target;
+    return next + target.length + 2;
+}
+function substitute(args, out) {
+    for (var n = out.firstChild; n != null; n = n.nextSibling) {
+        if (n.nodeType == Node.TEXT_NODE) {
+            var text = n;
+            var off = text.data.indexOf('#');
+            if (off == -1)
+                continue;
+            if (off == 0) {
+                var end = 1;
+                while (end < text.data.length && isDigit(text.data.charCodeAt(end)))
+                    end++;
+                if (end == 1)
+                    throw new Error("expected number after argument sign");
+                if (end < text.data.length)
+                    text.splitText(end);
+                var replacement = args.childNodes.item(+text.data).cloneNode(true);
+                replacement.className = 'expanded-arg-' + text.data.substring(1);
+                out.replaceChild(replacement, text);
+            }
+            else if (off < text.data.length)
+                text.splitText(off);
+        }
+        else
+            substitute(args, n);
+    }
+}
+function parseNewcommand(text, next, name, out) {
+    var div = out.appendChild(document.createElement('div'));
+    div.appendChild(createTextSpan('command', name));
+    var cmd = readCurly(text, next);
+    next = next + cmd.length + 2;
+    div.appendChild(createTextSpan('curly', cmd));
+    var argc = readSquare(text, next);
+    if (argc !== null) {
+        next = next + argc.length + 2;
+        div.appendChild(createTextSpan('square', argc));
+    }
+    next = parseCurly(text, next, div);
+    if (cmd.charCodeAt(0) != COMMAND)
+        throw new Error('first argument to newcommand must begin with \\');
+    if (argc != null) {
+        commands[cmd.substring(1)] = function (text, next, name, out) {
+            var result = out.appendChild(div.lastChild.cloneNode(true));
+            result.className = 'expanded-' + cmd.substring(1);
+            var temp = document.createElement('div');
+            for (var i = 0; i < +argc; i++)
+                next = parseCurly(text, next, temp);
+            substitute(temp, result);
+            return next;
+        };
+    }
+    else {
+        commands[cmd.substring(1)] = function (text, next, name, out) {
+            out.appendChild(div.lastChild.cloneNode(true))
+                .className = 'expanded-' + cmd.substring(1);
+            return next;
+        };
+    }
+    return next;
+}
+function parseBegin(text, next, name, out) {
+    var sub_name = readCurly(text, next);
+    return parseEnv(text, next + sub_name.length + 2, sub_name, 'div', out);
+}
+function parseEnv(text, next, name, tag, out) {
+    if (name == 'itemize')
+        tag = 'ul';
+    if (destar(name) == 'align' || name == 'tabular' || name == 'cases') {
+        out = out.appendChild(document.createElement('table'));
+        out = out.appendChild(document.createElement('tr'));
+        tag = 'td';
+    }
+    var env = out.appendChild(document.createElement(tag));
+    if (destar(name) == 'align' || name == 'tabular' || name == 'cases') {
+        env.parentElement.parentElement.className = destar(name);
+        if (destar(name) == 'align')
+            env.className = 'right';
+        else
+            env.className = 'left';
+    }
+    else
+        env.classList.add(destar(name));
+    while (next < text.length) {
+        var ch = text.charCodeAt(next);
+        switch (ch) {
+            case COMMENT:
+                next = parseComment(text, next + 1, env);
+                break;
+            case TABULATE:
+                next = next + 1;
+                env = env.parentElement.appendChild(document.createElement('td'));
+                env.className = 'left';
+                break;
+            case MATHMODE:
+                next++;
+                if (name == 'short-math')
+                    return next;
+                next = parseEnv(text, next, 'short-math', 'span', env);
+                break;
+            case SUBSCRIPT:
+            case SUPERSCRIPT:
+                next = parseSubsup(text, next, env);
+                break;
+            case COMMAND:
+                var cmd = readCommand(text, next + 1);
+                next = next + 1 + cmd.length;
+                switch (cmd) {
+                    case '\\':
+                        env = env.parentElement.parentElement.appendChild(document.createElement('tr'));
+                        env = env.appendChild(document.createElement('td'));
+                        if (destar(name) == 'align')
+                            env.className = 'right';
+                        else
+                            env.className = 'left';
+                        break;
+                    case '[':
+                        next = parseEnv(text, next, 'short-displaymath', 'div', env);
+                        break;
+                    case ']':
+                        if (name != 'short-displaymath')
+                            throw new Error('unexpected \\]');
+                        return next;
+                    case 'end':
+                        if (name == 'item')
+                            return next - (cmd.length + 1);
+                        var endof = readCurly(text, next);
+                        next = next + endof.length + 2;
+                        if (name != endof)
+                            throw new Error('begin/end mismatch: ' + name + '/' + endof);
+                        return next;
+                    case 'left':
+                        next = parseEnv(text, next, 'mathspan', 'span', env);
+                        break;
+                    case 'right':
+                        if (name != 'mathspan')
+                            throw new Error('illegal context for \\right');
+                        return next;
+                    case 'item':
+                        switch (name) {
+                            case 'itemize':
+                                next = parseEnv(text, next, 'item', 'li', env);
+                                break;
+                            case 'item': return next - (cmd.length + 1);
+                            default:
+                                console.log('item outside itemize, ignoring');
+                                break;
+                        }
+                        break;
+                    default:
+                        next = parseCommand(text, next, cmd, env);
+                        break;
+                }
+                break;
+            case CURLY_IN:
+                next = parseCurly(text, next, env);
+                break;
+            case CURLY_OUT:
+                if (name != 'curly')
+                    throw new Error('unexpected end of group');
+                return next + 1;
+            default:
+                appendText(text.charAt(next), env);
+                next++;
+                break;
+        }
+    }
+    return next;
+}
+function readCommand(text, next) {
     if (isAlpha(text.charCodeAt(next))) {
         var last = next;
         while (last < text.length && isAlpha(text.charCodeAt(last)))
             last++;
-        name = text.substring(next, last);
+        return text.substring(next, last);
     }
-    next = next + name.length;
+    return text.charAt(next);
+}
+function parseCommand(text, next, name, out) {
+    var proc = commands[name];
+    if (proc !== undefined)
+        return proc(text, next, name, out);
+    var sym = symbols[name];
+    if (sym !== undefined) {
+        appendText(sym, out);
+        if (text.charCodeAt(next) == SPACE)
+            next++;
+        return next;
+    }
     var cmd = out.appendChild(document.createElement('span'));
     cmd.classList.add('command');
     cmd.textContent = name;
     return next;
 }
-function parse(text, next) {
-    var root = document.createElement('div');
-    root.classList.add('root');
-    while (next < text.length) {
-        var ch = text.charCodeAt(next);
-        switch (ch) {
-            case COMMENT:
-                next = parseComment(text, next + 1, root);
-                break;
-            case COMMAND:
-                next = parseCommand(text, next + 1, root);
-                break;
-            default:
-                if (root.lastChild == null || root.lastChild.nodeType != Node.TEXT_NODE) {
-                    root.appendChild(document.createTextNode(''));
-                }
-                var text_out = root.lastChild;
-                text_out.appendData(text.charAt(next));
-                next++;
-                break;
-        }
-    }
-    return root;
-}
 function parseDocument(text) {
     if (document.body.lastElementChild.classList.contains('root'))
         document.body.removeChild(document.body.lastElementChild);
-    document.body.appendChild(parse(text.substring(0, 1000), 0));
+    parseEnv(text, 0, 'root', 'div', document.body);
     //let env = new Env('root', text, 0);
     //document.body.appendChild(env.element);
 }

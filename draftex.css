@@ -22,12 +22,14 @@
 }
 .title
 {
+    display:block;
     text-align: center;
     font-size: 2em;
     font-weight: bold;
 }
 .author
 {
+    display: block;
     text-align: center;
     font-size: 1.5em;
 }
@@ -46,6 +48,7 @@
 
 .section
 {
+    display: block;
     font-size: 1.2em;
     font-weight: bold;
     text-transform: uppercase;
@@ -54,6 +57,7 @@
 }
 .subsection
 {
+    display: block;
     font-size: 1.1em;
     font-weight: bold;
     margin-top: 0.5em;
@@ -61,6 +65,7 @@
 }
 .subsubsection
 {
+    display: block;
     font-weight: bold;
     margin-top: 0.25em;
     margin-bottom: 0.08em;
@@ -84,10 +89,17 @@
     margin-top: 0.2em;
     margin-bottom: 0.3em;
 }
-.text
+.text, .textrm
 {
-    display: inline;
     font-style: initial;
+}
+.emph
+{
+    font-style: italic;
+}
+.textbf
+{
+    font-weight: bold;
 }
 
 
@@ -101,18 +113,19 @@
 }
 .cite
 {
-    display: inline;
     background-color: #e8e8e8;
 }
 
 .label
 {
-    display: inline;
     background-color: #efc;
 }
 
-.displaymath, .short-displaymath, .equation
+.displaymath, .short-displaymath, .equation, .align
 {
+    width: auto;
+    margin-left: auto;
+    margin-right: auto;
     margin-top: 1em;
     margin-bottom: 1em;
     text-align: center;
@@ -120,12 +133,22 @@
 }
 .math, .short-math
 {
-    display: inline;
+    background-color: #f8f8ff;
     font-style: italic;
 }
-.floor, .ceil
+.cases::before
 {
-    display: inline;
+    position: absolute;
+    content: '{';
+    font-size: 2.3em;
+    left: 0em;
+}
+.cases
+{
+    position: relative;
+    display: inline-block;
+    vertical-align: middle;
+    padding-left: 1em;
 }
 .floor::before
 {
@@ -154,32 +177,32 @@
     color: #ccf;
 }
 
-.bracket-curly::before
+.curly::before
 {
     color: #f08;
     content: '{';
 }
-.bracket-curly
+.curly
 {
     color: black;
     background-color: rgba(255, 0, 128, 0.05)
 }
-.bracket-curly::after
+.curly::after
 {
     color: #f08;
     content: '}'
 }
-.bracket-square::before
+.square::before
 {
     color: #f40;
     content: '['
 }
-.bracket-square
+.square
 {
     color: black;
     background-color: rgba(255, 64, 0, 0.05)
 }
-.bracket-square::after
+.square::after
 {
     color: #f40;
     content: ']'
@@ -191,4 +214,61 @@
 .command
 {
     color: #0d0;
+}
+[class^='expanded']
+{
+    background-color: rgba(255, 64, 0, 0.05);
+}
+.overline
+{
+    text-decoration: overline;
+}
+.mbox
+{
+    display: inline-block;
+    background-color: inherit;
+}
+.operatorname::after
+{
+    content: ' ';
+}
+.operatorname
+{
+    font-style: normal;
+}
+.mathbf, .boldsymbol
+{
+    font-style: normal;
+    font-weight: bold;
+}
+.frac
+{
+    display: inline-block;
+    vertical-align: middle;
+    border-collapse: collapse;
+}
+.numerator
+{
+    display: block;
+}
+.denominator
+{
+    display: block;
+}
+hr
+{
+    margin-top: 0pt;
+    margin-bottom: 0pt;
+    border: none;
+    height: 0.75pt;
+    background-color: black;
+}
+
+.left
+{
+    text-align: left;
+}
+.right
+{
+    text-align: right;
 }

@@ -346,13 +346,97 @@ class Env
     }
 }
 
+const COMMAND = '\\'.charCodeAt(0);
+const COMMENT = '%'.charCodeAt(0);
+const NEWLINE = '\n'.charCodeAt(0);
+const CURLY_IN = '{'.charCodeAt(0);
+const CURLY_OUT = '}'.charCodeAt(0);
+const SQUARE_IN = '['.charCodeAt(0);
+const SQUARE_OUT = ']'.charCodeAt(0);
+
+function parseComment(text: string, next: number, out: HTMLElement)
+{
+    let last = next;
+    while (text.charCodeAt(last) != NEWLINE)
+        last++;
+    const comment = out.appendChild(document.createElement('span'));
+    comment.classList.add('comment');
+    comment.textContent = text.substring(next, last);
+    return last;
+}
+
+const cmds =
+    {
+        'begin': parseEnv
+    };
+
+function parseParagraphs(text: string, next: number, out: HTMLElement)
+{
+    while (next < text.length)
+    {
+
+    }
+}
+
+function parseEnv(text: string, next: number, name: string, out: HTMLElement)
+{
+    next = parseParagraphs(text, next, out);
+
+}
+
+function parseCommand(text: string, next: number, out: HTMLElement)
+{
+    let name = text.charAt(next);
+    if (isAlpha(text.charCodeAt(next)))
+    {
+        let last = next;
+        while (last < text.length && isAlpha(text.charCodeAt(last)))
+            last++;
+        name = text.substring(next, last);
+    }
+    next = next + name.length;
+
+    const cmd = out.appendChild(document.createElement('span'));
+    cmd.classList.add('command');
+    cmd.textContent = name;
+
+    return next;
+}
+
+
+function parse(text: string, next: number)
+{
+    const root = document.createElement('div');
+    root.classList.add('root');
+    while (next < text.length)
+    {
+        const ch = text.charCodeAt(next);
+        switch (ch)
+        {
+            case COMMENT: next = parseComment(text, next + 1, root); break;
+            case COMMAND: next = parseCommand(text, next + 1, root); break;
+            default:
+                if (root.lastChild == null || root.lastChild.nodeType != Node.TEXT_NODE)
+                {
+                    root.appendChild(document.createTextNode(''));
+                }
+                const text_out = root.lastChild as Text;
+                text_out.appendData(text.charAt(next));
+                next++;
+                break;
+        }
+    }
+    return root;
+}
+
 
 function parseDocument(text: string)
 {
-    let env = new Env('root', text, 0);
-    if (document.body.childElementCount > 1)
+    if (document.body.lastElementChild.classList.contains('root'))
         document.body.removeChild(document.body.lastElementChild);
-    document.body.appendChild(env.element);
+    document.body.appendChild(parse(text.substring(0, 1000), 0));
+    //let env = new Env('root', text, 0);
+    //document.body.appendChild(env.element);
 }
 
 function parseUri(uri: string)

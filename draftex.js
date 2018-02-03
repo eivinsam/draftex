@@ -279,11 +279,70 @@ var Env = /** @class */ (function () {
     }
     return Env;
 }());
+var COMMAND = '\\'.charCodeAt(0);
+var COMMENT = '%'.charCodeAt(0);
+var NEWLINE = '\n'.charCodeAt(0);
+var CURLY_IN = '{'.charCodeAt(0);
+var CURLY_OUT = '}'.charCodeAt(0);
+var SQUARE_IN = '['.charCodeAt(0);
+var SQUARE_OUT = ']'.charCodeAt(0);
+function parseComment(text, next, out) {
+    var last = next;
+    while (text.charCodeAt(last) != NEWLINE)
+        last++;
+    var comment = out.appendChild(document.createElement('span'));
+    comment.classList.add('comment');
+    comment.textContent = text.substring(next, last);
+    return last;
+}
+//const cmds =
+//    {
+//        'documentclass': parse1opt1arg
+//    };
+function parseCommand(text, next, out) {
+    var name = text.charAt(next);
+    if (isAlpha(text.charCodeAt(next))) {
+        var last = next;
+        while (last < text.length && isAlpha(text.charCodeAt(last)))
+            last++;
+        name = text.substring(next, last);
+    }
+    next = next + name.length;
+    var cmd = out.appendChild(document.createElement('span'));
+    cmd.classList.add('command');
+    cmd.textContent = name;
+    return next;
+}
+function parse(text, next) {
+    var root = document.createElement('div');
+    root.classList.add('root');
+    while (next < text.length) {
+        var ch = text.charCodeAt(next);
+        switch (ch) {
+            case COMMENT:
+                next = parseComment(text, next + 1, root);
+                break;
+            case COMMAND:
+                next = parseCommand(text, next + 1, root);
+                break;
+            default:
+                if (root.lastChild == null || root.lastChild.nodeType != Node.TEXT_NODE) {
+                    root.appendChild(document.createTextNode(''));
+                }
+                var text_out = root.lastChild;
+                text_out.appendData(text.charAt(next));
+                next++;
+                break;
+        }
+    }
+    return root;
+}
 function parseDocument(text) {
-    var env = new Env('root', text, 0);
-    if (document.body.childElementCount > 1)
+    if (document.body.lastElementChild.classList.contains('root'))
         document.body.removeChild(document.body.lastElementChild);
-    document.body.appendChild(env.element);
+    document.body.appendChild(parse(text.substring(0, 1000), 0));
+    //let env = new Env('root', text, 0);
+    //document.body.appendChild(env.element);
 }
 function parseUri(uri) {
     fetch(uri, { cache: 'no-store' })

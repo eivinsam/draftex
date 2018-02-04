@@ -1,7 +1,18 @@
 ﻿p
 {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.document > p + p 
+{
     text-indent: 1em;
 }
+p > *
+{
+    text-indent: 0;
+}
+
 
 .caret
 {

@@ -12,15 +12,6 @@ function skipSpace(text: string, offset = 0)
     return offset;
 }
 
-function isAlpha(ch: number)
-{
-    return (ch > 64 && ch < 91) || (ch > 96 && ch < 123);
-}
-function isDigit(ch: number)
-{
-    return (ch >= 48 && ch < 58);
-}
-
 function destar(name: string)
 {
     return name.replace('*', '');
@@ -34,15 +25,115 @@ function appendText(text: string, out: HTMLElement)
         (out.lastChild as Text).appendData(text);
 }
 
-const commands =
+class ReadState
+{
+    constructor(public readonly text: string, public next: number) { }
+
+    skip() { this.next++; }
+
+    get hasNext() { return this.next < this.text.length; }
+    get nextCode() { return this.text.charCodeAt(this.next); }
+    get nextChar() { return this.text.charAt(this.next); }
+
+    get nextIsAlpha()
+    {
+        const ch = this.nextCode;
+        return (ch > 64 && ch < 91) || (ch > 96 && ch < 123);
+    }
+    get nextIsDigit()
+    {
+        const ch = this.nextCode;
+        return (ch >= 48 && ch < 58);
+    }
+
+    readChar() { this.next++; return this.text.charAt(this.next - 1); }
+    readSquare()
+    {
+        if (!this.hasNext || this.nextCode != SQUARE_IN)
+            return null;
+        this.skip();
+        const start = this.next;
+        loop:
+        while (this.hasNext)
+            switch (this.nextCode)
+            {
+                case SQUARE_IN: throw new Error('unexpected [ before ]');
+                case SQUARE_OUT: break loop;
+                default: this.skip(); break;
+            }
+
+        if (!this.hasNext)
+            throw new Error('missing ]');
+        this.skip();
+        return this.text.substring(start, this.next - 1);
+    }
+    readCurly()
+    {
+        if (!this.hasNext || this.nextCode != CURLY_IN)
+            throw new Error('expected group');
+        this.skip();
+        const start = this.next;
+        loop:
+        while (this.hasNext)
+            switch (this.nextCode)
+            {
+                case CURLY_IN: throw new Error('unexpected { in flat group');
+                case CURLY_OUT: break loop;
+                default: this.skip(); break;
+            }
+
+        if (!this.hasNext)
+            throw new Error('missing group end');
+        this.skip();
+        return this.text.substring(start, this.next-1);
+    }
+    readCommand()
+    {
+        if (!this.hasNext || this.nextCode != COMMAND)
+            throw new Error('expected \\');
+        this.skip();
+        if (this.nextIsAlpha)
+        {
+            const start = this.next;
+            this.skip();
+            while (this.hasNext && this.nextIsAlpha)
+                this.skip();
+            return this.text.substring(start, this.next);
+        }
+
+        return this.readChar();
+    }
+}
+
+class State
+{
+    constructor(public readonly src: ReadState, public readonly name: string,
+        public readonly mode: Mode, public readonly out: HTMLElement) { }
+
+    pushOutput(new_out: HTMLElement) { return new State(this.src, this.name, this.mode, new_out); }
+    pushName(new_name: string, new_mode?: Mode)
+    {
+        return new State(this.src, new_name, new_mode ? new_mode : this.mode, this.out);
+    }
+
+    appendElement(tag: string, className?: string)
+    {
+        const result = this.out.appendChild(document.createElement(tag));
+        if (className)
+            result.className = className;
+        return result;
+    }
+}
+
+const commands: { [index: string]: (State) => void } =
     {
         'begin': parseBegin,
         'newcommand': parseNewcommand,
         'title': styledArg,
         'author': styledArg,
-        'section': styledArg,
-        'subsection': styledArg,
-        'subsubsection': styledArg,
+        'section': styledDeparArg,
+        'subsection': styledDeparArg,
+        'subsubsection': styledDeparArg,
         'caption': styledArg,
         'cite': styledArg,
         'emph': styledArg,
@@ -125,10 +216,10 @@ const mathbb_lookup =
         'Z': '\u2124'
     }
 
-function parseMathbb(text: string, next: number, name: string, out: HTMLElement)
+function parseMathbb(s: State)
 {
-    const src = readCurly(text, next);
-    const dst = out.appendChild(document.createElement('span'));
+    const src = s.src.readCurly();
+    const dst = s.out.appendChild(document.createElement('span'));
     dst.className = 'mathbb';
 
     for (let i = 0; i < src.length; i++)
@@ -139,8 +230,6 @@ function parseMathbb(text: string, next: number, name: string, out: HTMLElement)
         else
             appendText(fixedFromCharCode(src.charCodeAt(i) + (0x1d538 - 0x41)), dst);
     }
-
-    return next + src.length + 2;
 }
 
 const mathcal_lookup =
@@ -157,10 +246,10 @@ const mathcal_lookup =
         'g': '\u210a',
         'o': '\u2134'
     }
-function parseMathcal(text: string, next: number, name: string, out: HTMLElement)
+function parseMathcal(s: State)
 {
-    const src = readCurly(text, next);
-    const dst = out.appendChild(document.createElement('span'));
+    const src = s.src.readCurly();
+    const dst = s.out.appendChild(document.createElement('span'));
     dst.className = 'mathcal';
 
     for (let i = 0; i < src.length; i++)
@@ -171,31 +260,29 @@ function parseMathcal(text: string, next: number, name: string, out: HTMLElement
         else
             appendText(fixedFromCharCode(src.charCodeAt(i) + (0x1d49c - 0x41)), dst);
     }
-
-    return next + src.length + 2;
 }
 
-function parseFraction(text: string, next: number, name: string, out: HTMLElement)
+function parseFraction(s: State)
 {
-    const table = out.appendChild(document.createElement('div'));
+    const table = s.out.appendChild(document.createElement('div'));
     table.className = 'frac';
-    next = parseCurly(text, next, table);
+    parseCurly(s);
     table.appendChild(document.createElement('hr'));
-    next = parseCurly(text, next, table);
+    parseCurly(s);
     table.firstElementChild.className = 'numerator';
     table.lastElementChild.className = 'denominator';
-    return next;
 }
 
-function parseComment(text: string, next: number, out: HTMLElement)
+function parseComment(s: State)
 {
-    let last = next;
-    while (text.charCodeAt(last) != NEWLINE)
-        last++;
-    const comment = out.appendChild(document.createElement('span'));
-    comment.classList.add('comment');
-    comment.textContent = text.substring(next, last);
-    return last;
+    if (!s.src.hasNext || s.src.nextCode != COMMENT)
+        throw new Error('expected comment');
+    s.src.skip();
+    let start = s.src.next;
+    while (s.src.nextCode != NEWLINE)
+        s.src.skip();
+    const comment = s.appendElement('span', 'comment');
+    comment.textContent = s.src.text.substring(start, s.src.next);
 }
 
 function createSpan(classname: string, content: Node)
@@ -210,308 +297,348 @@ function createTextSpan(classname: string, content: string)
     return createSpan(classname, document.createTextNode(content));
 }
 
-function readSquare(text: string, next: number)
-{
-    if (next >= text.length || text.charCodeAt(next) != SQUARE_IN)
-        return null;
-    next++;
-    const end = text.indexOf(']', next);
-    if (end >= text.length)
-        throw new Error('missing right square bracket');
-    return text.substring(next, end);
-}
 
-function readCurly(text: string, next: number)
+function parseCurly(s: State)
 {
-    if (next >= text.length || text.charCodeAt(next) != CURLY_IN)
+    if (!s.src.hasNext || s.src.nextCode != CURLY_IN)
         throw new Error('expected group');
-    next++;
-    const end = text.indexOf('}', next);
-    if (end >= text.length)
-        throw new Error('missing group end');
-    return text.substring(next, end);
+    s.src.skip();
+    parseEnv(s.pushName('curly'), 'span');
 }
 
-function parseCurly(text: string, next: number, out: HTMLElement)
+function parseSubsup(s: State)
 {
-    if (next >= text.length || text.charCodeAt(next) != CURLY_IN)
-        throw new Error('expected group');
-    next++;
-    return parseEnv(text, next, 'curly', 'span', out);
-}
-
-function parseSubsup(text: string, next: number, out: HTMLElement)
-{
-    const sub = out.appendChild(document.createElement(text.charCodeAt(next) == SUPERSCRIPT ? 'sup' : 'sub'));
-    next++;
-    if (next >= text.length)
+    s = s.pushOutput(s.appendElement(s.src.nextCode == SUPERSCRIPT ? 'sup' : 'sub'));
+    s.src.skip();
+    if (!s.src.hasNext)
         throw new Error('expected more characters after subscript');
-    switch (text.charCodeAt(next))
+    switch (s.src.nextCode)
     {
         case CURLY_IN:
-            next = parseCurly(text, next, sub);
+            parseCurly(s);
             // unpack braces
-            for (let n = sub.firstElementChild.firstChild; n != null; n = n.nextSibling)
-                sub.appendChild(n);
-            sub.firstElementChild.remove();
+            for (let n = s.out.firstElementChild.firstChild; n != null; n = n.nextSibling)
+                s.out.appendChild(n);
+            s.out.firstElementChild.remove();
             break;
         case COMMAND:
-            const cmd = readCommand(text, next + 1);
-            next = next + 1 + cmd.length;
-            next = parseCommand(text, next, cmd, sub);
+            parseCommand(s.pushName(s.src.readCommand()));
             break;
         default:
-            sub.textContent = text.charAt(next);
-            next++;
+            s.out.textContent = s.src.readChar();
             break;
     }
-    return next;
 }
 
 
-function styledArg(text: string, next: number, name: string, out: HTMLElement)
+function styledArg(s: State)
 {
-    next = parseCurly(text, next, out);
-    out.lastElementChild.className = name;
-    return next;
+    parseCurly(s);
+    s.out.lastElementChild.className = s.name;
+}
+function styledDeparArg(s: State)
+{
+    parseCurly(s);
+    s.out.lastElementChild.className = s.name;
+    if (s.out instanceof HTMLParagraphElement)
+    {
+        const result = s.out.lastChild;
+        const parent = s.out.parentNode;
+        parent.insertBefore(result, s.out);
+
+        if (s.out.firstChild != null)
+        {
+            const split_par = document.createElement('p');
+            while (s.out.firstChild != null)
+                split_par.appendChild(s.out.firstChild);
+            parent.insertBefore(split_par, result);
+        }
+    }
 }
 
-function parseLabel(text: string, next: number, name: string, out: HTMLElement)
+function parseLabel(s: State)
 {
-    const id = readCurly(text, next);
-    const span = out.appendChild(document.createElement('span'));
+    const id = s.src.readCurly();
+    const span = s.appendElement('span');
     span.id = id;
     span.className = 'label';
     span.textContent = id;
-    return next + id.length + 2;
 }
 
-function parseRef(text: string, next: number, name: string, out: HTMLElement)
+function parseRef(s: State)
 {
-    const target = readCurly(text, next);
-    const anchor = out.appendChild(document.createElement('a'));
+    const target = s.src.readCurly();
+    const anchor = s.out.appendChild(document.createElement('a'));
     anchor.href = '#' + target;
     anchor.textContent = target;
-    return next + target.length + 2;
 }
 
-function substitute(args: HTMLDivElement, out: HTMLElement)
+function substitute(args: Node, out: Node)
 {
     for (let n = out.firstChild; n != null; n = n.nextSibling)
     {
-        if (n.nodeType == Node.TEXT_NODE)
+        if (n instanceof Text)
         {
-            const text = (n as Text);
-            const off = text.data.indexOf('#');
-            if (off == -1)
+            const src = new ReadState(n.data, 0);
+            while (src.hasNext && src.nextCode != ARGUMENT)
+                src.skip();
+
+            if (!src.hasNext)
                 continue;
-            if (off == 0)
+
+            if (src.next == 0)
             {
-                let end = 1;
-                while (end < text.data.length && isDigit(text.data.charCodeAt(end)))
-                    end++;
-                if (end == 1)
+                src.skip();
+                const start = src.next;
+                while (src.hasNext && src.nextIsDigit)
+                    src.skip();
+                if (src.next == start)
                     throw new Error("expected number after argument sign");
-                if (end < text.data.length)
-                    text.splitText(end);
-                const replacement = args.childNodes.item(+text.data).cloneNode(true) as HTMLElement;
-                replacement.className = 'expanded-arg-' + text.data.substring(1);
-                out.replaceChild(replacement, text);
+                if (!src.hasNext)
+                    n.splitText(src.next);
+
+                const argn = Number(n.data.substring(1));
+                const arg = args.childNodes.item(argn - 1);
+                if (argn === null)
+                    throw new Error('invalid argument number: ' + argn);
+
+                const replacement = arg.cloneNode(true) as HTMLElement;
+                replacement.className = 'expanded-arg-' + argn;
+                out.replaceChild(replacement, n);
             }
-            else if (off < text.data.length)
-                text.splitText(off);
+            else if (src.hasNext)
+                n.splitText(src.next);
         }
         else
             substitute(args, n as HTMLElement);
     }
 }
 
-function parseNewcommand(text: string, next: number, name: string, out: HTMLElement)
+function parseNewcommand(s: State)
 {
-    const div = out.appendChild(document.createElement('div'));
-    div.appendChild(createTextSpan('command', name));
+    s = s.pushOutput(s.appendElement('div'));
+    s.out.appendChild(createTextSpan('command', s.name));
 
-    const cmd = readCurly(text, next);
-    next = next + cmd.length + 2;
-    div.appendChild(createTextSpan('curly', cmd));
-
-    const argc = readSquare(text, next);
-    if (argc !== null)
-    {
-        next = next + argc.length + 2;
-        div.appendChild(createTextSpan('square', argc));
-    }
-
-    next = parseCurly(text, next, div);
-
+    const cmd = s.src.readCurly();
     if (cmd.charCodeAt(0) != COMMAND)
         throw new Error('first argument to newcommand must begin with \\');
-    if (argc != null)
-    {
-        commands[cmd.substring(1)] = (text: string, next: number, name: string, out: HTMLElement) =>
-        {
-            const result = out.appendChild(div.lastChild.cloneNode(true) as HTMLElement);
-            result.className = 'expanded-' + cmd.substring(1);
+    s.out.appendChild(createTextSpan('curly', cmd));
 
-            const temp = document.createElement('div');
+    const argc = s.src.readSquare();
+    if (argc !== null)
+    {
+        s.out.appendChild(createTextSpan('square', argc));
+    }
+
+    parseCurly(s.pushName('newcommand', Mode.math));
+    const definition = s.out.lastChild;
+
+    commands[cmd.substring(1)] = (s: State) =>
+    {
+        const result = s.out.appendChild(definition.cloneNode(true) as HTMLElement);
+        result.className = 'expanded-' + cmd.substring(1);
+
+        if (argc != null)
+        {
+            const temp = s.pushOutput(document.createElement('div'));
             for (let i = 0; i < +argc; i++)
-                next = parseCurly(text, next, temp);
-            substitute(temp, result);
-            return next;
-        };
-    }
-    else
-    {
-        commands[cmd.substring(1)] = (text: string, next: number, name: string, out: HTMLElement) =>
-        {
-            out.appendChild(div.lastChild.cloneNode(true) as HTMLElement)
-                .className = 'expanded-' + cmd.substring(1);
-            return next;
-        };
-    }
-
-    return next;
+                parseCurly(temp);
+            substitute(temp.out, result);
+        }
+    };
 }
 
 
-function parseBegin(text: string, next: number, name: string, out: HTMLElement)
+function parseBegin(s: State)
 {
-    const sub_name = readCurly(text, next);
-    return parseEnv(text, next + sub_name.length + 2, sub_name, 'div', out);
+    const name = s.src.readCurly();
+    let mode = Mode.text;
+    switch (destar(name))
+    {
+        case 'math':
+        case 'displaymath':
+        case 'cases':
+        case 'align':
+            mode = Mode.math;
+    }
+    parseEnv(s.pushName(name, mode), 'div');
 }
 
-function parseEnv(text: string, next: number, name: string, tag: string, out: HTMLElement)
-{
-    if (name == 'itemize') tag = 'ul';
-    if (destar(name) == 'align' || name == 'tabular' || name == 'cases')
-    {
-        out = out.appendChild(document.createElement('table'));
-        out = out.appendChild(document.createElement('tr'));
-        tag = 'td';
-    }
-    let env = out.appendChild(document.createElement(tag));
-    if (destar(name) == 'align' || name == 'tabular' || name == 'cases')
-    {
-        env.parentElement.parentElement.className = destar(name);
-        if (destar(name) == 'align')
-            env.className = 'right';
-        else
-            env.className = 'left';
-    }
-    else
-        env.classList.add(destar(name));
+const enum Env { par, table };
+const enum Mode { text, math };
 
-    while (next < text.length)
+const environ: {[index: string]: Env} =
     {
-        const ch = text.charCodeAt(next);
+        'align': Env.table,
+        'cases': Env.table,
+        'document': Env.par,
+        'tabular': Env.table,
+        'root': Env.par
+    };
+
+function allSpace(el: Node)
+{
+    if (el instanceof Text)
+    {
+        for (let i = 0; i < el.data.length; i++)
+            if (el.data.charCodeAt(i) > SPACE)
+                return false;
+        return true;
+    }
+    for (let n = el.firstChild; n != null; n = n.nextSibling)
+        if (!allSpace(n))
+            return false;
+    return true;
+}
+
+function parseEnv(s: State, tag: string)
+{
+    const nostar_name = destar(s.name);
+    const env = environ[nostar_name];
+    const first_column_align = nostar_name == 'align' ? 'right' : 'left';
+    if (nostar_name == 'itemize') tag = 'ul';
+    switch (env)
+    {
+        case Env.table:
+            s = s.pushOutput(s.appendElement('table', nostar_name));
+            s = s.pushOutput(s.appendElement('tr'));
+            s = s.pushOutput(s.appendElement('td', first_column_align));
+            break;
+        case Env.par:
+            s = s.pushOutput(s.appendElement('div', nostar_name))
+            s = s.pushOutput(s.appendElement('p'));
+            break;
+        default:
+            s = s.pushOutput(s.appendElement(tag, nostar_name));
+            break;
+    }
+
+    let prev_newline = false;
+    while (s.src.hasNext)
+    {
+        const ch = s.src.nextCode;
         switch (ch)
         {
-            case COMMENT: next = parseComment(text, next + 1, env); break;
+            case COMMENT: parseComment(s); break;
             case TABULATE:
-                next = next + 1;
-                env = env.parentElement.appendChild(document.createElement('td'));
-                env.className = 'left';
+                if (env != Env.table)
+                    throw new Error('unexpected tabulation');
+                s.src.skip();
+                s = s.pushOutput(s.out.parentElement.appendChild(document.createElement('td')));
+                s.out.className = 'left';
                 break;
             case MATHMODE:
-                next++;
-                if (name == 'short-math')
-                    return next;
-                next = parseEnv(text, next, 'short-math', 'span', env);
+                s.src.skip();
+                if (s.name == 'short-math')
+                    return;
+                parseEnv(s.pushName('short-math', Mode.math), 'span');
                 break;
             case SUBSCRIPT:
             case SUPERSCRIPT:
-                next = parseSubsup(text, next, env);
+                if (s.mode != Mode.math)
+                    throw new Error('unexpected sub/superscript outside of math mode');
+                parseSubsup(s);
                 break;
             case COMMAND:
-                const cmd = readCommand(text, next + 1);
-                next = next + 1 + cmd.length;
+                const cmd = s.src.readCommand();
                 switch (cmd)
                 {
                     case '\\':
-                        env = env.parentElement.parentElement.appendChild(document.createElement('tr'));
-                        env = env.appendChild(document.createElement('td'));
-                        if (destar(name) == 'align')
-                            env.className = 'right';
-                        else
-                            env.className = 'left';
-                        break;
-                    case '[': next = parseEnv(text, next, 'short-displaymath', 'div', env); break;
-                    case ']': 
-                        if (name != 'short-displaymath')
-                            throw new Error('unexpected \\]');
-                        return next;
-                    case 'end':
-                        if (name == 'item')
-                            return next - (cmd.length+1);
-                        const endof = readCurly(text, next);
-                        next = next + endof.length + 2;
-                        if (name != endof)
-                            throw new Error('begin/end mismatch: ' + name + '/' + endof);
-                        return next;
-                    case 'left': next = parseEnv(text, next, 'mathspan', 'span', env); break;
-                    case 'right':
-                        if (name != 'mathspan')
-                            throw new Error('illegal context for \\right');
-                        return next;
-                    case 'item':
-                        switch (name)
+                        switch (env)
                         {
-                            case 'itemize': next = parseEnv(text, next, 'item', 'li', env); break;
-                            case 'item': return next - (cmd.length + 1);
+                            case Env.table:
+                                s = s.pushOutput(s.out.parentElement.parentElement.appendChild(document.createElement('tr')));
+                                s = s.pushOutput(s.appendElement('td', first_column_align))
+                                break;
+                            case Env.par:
+                                s.appendElement('br');
+                                break;
+                        }
+                        break;
+                    case '[': parseEnv(s.pushName('short-displaymath', Mode.math), 'div'); break;
+                    case ']': 
+                        if (s.name != 'short-displaymath')
+                            throw new Error('unexpected \\]');
+                        return;
+                    case 'end':
+                        if (s.name == 'item')
+                        {
+                            s.src.next -= cmd.length+1;
+                            return;
+                        }
+                        const endof = s.src.readCurly();
+                        if (s.name != endof)
+                            throw new Error('begin/end mismatch: ' + name + '/' + endof);
+                        return;
+                    case 'left':
+                        if (s.mode != Mode.math)
+                            throw new Error('illegal context for \\left');
+                        parseEnv(s.pushName('mathspan'), 'span');
+                        break;
+                    case 'right':
+                        if (s.name != 'mathspan')
+                            throw new Error('illegal context for \\right');
+                        return;
+                    case 'item':
+                        switch (nostar_name)
+                        {
+                            case 'itemize': parseEnv(s.pushName('item'), 'li'); break;
+                            case 'item': s.src.next -= cmd.length + 1; return;
                             default: console.log('item outside itemize, ignoring'); break;
                         }
                         break;
                     default:
-                        next = parseCommand(text, next, cmd, env);
+                        parseCommand(s.pushName(cmd));
                         break;
                 }
                 break;
-            case CURLY_IN: next = parseCurly(text, next, env); break;
+            case CURLY_IN: parseCurly(s); break;
             case CURLY_OUT:
-                if (name != 'curly')
+                if (s.name != 'curly')
                     throw new Error('unexpected end of group');
-                return next + 1;
+                s.src.skip();
+                return;
+            case NEWLINE:
+                if (!prev_newline)
+                    prev_newline = true;
+                else if (prev_newline && env == Env.par && !allSpace(s.out))
+                {
+                    // make paragraph break
+                    s = s.pushOutput(s.out.parentElement.appendChild(document.createElement('p')));
+                    prev_newline = false;
+                }
+                // fallthrough!
             default:
-                appendText(text.charAt(next), env);
-                next++;
+                appendText(s.src.readChar(), s.out);
+                if (ch <= SPACE)
+                    continue;
                 break;
         }
+        prev_newline = false;
     }
-    return next;
 }
 
-function readCommand(text: string, next: number)
-{
-    if (isAlpha(text.charCodeAt(next)))
-    {
-        let last = next;
-        while (last < text.length && isAlpha(text.charCodeAt(last)))
-            last++;
-        return text.substring(next, last);
-    }
-    return text.charAt(next);
-}
 
-function parseCommand(text: string, next: number, name: string, out: HTMLElement)
+function parseCommand(s: State)
 {
-    const proc = commands[name];
+    const proc = commands[s.name];
     if (proc !== undefined)
-        return proc(text, next, name, out);
+        return proc(s);
 
-    const sym = symbols[name];
+    const sym = symbols[s.name];
     if (sym !== undefined)
     {
-        appendText(sym, out);
-        if (text.charCodeAt(next) == SPACE)
-            next++;
-        return next;
+        appendText(sym, s.out);
+        if (s.src.nextCode == SPACE)
+            s.src.skip();
+        return;
     }
 
-    const cmd = out.appendChild(document.createElement('span'));
+    const cmd = s.out.appendChild(document.createElement('span'));
     cmd.classList.add('command');
-    cmd.textContent = name;
+    cmd.textContent = s.name;
 
-    return next;
+    return;
 }
 
 
@@ -520,7 +647,7 @@ function parseDocument(text: string)
 {
     if (document.body.lastElementChild.classList.contains('root'))
         document.body.removeChild(document.body.lastElementChild);
-    parseEnv(text, 0, 'root', 'div', document.body);
+    parseEnv(new State(new ReadState(text, 0), 'root', Mode.text, document.body), 'div');
     //let env = new Env('root', text, 0);
     //document.body.appendChild(env.element);
 }

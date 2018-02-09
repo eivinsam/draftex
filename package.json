@@ -1,0 +1,21 @@
+{
+  "name": "draftex",
+  "version": "1.0.0",
+  "description": "(La)Tex document editor",
+  "main": "electron_main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "repository": "https://github.com/eivinsam/draftex",
+  "keywords": [
+    "Electron",
+    "tex",
+    "editor"
+  ],
+  "author": "Eivind Samuelsen",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^1.7.12"
+  }
+, "-vs-binding":{"AfterBuild":["start"]}
+}

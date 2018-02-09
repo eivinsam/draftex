@@ -188,6 +188,14 @@ p > *
     color: #ccf;
 }
 
+.argument::before
+{
+    content: '#';
+}
+.argument
+{
+    color: #34f;
+}
 .curly::before
 {
     color: #f08;
@@ -261,10 +269,12 @@ p > *
 .numerator
 {
     display: block;
+    font-size: 0.8em;
 }
 .denominator
 {
     display: block;
+    font-size: 0.8em;
 }
 hr
 {
@@ -282,4 +292,8 @@ hr
 .right
 {
     text-align: right;
+}
+.ignored
+{
+    display: none;
 }

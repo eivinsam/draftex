@@ -25,6 +25,7 @@
     <Content Include="draftex.css" />
     <Content Include="package.json" />
     <Content Include="README.md" />
+    <Content Include="test.tex" />
     <TypeScriptCompile Include="draftex.ts" />
     <Compile Include="draftex.js" />
     <Compile Include="electron_main.js" />

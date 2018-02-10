@@ -17,6 +17,14 @@ function destar(name: string)
     return name.replace('*', '');
 }
 
+function ignoreText(out: Element, text: string)
+{
+    if (out.lastChild instanceof Element && out.lastChild.className == 'ignored')
+        appendText(out.lastChild, text);
+    else
+        appendElement(out, 'span', 'ignored').textContent = text;
+}
+
 function appendText(out: Element, text: string)
 {
     if (out.lastChild instanceof Text)
@@ -25,10 +33,11 @@ function appendText(out: Element, text: string)
         out.appendChild(document.createTextNode(text));
 }
 
-function appendElement(out: Element, tag: string, className: string = '')
+function appendElement(out: Element, tag: string, className?: string)
 {
     const result = out.appendChild(document.createElement(tag));
-    result.className = className;
+    if (className)
+        result.className = className;
     return result;
 }
 
@@ -37,6 +46,9 @@ function appendContent(out: Element, source: Element)
     for (let n = source.firstChild; n != null; n = source.firstChild)
         out.appendChild(n);
 }
+
+function isAlpha(ch: number) { return (ch > 64 && ch < 91) || (ch > 96 && ch < 123); }
+function isSpace(ch: number) { return (ch >= 0 && ch <= 32); }
 
 class ReadState
 {
@@ -48,11 +60,7 @@ class ReadState
     get nextCode() { return this.text.charCodeAt(this.next); }
     get nextChar() { return this.text.charAt(this.next); }
 
-    get nextIsAlpha()
-    {
-        const ch = this.nextCode;
-        return (ch > 64 && ch < 91) || (ch > 96 && ch < 123);
-    }
+    get nextIsAlpha() { return isAlpha(this.nextCode); }
     get nextIsDigit()
     {
         const ch = this.nextCode;
@@ -60,8 +68,7 @@ class ReadState
     }
     get nextIsSpace()
     {
-        const ch = this.nextCode;
-        return (ch >= 0 && ch <= 32);
+        return isSpace(this.nextCode);
     }
 
     readChar() { this.next++; return this.text.charAt(this.next - 1); }
@@ -121,6 +128,17 @@ class ReadState
 
         return this.readChar();
     }
+    readComment()
+    {
+        if (!this.hasNext || this.nextCode != COMMENT)
+            throw new Error('expected comment');
+        this.skip();
+        const start = this.next;
+        while (this.nextCode != NEWLINE)
+            this.skip();
+        this.skip();
+        return this.text.substring(start, this.next);
+    }
 }
 
 class State
@@ -139,7 +157,6 @@ type CommandParser = (State, Element) => void;
 const commands: { [index: string]: CommandParser } =
     {
         'begin': parseBegin,
-        'newcommand': parseNewcommand,
         'title': styledArg,
         'author': styledArg,
         'section': styledDeparArg,
@@ -448,56 +465,56 @@ function parseRef(s: State, out: Element)
     anchor.textContent = target;
 }
 
+class ElementSource
+{
+    private n: Node;
+    constructor(e: Element) { this.n = e.firstChild; }
+
+    get next() { return this.n; }
+
+    pop()
+    {
+        const result = this.n;
+        if (this.n != null)
+            this.n = this.n.nextSibling;
+        return result;
+    }
+}
+
 function substitute(args: Node, out: Node)
 {
     for (let n = out.firstChild; n != null; n = n.nextSibling)
     {
-        if (n instanceof Text)
+        if (n instanceof Element)
         {
-            const src = new ReadState(n.data, 0);
-            while (src.hasNext && src.nextCode != ARGUMENT)
-                src.skip();
-
-            if (!src.hasNext)
-                continue;
-
-            if (src.next == 0)
+            if (n.className == 'argument')
             {
-                src.skip();
-                const start = src.next;
-                while (src.hasNext && src.nextIsDigit)
-                    src.skip();
-                if (src.next == start)
-                    throw new Error("expected number after argument sign");
-                if (!src.hasNext)
-                    n.splitText(src.next);
-
-                const argn = Number(n.data.substring(1));
+                const argn = Number(n.textContent);
                 const arg = args.childNodes.item(argn - 1);
                 if (argn === null)
                     throw new Error('invalid argument number: ' + argn);
 
-                const replacement = arg.cloneNode(true) as HTMLElement;
-                replacement.className = 'expanded-arg-' + argn;
-                out.replaceChild(replacement, n);
+                for (let rep = arg.firstChild; rep != null; rep = rep.nextSibling)
+                    out.insertBefore(rep.cloneNode(true), n);
+                out.removeChild(n);
             }
-            else if (src.hasNext)
-                n.splitText(src.next);
+            else
+                substitute(args, n);
         }
-        else
-            substitute(args, n as HTMLElement);
     }
 }
 
-function parseNewcommand(s: State, out: Element)
+commands.newcommand = (s: State, out: Element) =>
 {
     out = appendElement(out, 'div');
     out.appendChild(createTextSpan('command', s.name));
 
-    const cmd = s.src.readCurly();
-    if (cmd.charCodeAt(0) != COMMAND)
-        throw new Error('first argument to newcommand must begin with \\');
-    out.appendChild(createTextSpan('curly', cmd));
+    parseCurlyNoexpand(s, out);
+    const cmd = out.lastElementChild.firstElementChild;
+    if (cmd.className != 'command')
+        throw new Error('expected command name as first argument to newcommand');
+    if (cmd.nextSibling != null)
+        throw new Error('first argument to newcommand contains more than a command symbol');
 
     const argc = s.src.readSquare();
     if (argc !== null)
@@ -508,16 +525,21 @@ function parseNewcommand(s: State, out: Element)
     parseCurlyNoexpand(s, out);
     const definition = out.lastChild;
 
-    commands[cmd.substring(1)] = (s: State) =>
+    commands[cmd.textContent] = (s: State, out: Element) =>
     {
         const result = out.appendChild(definition.cloneNode(true) as HTMLElement);
-        result.className = 'expanded-' + cmd.substring(1);
+        result.className = 'expanded-' + cmd.textContent;
+
 
         if (argc != null)
         {
             const temp = document.createElement('div');
             for (let i = 0; i < +argc; i++)
+            {
+                const start = s.src.next;
                 parseArgument(s, temp);
+                result.dataset['arg' + i] = s.src.text.substring(start, s.src.next);
+            }
             substitute(temp, result);
         }
     };
@@ -713,12 +735,79 @@ function parseCommand(s: State, out: Element)
 }
 
 
+const enum Parsing { newline, space, text };
+
+function tokenize(src: ReadState, out: Element)
+{
+    let state = Parsing.newline;
+    while (src.hasNext)
+    {
+        switch (src.nextCode)
+        {
+            case COMMENT:
+                appendElement(out, 'span', 'comment')
+                    .textContent = src.readComment();
+                state = Parsing.newline;
+                continue;
+            case COMMAND:
+                const first = (appendElement(out, 'span', 'command')
+                    .textContent = src.readCommand()).charCodeAt(0);
+                if (first == SPACE || isAlpha(first))
+                    state = Parsing.space;
+                else
+                    state = Parsing.text;
+                continue;
+            case NEWLINE:
+                src.skip();
+                switch (state)
+                {
+                    case Parsing.newline: appendElement(out, 'span', 'command').textContent = 'par'; break;
+                    case Parsing.text: appendText(out, '\n'); break;
+                    default: ignoreText(out, '\n'); break;
+                }
+                state = Parsing.newline;
+                continue;
+            case ARGUMENT:
+                src.skip();
+                appendElement(out, 'spam', 'argument').textContent = src.readChar();
+                state = Parsing.text;
+                continue;
+            case CURLY_IN:
+                src.skip();
+                tokenize(src, appendElement(out, 'span', 'curly'));
+                continue;
+            case CURLY_OUT:
+                src.skip();
+                if (out.className != 'curly')
+                    throw new Error('unmatched }');
+                return;
+            default:
+                if (isSpace(src.nextCode))
+                {
+                    if (state != Parsing.text)
+                        ignoreText(out, src.readChar());
+                    else
+                    {
+                        appendText(out, src.readChar());
+                        state = Parsing.space;
+                    }
+                }
+                else
+                {
+                    appendText(out, src.readChar());
+                    state = Parsing.text;
+                }
+                continue;
+        }
+    }
+}
 
 function parseDocument(text: string)
 {
     if (document.body.lastElementChild.classList.contains('root'))
         document.body.removeChild(document.body.lastElementChild);
-    parseEnv(new State(new ReadState(text, 0), 'root', Mode.text), 'div', document.body);
+    tokenize(new ReadState(text, 0), document.body);
+    //parseEnv(new State(new ReadState(text, 0), 'root', Mode.text), 'div', document.body);
     //let env = new Env('root', text, 0);
     //document.body.appendChild(env.element);
 }

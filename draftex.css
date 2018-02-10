@@ -140,12 +140,10 @@ p > *
     margin-top: 1em;
     margin-bottom: 1em;
     text-align: center;
-    font-style: italic;
 }
 .math, .short-math
 {
     background-color: #f8f8ff;
-    font-style: italic;
 }
 .cases::before
 {

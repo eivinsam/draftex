@@ -295,3 +295,7 @@ hr
 {
     display: none;
 }
+.error
+{
+    background-color: #f33;
+}

@@ -47,6 +47,11 @@ function appendContent(out: Element, source: Element)
         out.appendChild(n);
 }
 
+function appendError(out: Element, message: string)
+{
+    appendElement(out, 'span', 'error').textContent = message;
+}
+
 function isAlpha(ch: number) { return (ch > 64 && ch < 91) || (ch > 96 && ch < 123); }
 function isSpace(ch: number) { return (ch >= 0 && ch <= 32); }
 
@@ -856,6 +861,35 @@ class Argument
 }
 
 
+function substitute(args: Element[], into: Element)
+{
+    for (let n = into.firstChild; n != null; n = n.nextSibling)
+    {
+        if (n instanceof Element)
+        {
+            if (n.className == 'argument')
+            {
+                const argi = Number(n.textContent)-1;
+                if (argi < 0 || argi >= args.length)
+                {
+                    n.className = 'error';
+                    n.textContent = '#' + n.textContent;
+                }
+                else
+                {
+                    const arg = args[argi].cloneNode(true);
+                    while (arg.firstChild)
+                        into.insertBefore(arg.firstChild, n);
+                    n = n.previousSibling;
+                    into.removeChild(n.nextSibling);
+                }
+            }
+            else
+                substitute(args, n);
+        }
+    }
+}
+
 class Commands
 {
     _default(to: Element, from: Element) { to.appendChild(from.firstChild); return null; }
@@ -866,11 +900,11 @@ class Commands
         if (spec instanceof Element && spec.className == 'curly')
         {
             from.removeChild(from.firstChild);
-            expand(to, from, spec.textContent);
+            expand(appendElement(to, 'div', spec.textContent), from, spec.textContent);
         }
         else
         {
-            appendElement(to, 'span', 'error').textContent = 'begin: expected environment name';
+            appendError(to, 'begin: expected environment name');
         }
         return null;
     }
@@ -885,7 +919,7 @@ class Commands
         }
         else
         {
-            appendElement(to, 'span', 'error').textContent = 'end: expected environment name';
+            appendError(to, 'end: expected environment name');
             return null;
         }
     }
@@ -893,25 +927,69 @@ class Commands
     newcommand(to: Element, from: Element)
     {
         from.removeChild(from.firstChild);
-        const name = new Argument(from);
-        if (!name.tokens)
+        const name_arg = new Argument(from);
+        if (!name_arg.tokens)
         {
-            appendElement(to, 'span', 'error').textContent = 'newcommand: expected arguments';
+            appendError(to, 'newcommand: expected name');
             return null;
         }
+        let argc = 0;
         if (from.firstChild instanceof Text && from.firstChild.data.charCodeAt(0) == SQUARE_IN)
         {
-            // TODO: read args!
+            const end = from.firstChild.data.indexOf(']');
+            if (end < 0)
+            {
+                appendError(to, 'newcommand: unmatched [: ');
+                to.appendChild(from.firstChild);
+                return null;
+            }
+            if (from.firstChild.data.length > end + 1)
+                from.firstChild.splitText(end + 1);
+            argc = Number(from.firstChild.data.substring(1, end));
             from.removeChild(from.firstChild);
         }
-        const def = new Argument(from);
-        if (!def.tokens)
+        const def_arg = new Argument(from);
+        if (!def_arg.tokens)
         {
-            appendElement(to, 'span', 'error').textContent = 'newcommand: expected '
+            appendError(to, 'newcommand: expected definition');
             return null;
         }
+        if (!(name_arg.tokens.childNodes.length == 1 &&
+            name_arg.tokens.firstChild instanceof Element &&
+            name_arg.tokens.firstChild.className == 'command'))
+        {
+            appendError(to, 'newcommand: first argument should be a single command token');
+            return null;
+        }
+        const name = name_arg.tokens.firstChild.textContent;
+        this[name] = (to: Element, from: Element) =>
+        {
+            from.removeChild(from.firstChild);
+            const body = def_arg.tokens.cloneNode(true) as Element;
+            if (argc > 0)
+            {
+                const args: Element[] = [];
+                for (let i = 0; i < argc; i++)
+                {
+                    const arg = new Argument(from);
+                    if (!arg.tokens)
+                    {
+                        appendError(to, name + ': too few arguments');
+                        return null;
+                    }
+                    args.push(arg.tokens);
+                }
+                substitute(args, body);
+            }
+            expand(to, body, null);
+        }
 
-        
+        to = appendElement(to, 'div', 'newcommand');
+        appendElement(to, 'span', 'command').textContent = 'newcommand';
+        to.appendChild(name_arg.tokens);
+        if (argc > 0)
+            appendElement(to, 'span', 'square').textContent = argc.toString();
+        to.appendChild(def_arg.tokens);
     }
 
     frac(to: Element, from: Element)
@@ -924,15 +1002,17 @@ class Commands
             if (q.tokens)
             {
                 to = appendElement(to, 'div', 'frac');
-                to.appendChild(p.tokens); p.tokens.className = 'numerator';
+                appendElement(to, 'div', 'numerator');
+                expand(to.lastElementChild, p.tokens, null);
                 appendElement(to, 'hr');
-                to.appendChild(q.tokens); q.tokens.className = 'denominator';
+                appendElement(to, 'div', 'denominator');
+                expand(to.lastElementChild, q.tokens, null);
             }
             else
-                appendElement(to, 'span', 'error').textContent = 'missing second argument to frac';
+                appendError(to, 'missing second argument to frac');
         }
         else
-            appendElement(to, 'span', 'error').textContent = 'missing arguments to frac';
+            appendError(to, 'missing arguments to frac');
         
     }
 }
@@ -942,14 +1022,16 @@ const commands = new Commands;
 class Expander
 {
     _default(to: Element, from: Element): string { to.appendChild(from.firstChild); return null; }
-    command(to: Element, from: Node): string { return (commands[from.firstChild.textContent] || commands._default)(to, from); }
+    command(to: Element, from: Node): string
+    {
+        return (commands[from.firstChild.textContent] || commands._default).call(commands, to, from);
+    }
 }
 
 const expander = new Expander;
 
 function expand(to: Element, from: Element, name: string)
 {
-    to = appendElement(to, 'div', name);
     while (from.firstChild != null)
     {
         if (from.firstChild instanceof Element)
@@ -971,7 +1053,7 @@ function expand(to: Element, from: Element, name: string)
 
 function parseDocument(text: string)
 {
-    const result = appendElement(document.body, 'div');
+    const result = appendElement(document.body, 'div', 'root');
     const tokens = appendElement(document.body, 'div', 'tokens');
     tokenize(new ReadState(text, 0), tokens);
     expand(result, tokens, 'root');

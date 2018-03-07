@@ -15,7 +15,11 @@
   "author": "Eivind Samuelsen",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^1.7.12"
+    "electron": "^1.8.2"
+  },
+  "-vs-binding": {
+    "AfterBuild": [
+      "start"
+    ]
   }
-, "-vs-binding":{"AfterBuild":["start"]}
 }

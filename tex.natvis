@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?> 
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+
+  <Type Name="tex::Vector&lt;*&gt;">
+    <DisplayString>{{size = {(_data._Mypair._Myval2 ? _data->size : 0),d}}}</DisplayString>
+    <Expand>
+      <ArrayItems>
+        <Size>_data._Mypair._Myval2 ? _data->size : 0</Size>
+        <ValuePointer>reinterpret_cast&lt;$T1*&gt;(_data+1)</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+  
+</AutoVisualizer>

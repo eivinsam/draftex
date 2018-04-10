@@ -4,6 +4,8 @@
 #include <variant>
 #include <fstream>
 #include <algorithm>
+#include <exception>
+#include <unordered_map>
 
 #include <oui_window.h>
 #include <oui_text.h>
@@ -12,6 +14,16 @@
 
 namespace tex
 {
+	class IllFormed : public std::exception
+	{
+		std::string _message;
+	public:
+
+		IllFormed(std::string message) : _message(std::move(message)) {  }
+
+		const char* what() const final { return _message.c_str(); }
+	};
+
 	namespace details
 	{
 		struct VectorHead
@@ -21,6 +33,11 @@ namespace tex
 
 			VectorHead(int capacity) : capacity(capacity) { }
 		};
+	}
+
+	inline std::string_view trimBack(const std::string& str) 
+	{
+		return std::string_view(str).substr(0, str.find_first_of(" \t\n\r"));
 	}
 
 	template <class T>
@@ -86,6 +103,14 @@ namespace tex
 			return *new (_first_unchecked() + (_data->size - 1)) T(std::forward<Args>(args)...);
 		}
 
+		void pop_back()
+		{
+			if (empty())
+				return;
+			back().~T();
+			--_data->size;
+		}
+
 		      T* begin()       { return !_data ? nullptr : _first_unchecked(); }
 		const T* begin() const { return !_data ? nullptr : _first_unchecked(); }
 		      T* end()       { return !_data ? nullptr : _first_unchecked() + _data->size; }
@@ -116,6 +141,19 @@ namespace tex
 		}
 	}
 
+	std::string readCurly(const char*& in, const char* const end)
+	{
+		if (in == end || *in != '{')
+			throw IllFormed("expected '{'");
+		std::string result;
+		for (++in; in != end && *in != '}'; ++in)
+			result.push_back(*in);
+		if (in == end)
+			throw IllFormed("no matching '}'");
+		++in;
+		return result;
+	}
+
 	Node tokenize(const char*& in, const char* const end, std::string data)
 	{
 		Node result{ data };
@@ -131,6 +169,26 @@ namespace tex
 				tok.push_back(*in);
 				for (++in; in != end && isalpha(*in); ++in)
 					tok.push_back(*in);
+				for (; in != end && (*in == ' ' || *in == '\t'); ++in)
+					tok.push_back(*in);
+
+				const auto trimtok = trimBack(tok);
+				if (trimtok == "\\begin")
+				{
+					if (tok != "\\begin")
+						throw IllFormed("spaces after \\begin not supported");
+					result.children.back() = tokenize(in, end, readCurly(in, end));
+					continue;
+				}
+				if (trimtok == "\\end")
+				{
+					if (tok != "\\end")
+						throw IllFormed("spaces after \\end not supported");
+					if (const auto envname = readCurly(in, end); envname != result.data)
+						throw IllFormed("\\begin{"+result.data+"} does not match \\end{"+envname+"}");
+					result.children.pop_back();
+					return result;
+				}
 				continue;
 			}
 			case '%':
@@ -140,11 +198,13 @@ namespace tex
 					tok.push_back(*in);
 				if (in != end)
 				{
+					tok.push_back(*in);
 					++in;
 					if (in != end &&
 						((in[-1] == '\n' && in[0] == '\r') ||
 						(in[-1] == '\r' && in[0] == '\n')))
 					{
+						tok.push_back(*in);
 						++in;
 					}
 				}
@@ -197,6 +257,68 @@ namespace tex
 
 }
 
+class Layout
+{
+public:
+	using Proc = oui::Point(*)(const tex::Node&, Layout&);
+
+	oui::Font sans;
+	oui::Font roman;
+	oui::Font* current_font;
+
+	oui::Rectangle area;
+
+	Layout(const oui::Window& window) : 
+		sans("Segoe UI", int(18*window.dpiFactor())),
+		roman("Times New Roman", int(18*window.dpiFactor())),
+		current_font(&sans)
+	{ }
+
+	static oui::Point root(const tex::Node& node, Layout& layout)
+	{
+		layout.current_font = &layout.sans;
+		for (auto&& e : node.children)
+		{
+			layout.render(e);
+		}
+		return layout.area.min;
+	}
+
+	static oui::Point document(const tex::Node& node, Layout& layout)
+	{
+		layout.area.popLeft((layout.area.width() - 40 * layout.roman.height()) / 2);
+		layout.area.popRight(layout.area.width() - 40 * layout.roman.height());
+		layout.current_font = &layout.roman;
+		for (auto&& e : node.children)
+		{
+
+			layout.render(e);
+		}
+		return layout.area.min;
+	}
+
+	oui::Point render(const tex::Node& node)
+	{
+		using namespace std::string_view_literals;
+		static const std::unordered_map<std::string_view, Proc> procs =
+		{
+			{ "root"sv, root },
+			{ "document"sv, document }
+		};
+
+		if (!node.children.empty())
+			if (auto found = procs.find(tex::trimBack(node.data)); found != procs.end())
+			{
+				found->second(node, *this);
+				return area.min;
+			}
+		auto result = current_font->drawText(area, node.data, oui::colors::black);
+		area.popTop(current_font->height());
+		return result;
+	}
+};
+
+
 std::string readFile(const std::string& filename)
 {
 	std::string result;
@@ -214,8 +336,7 @@ std::string readFile(const std::string& filename)
 int main()
 {
 	oui::Window window{ { "draftex", 1280, 720 } };
-
-	oui::Font font("Segoe UI", int(24*window.dpiFactor()));
+	Layout layout(window);
 
 
 	auto tokens = tex::tokenize(readFile("test.tex"));
@@ -223,10 +344,8 @@ int main()
 	while (window.update())
 	{
 		window.clear(oui::colors::white);
-		auto area = window.area();
-
-		
-		font.drawText(area, "hello", oui::colors::black);
+		layout.area = window.area();
+		layout.render(tokens);
 	}
 
 

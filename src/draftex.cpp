@@ -3,14 +3,19 @@
 #include <string_view>
 #include <variant>
 #include <fstream>
+#include <iterator>
 #include <algorithm>
-#include <exception>
+#include <stdexcept>
 #include <unordered_map>
 
 #include <oui_window.h>
 #include <oui_text.h>
 
 #pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
+
+template <class C, class T>
+auto count(C&& c, const T& value) { return std::count(std::begin(c), std::end(c), value); }
+
 
 namespace tex
 {
@@ -122,13 +127,166 @@ namespace tex
 		const T& back() const { return _first_unchecked()[_data->size-1]; }
 	};
 
+	enum class Type : char { text, space, command, comment, group };
+	enum class Flow : char { none, line, vertical };
+	enum class Font : char { mono, sans, roman };
+
+	class Context
+	{
+		oui::Font mono;
+		oui::Font sans;
+		oui::Font roman;
+	public:
+		oui::Font* current_font;
+
+		Context(const oui::Window& window) : 
+			mono{ "fonts/LinLibertine_Mah.ttf", int(20*window.dpiFactor()) },
+			sans{ "fonts/LinBiolinum_Rah.ttf", int(20*window.dpiFactor()) }, 
+			roman{ "fonts/LinLibertine_Rah.ttf", int(20*window.dpiFactor()) }, 
+			current_font{ &roman } { }
+
+		void reset(const oui::Window& window)
+		{
+			current_font = &roman;
+		}
+
+		oui::Font* font(Font f)
+		{
+			switch (f)
+			{
+			case Font::mono: return &mono;
+			case Font::sans: return &sans;
+			case Font::roman: return &roman;
+			default:
+				throw std::logic_error("unknown tex::Font");
+			}
+		}
+	};
+
 	struct Node
 	{
 		std::string data;
+		oui::Rectangle box;
 		Vector<Node> children;
 
 		Node(std::string data) : data(data) { }
 		Node(const char* str, size_t len) : data(str, len) { }
+
+		Type type() const
+		{
+			if (!children.empty())
+				return Type::group;
+			switch (data.front())
+			{
+			case '\\': return Type::command;
+			case '%': return Type::comment;
+			default:
+				return data.front() >= 0 && data.front() <= ' ' ? Type::space : Type::text;
+			}
+		}
+
+
+		struct Layout
+		{
+			oui::Vector size;
+			oui::Align align = oui::topLeft;
+			Flow flow = Flow::line;
+		};
+
+		Layout updateLayout(Context& con, float width)
+		{
+			switch (type())
+			{
+			case Type::text: 
+			case Type::comment:
+			case Type::command:
+				return { { con.current_font->offset(trimBack(data)), float(con.current_font->height()) } };
+			case Type::space:
+				return
+				{
+					{ 0, 0 },
+					oui::topLeft,
+					count(data, '\n') >= 2 ? Flow::vertical : Flow::none
+				};
+			case Type::group:
+			{
+				oui::Point pen;
+				Layout result;
+
+
+				if (data == "document")
+				{
+					//con.current_font = con.font(Font::roman);
+					width = con.current_font->height() * 20.0f;
+					result.flow = Flow::vertical;
+					result.align = oui::topCenter;
+				}
+
+				float line_height = 0;
+				Node* line_first = nullptr;
+
+				for (auto&& e : children)
+				{
+					const auto l = e.updateLayout(con, width);
+					switch (l.flow)
+					{
+					case Flow::vertical:
+						line_first = nullptr;
+						pen = { 0, pen.y + line_height };
+						result.flow = Flow::vertical;
+						line_height = 0;
+						e.box = l.align(oui::topLeft(pen).size({ width, 0 })).size(l.size);
+						break;
+					case Flow::line:
+						if (line_first == nullptr && e.type() != Type::space)
+							line_first = &e;
+						else if (pen.x + l.size.x > width)
+						{
+							int count = 0;
+							for (auto it = line_first; it != &e; ++it)
+								if (it->type() != Type::space)
+									++count;
+							const float incr = (width - pen.x)/(count-1);
+							float shift = 0;
+							for (auto it = line_first; it != &e; ++it)
+							{
+								it->box.min.x += shift;
+								it->box.max.x += shift;
+								if (it->type() != Type::space)
+									shift += incr;
+							}
+							line_first = &e;
+							pen = { 0, pen.y + line_height };
+							line_height = l.size.y;
+						}
+						else 
+							if (line_height < l.size.y)
+								line_height = l.size.y;
+						e.box = l.align(pen).size(l.size);
+						pen.x = pen.x + l.size.x + con.current_font->height()*0.25f;
+						break;
+					}
+					switch (l.flow)
+					{
+					case Flow::vertical:
+						break;
+					case Flow::line:
+						break;
+					}
+					if (result.size.x < e.box.max.x)
+						result.size.x = e.box.max.x;
+					if (result.size.y < e.box.max.y)
+						result.size.y = e.box.max.y;
+				}
+				if (result.flow == Flow::vertical)
+					result.size.x = width;
+				return result;
+			}
+			default:
+				throw std::logic_error("unknown tex::Type");
+			}
+		}
+	private:
 	};
 
 	inline bool isregular(char ch)
@@ -253,70 +411,7 @@ namespace tex
 		auto first = in.data();
 		return tokenize(first, first + in.size(), "root");
 	}
-
-
 }
-
-class Layout
-{
-public:
-	using Proc = oui::Point(*)(const tex::Node&, Layout&);
-
-	oui::Font sans;
-	oui::Font roman;
-	oui::Font* current_font;
-
-	oui::Rectangle area;
-
-	Layout(const oui::Window& window) : 
-		sans("Segoe UI", int(18*window.dpiFactor())),
-		roman("Times New Roman", int(18*window.dpiFactor())),
-		current_font(&sans)
-	{ }
-
-	static oui::Point root(const tex::Node& node, Layout& layout)
-	{
-		layout.current_font = &layout.sans;
-		for (auto&& e : node.children)
-		{
-			layout.render(e);
-		}
-		return layout.area.min;
-	}
-
-	static oui::Point document(const tex::Node& node, Layout& layout)
-	{
-		layout.area.popLeft((layout.area.width() - 40 * layout.roman.height()) / 2);
-		layout.area.popRight(layout.area.width() - 40 * layout.roman.height());
-		layout.current_font = &layout.roman;
-		for (auto&& e : node.children)
-		{
-
-			layout.render(e);
-		}
-		return layout.area.min;
-	}
-
-	oui::Point render(const tex::Node& node)
-	{
-		using namespace std::string_view_literals;
-		static const std::unordered_map<std::string_view, Proc> procs =
-		{
-			{ "root"sv, root },
-			{ "document"sv, document }
-		};
-
-		if (!node.children.empty())
-			if (auto found = procs.find(tex::trimBack(node.data)); found != procs.end())
-			{
-				found->second(node, *this);
-				return area.min;
-			}
-		auto result = current_font->drawText(area, node.data, oui::colors::black);
-		area.popTop(current_font->height());
-		return result;
-	}
-};
 
 
 std::string readFile(const std::string& filename)
@@ -333,19 +428,49 @@ std::string readFile(const std::string& filename)
 	return result;
 }
 
+void render(const oui::Vector& offset, const tex::Node& node, tex::Context& con)
+{
+	using tex::Type;
+	switch (node.type())
+	{
+	case Type::text:
+	case Type::command:
+	case Type::comment:
+		con.current_font->drawLine(node.box.min + offset, tex::trimBack(node.data), oui::colors::black);
+		return;
+	case Type::space:
+		return;
+	case Type::group:
+	{
+		if (node.data == "curly")
+		{
+			oui::fill(node.box + offset, oui::Color{ 0.8f, 0.7f, 0.0f, 0.3f });
+		}
+		const auto suboffset = offset + node.box.min - oui::Point{ 0,0 };
+		for (auto&& e : node.children)
+			render(suboffset, e, con);
+		return;
+	}
+	default:
+		throw std::logic_error("unknown tex::Type");
+	}
+}
+
 int main()
 {
 	oui::Window window{ { "draftex", 1280, 720 } };
-	Layout layout(window);
-
 
 	auto tokens = tex::tokenize(readFile("test.tex"));
 
-	while (window.update())
+	tex::Context context(window);
+
+	while (window.update(oui::Window::Messages::wait))
 	{
 		window.clear(oui::colors::white);
-		layout.area = window.area();
-		layout.render(tokens);
+		context.reset(window);
+		tokens.updateLayout(context, window.area().width());
+
+		render({ 0,0 }, tokens, context);
 	}
 
 

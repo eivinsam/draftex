@@ -40,96 +40,100 @@ namespace tex
 		};
 	}
 
-	inline std::string_view trimBack(const std::string& str) 
-	{
-		return std::string_view(str).substr(0, str.find_first_of(" \t\n\r"));
-	}
+	enum class Mode : char { text, math };
+	enum class Type : char { text, command, comment, group };
+	enum class Flow : char { none, line, vertical };
+	enum class FontType : char { mono, sans, roman };
 
 	template <class T>
-	class Vector
+	class BasicNode
 	{
-		using Head = details::VectorHead;
-		std::unique_ptr<Head> _data = nullptr;
-
-		std::unique_ptr<Head> _alloc(int new_capacity)
-		{
-			return std::unique_ptr<Head>{ new (new char[sizeof(Head) + sizeof(T)*new_capacity]) Head(new_capacity) };
-		}
-		      T* _first_unchecked()       { return reinterpret_cast<      T*>(_data.get() + 1); }
-		const T* _first_unchecked() const { return reinterpret_cast<const T*>(_data.get() + 1); }
-
-		void _ensure_space()
-		{
-			if (!_data)
-				_data = _alloc(4);
-			else if (_data->size == _data->capacity)
-				reserve(_data->capacity + std::max(1, _data->capacity >> 1)); // increase by 50%
-		}
+		using Owner = std::unique_ptr<T>;
+		T* _parent = nullptr;
+		Owner _next;
+		T* _prev = nullptr;
+		Owner _first;
+		T* _last = nullptr;
 	public:
-
-		int size() const { return _data ? _data->size : 0; }
-		bool empty() const { return size() == 0; }
-
-		void reserve(int new_capacity)
+		Owner detatch()
 		{
-			if (!_data)
+			if (!_parent)
+				throw std::logic_error("trying to detach loose child");
+			auto result = std::move(this == _parent->_first.get() ?
+				_parent->_first : _prev->_next);
+			if (_next)
+				_next->_prev = _prev;
+			else
+				_parent->_last = _prev;
+			_prev->_next = std::move(_next);
+			_prev = nullptr;
+			_parent = nullptr;
+			return result;
+		}
+
+		void append(Owner child)
+		{
+			if (child->_parent)
+				child->detatch();
+			child->_parent = static_cast<T*>(this);
+			child->_prev = _last;
+			if (_first)
 			{
-				_data = _alloc(new_capacity);
-				return;
+				_last->_next = std::move(child);
+				_last = _last->_next.get();
 			}
-			if (_data->capacity >= new_capacity)
-				return;
-
-			Vector temp;
-			temp.reserve(new_capacity);
-			for (auto&& e : *this)
-				temp.push_back(std::move(e));
-			std::swap(*this, temp);
-		}
-
-		T& push_back(const T& e)
-		{
-			_ensure_space();
-			++_data->size;
-			return *new (_first_unchecked() + (_data->size - 1)) T(e);
-		}
-		T& push_back(T&& e)
-		{
-			_ensure_space();
-			++_data->size;
-			return *new (_first_unchecked() + (_data->size - 1)) T(std::move(e));
+			else
+			{
+				_first = std::move(child);
+				_last = _first.get();
+			}
 		}
 
 		template <class... Args>
 		T& emplace_back(Args&&... args)
 		{
-			_ensure_space();
-			++_data->size;
-			return *new (_first_unchecked() + (_data->size - 1)) T(std::forward<Args>(args)...);
+			append(std::make_unique<T>(std::forward<Args>(args)...));
+			return back();
 		}
 
-		void pop_back()
+		T* parent() const { return _parent; }
+		bool empty() const { return !_first; }
+
+		T& front() { return *_first; }
+		T& back() { return *_last; }
+		const T& front() const { return *_first; }
+		const T& back() const { return *_last; }
+
+		template <class ValueType>
+		class Iterator
 		{
-			if (empty())
-				return;
-			back().~T();
-			--_data->size;
-		}
+			friend class BasicNode<T>;
+			ValueType* _it;
+			Iterator(ValueType* it) : _it(it) { }
+		public:
+			using iterator_category = std::forward_iterator_tag;
+			using difference_type = void;
+			using value_type = ValueType;
+			using reference  = ValueType&;
+			using pointer    = ValueType*;
 
-		      T* begin()       { return !_data ? nullptr : _first_unchecked(); }
-		const T* begin() const { return !_data ? nullptr : _first_unchecked(); }
-		      T* end()       { return !_data ? nullptr : _first_unchecked() + _data->size; }
-		const T* end() const { return !_data ? nullptr : _first_unchecked() + _data->size; }
+			Iterator& operator++() { _it = _it->_next.get(); return *this; }
 
-		      T& front()       { return _first_unchecked()[0]; }
-		const T& front() const { return _first_unchecked()[0]; }
-		      T& back()       { return _first_unchecked()[_data->size-1]; }
-		const T& back() const { return _first_unchecked()[_data->size-1]; }
+			reference operator*() const { return *_it; }
+			pointer operator->() const { return _it; }
+
+			bool operator==(const Iterator& other) const { return _it == other._it; }
+			bool operator!=(const Iterator& other) const { return _it != other._it; }
+		};
+
+		using iterator = Iterator<T>;
+		using const_iterator = Iterator<const T>;
+
+		      iterator begin()       { return { _first.get() }; }
+		const_iterator begin() const { return { _first.get() }; }
+		constexpr       iterator end()       { return { nullptr }; }
+		constexpr const_iterator end() const { return { nullptr }; }
 	};
-
-	enum class Type : char { text, space, command, comment, group };
-	enum class Flow : char { none, line, vertical };
-	enum class Font : char { mono, sans, roman };
 
 	class Context
 	{
@@ -137,54 +141,53 @@ namespace tex
 		oui::Font sans;
 		oui::Font roman;
 	public:
-		oui::Font* current_font;
 
-		Context(const oui::Window& window) : 
-			mono{ "fonts/LinLibertine_Mah.ttf", int(20*window.dpiFactor()) },
-			sans{ "fonts/LinBiolinum_Rah.ttf", int(20*window.dpiFactor()) }, 
-			roman{ "fonts/LinLibertine_Rah.ttf", int(20*window.dpiFactor()) }, 
-			current_font{ &roman } { }
+		Context(const oui::Window& window) :
+			mono{ "fonts/LinLibertine_Mah.ttf", int(20 * window.dpiFactor()) },
+			sans{ "fonts/LinBiolinum_Rah.ttf", int(20 * window.dpiFactor()) },
+			roman{ "fonts/LinLibertine_Rah.ttf", int(20 * window.dpiFactor()) } {}
 
 		void reset(const oui::Window& window)
 		{
-			current_font = &roman;
 		}
 
-		oui::Font* font(Font f)
+		oui::Font* font(FontType f)
 		{
 			switch (f)
 			{
-			case Font::mono: return &mono;
-			case Font::sans: return &sans;
-			case Font::roman: return &roman;
+			case FontType::mono: return &mono;
+			case FontType::sans: return &sans;
+			case FontType::roman: return &roman;
 			default:
-				throw std::logic_error("unknown tex::Font");
+				throw std::logic_error("unknown tex::FontType");
 			}
 		}
 	};
 
-	struct Node
+	class Node : public BasicNode<Node>
 	{
+	public:
 		std::string data;
 		oui::Rectangle box;
-		Vector<Node> children;
+		FontType font = FontType::mono;
 
 		Node(std::string data) : data(data) { }
 		Node(const char* str, size_t len) : data(str, len) { }
 
 		Type type() const
 		{
-			if (!children.empty())
+			if (!empty())
 				return Type::group;
 			switch (data.front())
 			{
 			case '\\': return Type::command;
 			case '%': return Type::comment;
 			default:
-				return data.front() >= 0 && data.front() <= ' ' ? Type::space : Type::text;
+				return Type::text;
 			}
 		}
-
+		std::string_view text() const { return std::string_view(data).substr(0, data.find_last_not_of(" \t\r\n")+1); }
+		std::string_view space() const { return std::string_view(data).substr(std::min(data.size(), data.find_last_not_of(" \t\r\n")+1)); }
 
 		struct Layout
 		{
@@ -193,99 +196,7 @@ namespace tex
 			Flow flow = Flow::line;
 		};
 
-		Layout updateLayout(Context& con, float width)
-		{
-			switch (type())
-			{
-			case Type::text: 
-			case Type::comment:
-			case Type::command:
-				return { { con.current_font->offset(trimBack(data)), float(con.current_font->height()) } };
-			case Type::space:
-				return
-				{
-					{ 0, 0 },
-					oui::topLeft,
-					count(data, '\n') >= 2 ? Flow::vertical : Flow::none
-				};
-			case Type::group:
-			{
-				oui::Point pen;
-				Layout result;
-
-
-				if (data == "document")
-				{
-					//con.current_font = con.font(Font::roman);
-					width = con.current_font->height() * 20.0f;
-					result.flow = Flow::vertical;
-					result.align = oui::topCenter;
-				}
-
-				float line_height = 0;
-				Node* line_first = nullptr;
-
-				for (auto&& e : children)
-				{
-					const auto l = e.updateLayout(con, width);
-					switch (l.flow)
-					{
-					case Flow::vertical:
-						line_first = nullptr;
-						pen = { 0, pen.y + line_height };
-						result.flow = Flow::vertical;
-						line_height = 0;
-						e.box = l.align(oui::topLeft(pen).size({ width, 0 })).size(l.size);
-						break;
-					case Flow::line:
-						if (line_first == nullptr && e.type() != Type::space)
-							line_first = &e;
-						else if (pen.x + l.size.x > width)
-						{
-							int count = 0;
-							for (auto it = line_first; it != &e; ++it)
-								if (it->type() != Type::space)
-									++count;
-							const float incr = (width - pen.x)/(count-1);
-							float shift = 0;
-							for (auto it = line_first; it != &e; ++it)
-							{
-								it->box.min.x += shift;
-								it->box.max.x += shift;
-								if (it->type() != Type::space)
-									shift += incr;
-							}
-							line_first = &e;
-							pen = { 0, pen.y + line_height };
-							line_height = l.size.y;
-						}
-						else 
-							if (line_height < l.size.y)
-								line_height = l.size.y;
-						e.box = l.align(pen).size(l.size);
-						pen.x = pen.x + l.size.x + con.current_font->height()*0.25f;
-						break;
-					}
-					switch (l.flow)
-					{
-					case Flow::vertical:
-						break;
-					case Flow::line:
-						break;
-					}
-					if (result.size.x < e.box.max.x)
-						result.size.x = e.box.max.x;
-					if (result.size.y < e.box.max.y)
-						result.size.y = e.box.max.y;
-				}
-				if (result.flow == Flow::vertical)
-					result.size.x = width;
-				return result;
-			}
-			default:
-				throw std::logic_error("unknown tex::Type");
-			}
-		}
+		Layout updateLayout(Context& con, FontType fonttype, float width);
 	private:
 	};
 
@@ -312,7 +223,7 @@ namespace tex
 		return result;
 	}
 
-	Node tokenize(const char*& in, const char* const end, std::string data)
+	Node tokenize(const char*& in, const char* const end, std::string data, Mode mode)
 	{
 		Node result{ data };
 
@@ -322,36 +233,36 @@ namespace tex
 			{
 			case '\\': 
 			{
-				auto& tok = result.children.emplace_back(in, 1).data;
+				auto& child = result.emplace_back(in, 1);
 				++in; 
-				tok.push_back(*in);
+				child.data.push_back(*in);
 				for (++in; in != end && isalpha(*in); ++in)
-					tok.push_back(*in);
+					child.data.push_back(*in);
 				for (; in != end && (*in == ' ' || *in == '\t'); ++in)
-					tok.push_back(*in);
+					child.data.push_back(*in);
 
-				const auto trimtok = trimBack(tok);
+				const auto trimtok = child.text();
 				if (trimtok == "\\begin")
 				{
-					if (tok != "\\begin")
+					if (child.data != "\\begin")
 						throw IllFormed("spaces after \\begin not supported");
-					result.children.back() = tokenize(in, end, readCurly(in, end));
+					result.back() = tokenize(in, end, readCurly(in, end), mode);
 					continue;
 				}
 				if (trimtok == "\\end")
 				{
-					if (tok != "\\end")
+					if (child.data != "\\end")
 						throw IllFormed("spaces after \\end not supported");
 					if (const auto envname = readCurly(in, end); envname != result.data)
 						throw IllFormed("\\begin{"+result.data+"} does not match \\end{"+envname+"}");
-					result.children.pop_back();
+					result.back().detatch();
 					return result;
 				}
 				continue;
 			}
 			case '%':
 			{
-				auto& tok = result.children.emplace_back(in, 1).data;
+				auto& tok = result.emplace_back(in, 1).data;
 				for (++in; in != end && *in != '\n' && *in != '\r'; ++in)
 					tok.push_back(*in);
 				if (in != end)
@@ -370,7 +281,7 @@ namespace tex
 			}
 			case '{':
 				++in;
-				result.children.emplace_back(tokenize(in, end, "curly"));
+				result.emplace_back(tokenize(in, end, "curly", mode));
 				continue;
 			case '}':
 				++in;
@@ -379,26 +290,25 @@ namespace tex
 				++in;
 				if (result.data == "math")
 					return result;
-				result.children.emplace_back(tokenize(in, end, "math"));
+				else if (mode == Mode::math)
+					throw IllFormed("improperly balanced group or environment in math mode");
+				result.emplace_back(tokenize(in, end, "math", Mode::math));
 				continue;
 			default:
 			{
 				if (*in >= 0 && *in <= ' ')
 				{
-					auto& tok = result.children.emplace_back(in, 1).data;
+					auto& tok = result.emplace_back(in, 1).data;
 					for (++in; in != end && *in >= 0 && *in <= ' '; ++in)
 						tok.push_back(*in);
 				}
 				else
 				{
-					auto tok = result.children.empty() || !result.children.back().children.empty() ?
-						nullptr : &result.children.back().data;
-					if (tok && *tok == " ")
-						tok->assign(in, 1);
-					else
-						tok = &result.children.emplace_back(in, 1).data;
+					auto& tok = result.emplace_back(in, 1).data;
 					for (++in; in != end && isregular(*in); ++in)
-						tok->push_back(*in);
+						tok.push_back(*in);
+					for (; in != end && (*in == ' ' || *in == '\t'); ++in)
+						tok.push_back(*in);
 				}
 				continue;
 			}
@@ -409,7 +319,104 @@ namespace tex
 	Node tokenize(std::string_view in) 
 	{
 		auto first = in.data();
-		return tokenize(first, first + in.size(), "root");
+		return tokenize(first, first + in.size(), "root", Mode::text);
+	}
+	Node::Layout Node::updateLayout(Context & con, FontType fonttype, float width)
+	{
+		font = FontType::sans;
+		switch (type())
+		{
+		case Type::text:
+			if (text() == "")
+				return
+				{
+					{ 0, 0 },
+					oui::topLeft,
+					count(data, '\n') >= 2 ? Flow::vertical : Flow::none
+				};
+		case Type::comment:
+			font = fonttype;
+		case Type::command:
+			return { { con.font(font)->offset(text()), float(con.font(font)->height()) } };
+		case Type::group:
+		{
+			oui::Point pen;
+			Layout result;
+
+			font = fonttype;
+
+			if (data == "document")
+			{
+				font = FontType::roman;
+				width = std::min(width, con.font(fonttype)->height() * 24.0f);
+				result.flow = Flow::vertical;
+				result.align = oui::topCenter;
+			}
+
+			float line_height = 0;
+			auto line_first = end();
+
+			for (auto it = begin(); it != end(); ++it)
+			{
+				auto&& e = *it;
+				const auto l = e.updateLayout(con, font, width);
+				switch (l.flow)
+				{
+				case Flow::vertical:
+					line_first = end();
+					pen = { 0, pen.y + line_height };
+					result.flow = Flow::vertical;
+					line_height = 0;
+					e.box = l.align(oui::topLeft(pen).size({ width, 0 })).size(l.size);
+					break;
+				case Flow::line:
+					if (line_first == end() && e.text() != "")
+						line_first = it;
+					else if (pen.x + l.size.x > width)
+					{
+						int count = 0;
+						for (auto jt = line_first; jt != it; ++jt)
+							if (jt->text() != "")
+								++count;
+						const float incr = (width - pen.x) / (count - 1);
+						float shift = 0;
+						for (auto jt = line_first; jt != it; ++jt)
+						{
+							jt->box.min.x += shift;
+							jt->box.max.x += shift;
+							if (jt->text() != "")
+								shift += incr;
+						}
+						line_first = it;
+						pen = { 0, pen.y + line_height };
+						line_height = l.size.y;
+					}
+					else
+						if (line_height < l.size.y)
+							line_height = l.size.y;
+					e.box = l.align(pen).size(l.size);
+					pen.x = pen.x + l.size.x + con.font(fonttype)->height()*0.25f;
+					break;
+				}
+				switch (l.flow)
+				{
+				case Flow::vertical:
+					break;
+				case Flow::line:
+					break;
+				}
+				if (result.size.x < e.box.max.x)
+					result.size.x = e.box.max.x;
+				if (result.size.y < e.box.max.y)
+					result.size.y = e.box.max.y;
+			}
+			if (result.flow == Flow::vertical)
+				result.size.x = width;
+			return result;
+		}
+		default:
+			throw std::logic_error("unknown tex::Type");
+		}
 	}
 }
 
@@ -434,11 +441,11 @@ void render(const oui::Vector& offset, const tex::Node& node, tex::Context& con)
 	switch (node.type())
 	{
 	case Type::text:
+		if (node.text() == "")
+			return;
 	case Type::command:
 	case Type::comment:
-		con.current_font->drawLine(node.box.min + offset, tex::trimBack(node.data), oui::colors::black);
-		return;
-	case Type::space:
+		con.font(node.font)->drawLine(node.box.min + offset, node.text(), oui::colors::black);
 		return;
 	case Type::group:
 	{
@@ -447,7 +454,7 @@ void render(const oui::Vector& offset, const tex::Node& node, tex::Context& con)
 			oui::fill(node.box + offset, oui::Color{ 0.8f, 0.7f, 0.0f, 0.3f });
 		}
 		const auto suboffset = offset + node.box.min - oui::Point{ 0,0 };
-		for (auto&& e : node.children)
+		for (auto&& e : node)
 			render(suboffset, e, con);
 		return;
 	}
@@ -456,11 +463,14 @@ void render(const oui::Vector& offset, const tex::Node& node, tex::Context& con)
 	}
 }
 
+
 int main()
 {
 	oui::Window window{ { "draftex", 1280, 720 } };
 
 	auto tokens = tex::tokenize(readFile("test.tex"));
+
+
 
 	tex::Context context(window);
 
@@ -468,7 +478,7 @@ int main()
 	{
 		window.clear(oui::colors::white);
 		context.reset(window);
-		tokens.updateLayout(context, window.area().width());
+		tokens.updateLayout(context, tex::FontType::sans, window.area().width());
 
 		render({ 0,0 }, tokens, context);
 	}

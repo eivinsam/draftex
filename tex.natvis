@@ -10,5 +10,18 @@
       </ArrayItems>
     </Expand>
   </Type>
+
+  <Type Name="tex::Node">
+    <DisplayString>{data}</DisplayString>
+    <Expand>
+      <Item Name="box">box</Item>
+      <Item Name="font">font</Item>
+      <LinkedListItems>
+        <HeadPointer>_first._Mypair._Myval2</HeadPointer>
+        <NextPointer>_next._Mypair._Myval2</NextPointer>
+        <ValueNode>this</ValueNode>
+      </LinkedListItems>
+    </Expand>
+  </Type>
   
 </AutoVisualizer>

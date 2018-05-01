@@ -16,6 +16,17 @@
 template <class C, class T>
 auto count(C&& c, const T& value) { return std::count(std::begin(c), std::end(c), value); }
 
+template <class To, class From>
+To narrow(From from)
+{
+	auto to = static_cast<To>(from);
+	if (static_cast<From>(to) != to)
+		throw std::runtime_error("narrowing falied");
+	if constexpr (std::is_signed_v<To> != std::is_signed_v<From>)
+		if (to < To{} != from < From{})
+			throw std::runtime_error("narrowing failed");
+	return to;
+}
 
 namespace tex
 {
@@ -41,7 +52,7 @@ namespace tex
 	}
 
 	enum class Mode : char { text, math };
-	enum class Type : char { text, command, comment, group };
+	enum class Type : char { text, space, command, comment, group };
 	enum class Flow : char { none, line, vertical };
 	enum class FontType : char { mono, sans, roman };
 
@@ -55,6 +66,33 @@ namespace tex
 		Owner _first;
 		T* _last = nullptr;
 	public:
+		constexpr BasicNode() = default;
+		BasicNode(BasicNode&& b) :
+			_parent(b._parent),
+			_next(std::move(b._next)), _prev(b._prev),
+			_first(std::move(b._first)), _last(b._last)
+		{
+			for (auto&& e : *this)
+				e._parent = static_cast<T*>(this);
+		}
+
+		BasicNode& operator=(BasicNode&& b)
+		{
+			_parent = b._parent;
+			_next = std::move(b._next);
+			_prev = b._prev;
+			_first = std::move(b._first);
+			_last = b._last;
+
+			for (auto&& e : *this)
+				e._parent = static_cast<T*>(this);
+
+			return *this;
+		}
+
+		T* next() const { return _next.get(); }
+		T* prev() const { return _prev; }
+
 		Owner detatch()
 		{
 			if (!_parent)
@@ -137,18 +175,20 @@ namespace tex
 
 	class Context
 	{
+		oui::Window* _w;
 		oui::Font mono;
 		oui::Font sans;
 		oui::Font roman;
 	public:
 
-		Context(const oui::Window& window) :
-			mono{ "fonts/LinLibertine_Mah.ttf", int(20 * window.dpiFactor()) },
-			sans{ "fonts/LinBiolinum_Rah.ttf", int(20 * window.dpiFactor()) },
-			roman{ "fonts/LinLibertine_Rah.ttf", int(20 * window.dpiFactor()) } {}
+		Context(oui::Window& window) : _w(&window), 
+			mono{ "fonts/LinLibertine_Mah.ttf", int(20 * _w->dpiFactor()) },
+			sans{ "fonts/LinBiolinum_Rah.ttf", int(20 * _w->dpiFactor()) },
+			roman{ "fonts/LinLibertine_Rah.ttf", int(20 * _w->dpiFactor()) } {}
 
-		void reset(const oui::Window& window)
+		void reset(oui::Window& window)
 		{
+			_w = &window;
 		}
 
 		oui::Font* font(FontType f)
@@ -162,10 +202,16 @@ namespace tex
 				throw std::logic_error("unknown tex::FontType");
 			}
 		}
+
+		oui::Window& window() const { return *_w; }
 	};
 
 	class Node : public BasicNode<Node>
 	{
+		template <class IT>
+		float _align_line(const float line_top, const IT first, const IT last);
+		bool _collect_line(Context& con, std::vector<Node*>& out);
+		void _layout_line(std::vector<tex::Node *> &line, oui::Point &pen, tex::Context & con, float width);
 	public:
 		std::string data;
 		oui::Rectangle box;
@@ -183,11 +229,13 @@ namespace tex
 			case '\\': return Type::command;
 			case '%': return Type::comment;
 			default:
-				return Type::text;
+				return data.front() < 0 || data.front() > ' ' ? 
+					Type::text : Type::space;
 			}
 		}
-		std::string_view text() const { return std::string_view(data).substr(0, data.find_last_not_of(" \t\r\n")+1); }
-		std::string_view space() const { return std::string_view(data).substr(std::min(data.size(), data.find_last_not_of(" \t\r\n")+1)); }
+
+		bool isText() const { return type() == Type::text; }
+		bool isSpace() const { return type() == Type::space; }
 
 		struct Layout
 		{
@@ -238,21 +286,14 @@ namespace tex
 				child.data.push_back(*in);
 				for (++in; in != end && isalpha(*in); ++in)
 					child.data.push_back(*in);
-				for (; in != end && (*in == ' ' || *in == '\t'); ++in)
-					child.data.push_back(*in);
 
-				const auto trimtok = child.text();
-				if (trimtok == "\\begin")
+				if (child.data == "\\begin")
 				{
-					if (child.data != "\\begin")
-						throw IllFormed("spaces after \\begin not supported");
 					result.back() = tokenize(in, end, readCurly(in, end), mode);
 					continue;
 				}
-				if (trimtok == "\\end")
+				if (child.data == "\\end")
 				{
-					if (child.data != "\\end")
-						throw IllFormed("spaces after \\end not supported");
 					if (const auto envname = readCurly(in, end); envname != result.data)
 						throw IllFormed("\\begin{"+result.data+"} does not match \\end{"+envname+"}");
 					result.back().detatch();
@@ -307,8 +348,6 @@ namespace tex
 					auto& tok = result.emplace_back(in, 1).data;
 					for (++in; in != end && isregular(*in); ++in)
 						tok.push_back(*in);
-					for (; in != end && (*in == ' ' || *in == '\t'); ++in)
-						tok.push_back(*in);
 				}
 				continue;
 			}
@@ -321,23 +360,46 @@ namespace tex
 		auto first = in.data();
 		return tokenize(first, first + in.size(), "root", Mode::text);
 	}
+	bool Node::_collect_line(Context & con, std::vector<Node*>& out)
+	{
+		switch (type())
+		{
+		case Type::space:
+			if (count(data, '\n') >= 2)
+				return false;
+			out.push_back(this);
+			return true;
+		case Type::group: 
+			if (data == "document")
+				return false;
+			for (auto&& e : *this)
+				e._collect_line(con, out);
+			return true;
+		default:
+			out.push_back(this);
+			return true;
+		}
+	}
 	Node::Layout Node::updateLayout(Context & con, FontType fonttype, float width)
 	{
 		font = FontType::sans;
 		switch (type())
 		{
+		case Type::space:
+			font = fonttype;
+			if (count(data, '\n') >= 2)
+				return { { 0,0 }, oui::topLeft, Flow::vertical };
+			return
+			{
+				{ ceil(con.font(font)->height()*0.25f), float(con.font(font)->height()) },
+				oui::topLeft,
+				Flow::none
+			};
 		case Type::text:
-			if (text() == "")
-				return
-				{
-					{ 0, 0 },
-					oui::topLeft,
-					count(data, '\n') >= 2 ? Flow::vertical : Flow::none
-				};
 		case Type::comment:
 			font = fonttype;
 		case Type::command:
-			return { { con.font(font)->offset(text()), float(con.font(font)->height()) } };
+			return { { con.font(font)->offset(data), float(con.font(font)->height()) } };
 		case Type::group:
 		{
 			oui::Point pen;
@@ -353,70 +415,114 @@ namespace tex
 				result.align = oui::topCenter;
 			}
 
-			float line_height = 0;
-			auto line_first = end();
+			std::vector<Node*> line;
 
 			for (auto it = begin(); it != end(); ++it)
 			{
-				auto&& e = *it;
-				const auto l = e.updateLayout(con, font, width);
-				switch (l.flow)
+				line.clear();
+				if (it->_collect_line(con, line))
 				{
-				case Flow::vertical:
-					line_first = end();
-					pen = { 0, pen.y + line_height };
-					result.flow = Flow::vertical;
-					line_height = 0;
-					e.box = l.align(oui::topLeft(pen).size({ width, 0 })).size(l.size);
-					break;
-				case Flow::line:
-					if (line_first == end() && e.text() != "")
-						line_first = it;
-					else if (pen.x + l.size.x > width)
-					{
-						int count = 0;
-						for (auto jt = line_first; jt != it; ++jt)
-							if (jt->text() != "")
-								++count;
-						const float incr = (width - pen.x) / (count - 1);
-						float shift = 0;
-						for (auto jt = line_first; jt != it; ++jt)
-						{
-							jt->box.min.x += shift;
-							jt->box.max.x += shift;
-							if (jt->text() != "")
-								shift += incr;
-						}
-						line_first = it;
-						pen = { 0, pen.y + line_height };
-						line_height = l.size.y;
-					}
-					else
-						if (line_height < l.size.y)
-							line_height = l.size.y;
-					e.box = l.align(pen).size(l.size);
-					pen.x = pen.x + l.size.x + con.font(fonttype)->height()*0.25f;
-					break;
+					++it;
+					while (it != end() && it->_collect_line(con, line))
+						++it;
+					_layout_line(line, pen, con, width);
+					if (it == end())  break;
+					else  continue;
 				}
-				switch (l.flow)
-				{
-				case Flow::vertical:
-					break;
-				case Flow::line:
-					break;
-				}
-				if (result.size.x < e.box.max.x)
-					result.size.x = e.box.max.x;
-				if (result.size.y < e.box.max.y)
-					result.size.y = e.box.max.y;
+				const auto l = it->updateLayout(con, font, width);
+				it->box = l.align(oui::topLeft(pen).size({ width, 0 })).size(l.size);
+				pen.y += l.size.y;
 			}
-			if (result.flow == Flow::vertical)
-				result.size.x = width;
+			result.size.x = width;
+			result.size.y = pen.y;
 			return result;
 		}
 		default:
 			throw std::logic_error("unknown tex::Type");
 		}
+	}
+	void Node::_layout_line(std::vector<tex::Node *> &line, oui::Point &pen, tex::Context & con, float width)
+	{
+		auto line_first = line.begin();
+		while (line_first != line.end() && (*line_first)->isSpace())
+		{
+			(*line_first)->box = oui::topLeft(pen).size({ 0,0 });
+			++line_first;
+		}
+		int space_count = 0;
+		for (auto lit = line_first; lit != line.end(); ++lit)
+		{
+			const auto l = (*lit)->updateLayout(con, font, width);
+			if (pen.x + l.size.x < width)
+			{
+				if ((*lit)->isSpace())
+					++space_count;
+				(*lit)->box = l.align(pen).size(l.size);
+				pen.x = (*lit)->box.max.x;
+				continue;
+			}
+			if ((*lit)->isSpace())
+				++space_count;
+			// end of line reached
+			if (space_count > 0)
+			{
+				// try to reach back before previous space
+				while (!(*lit)->isSpace())
+					--lit;
+				while ((*lit)->isSpace())
+				{
+					--lit;
+					--space_count;
+				}
+			}
+			float left = width - (*lit)->box.max.x;
+			++lit;
+			float shift = 0;
+			for (auto it = line_first; it != lit; ++it)
+			{
+				Node& e = **it;
+				e.box.min.x += shift;
+				if (e.isSpace())
+				{
+					const auto incr = floor(left / space_count);
+					shift += incr;
+					left -= incr;
+					--space_count;
+				}
+				e.box.max.x += shift;
+			}
+			pen.x = 0;
+			pen.y += _align_line(pen.y, line_first, lit);
+			while (lit != line.end() && (*lit)->isSpace())
+			{
+				(*lit)->box = oui::topLeft(pen).size({ 0,0 });
+				++lit;
+			}
+			line_first = lit;
+			--lit;
+		}
+		pen.x = 0;
+		pen.y += _align_line(pen.y, line_first, line.end());
+	}
+	template<class IT>
+	float Node::_align_line(const float line_top, const IT first, const IT last)
+	{
+		float line_min = line_top;
+		float line_max = line_top;
+		for (auto it = first; it != last; ++it)
+		{
+			Node& e = **it;
+			line_min = std::min(line_min, e.box.min.y);
+			line_max = std::max(line_max, e.box.max.y);
+		}
+		const float adjust_y = line_min - line_top;
+		for (auto it = first; it != last; ++it)
+		{
+			Node& e = **it;
+			e.box.min.y += adjust_y;
+			e.box.max.y += adjust_y;
+		}
+		return line_max - line_min;
 	}
 }
 
@@ -441,11 +547,11 @@ void render(const oui::Vector& offset, const tex::Node& node, tex::Context& con)
 	switch (node.type())
 	{
 	case Type::text:
-		if (node.text() == "")
-			return;
 	case Type::command:
 	case Type::comment:
-		con.font(node.font)->drawLine(node.box.min + offset, node.text(), oui::colors::black);
+		con.font(node.font)->drawLine(node.box.min + offset, node.data, oui::colors::black);
+		return;
+	case Type::space:
 		return;
 	case Type::group:
 	{
@@ -463,6 +569,181 @@ void render(const oui::Vector& offset, const tex::Node& node, tex::Context& con)
 	}
 }
 
+int utf8len(unsigned char ch)
+{
+	switch (ch >> 4)
+	{
+	case 0xf: return 4;
+	case 0xe: return 3;
+	case 0xd: case 0xc: return 2;
+	default:
+		return (ch >> 7) ^ 1;
+	}
+}
+
+struct Caret
+{
+	tex::Node* node = nullptr;
+	int offset = 0;
+
+	void render(tex::Context& con)
+	{
+		if (!con.window().focus())
+			return;
+
+		auto pos = node->box.min;
+		pos.x += con.font(node->font)->offset(std::string_view(node->data).substr(0, offset)) -1;
+		for (auto p = node->parent(); p != nullptr; p = p->parent())
+			pos = pos + (p->box.min - oui::origo);
+
+		oui::fill(oui::topLeft(pos).size({ 2.0f, float(con.font(node->font)->height()) }), oui::colors::black);
+	}
+
+	int repairOffset(int off)
+	{
+		while (off > 0 && utf8len(node->data[off]) == 0)
+			--off;
+		return off;
+	}
+
+	void next()
+	{
+		const auto next_node = [&]
+		{
+		};
+		if (!node)
+			return;
+
+		if (!node->isText() || 
+			(offset += utf8len(node->data[offset])) >= narrow<int>(node->data.size()))
+		{
+			if (node->next())
+			{
+				node = node->next();
+				offset = 0;
+				return;
+			}
+			offset = narrow<int>(node->data.size());
+		}
+	}
+	void prev()
+	{
+		if (!node)
+			return;
+		if (offset > 0)
+		{
+			--offset;
+			if (node->isText())
+				offset = repairOffset(offset);
+			return;
+		}
+		if (node->prev())
+		{
+			node = node->prev();
+			offset = node->isText() ? narrow<int>(node->data.size()-1) : 0;
+			return;
+		}
+		offset = 0;
+	}
+
+	void findPlace(tex::Context& con, const float target)
+	{
+		if (!node->isText())
+		{
+			offset = 0;
+			if (target - node->box.min.x > node->box.max.x - target)
+				next();
+			return;
+		}
+		const auto font = con.font(node->font);
+		const auto text = std::string_view(node->data);
+		auto prev_x = node->box.min.x;
+		for (int i = 0, len = 1; size_t(i) < text.size(); i += len)
+		{
+			len = utf8len(node->data[i]);
+			const auto x = prev_x + font->offset(text.substr(i, len));
+			if (x >= target)
+			{
+				offset = x - target > target - prev_x ? i : i + len;
+				return;
+			}
+			prev_x = x;
+		}
+		offset = text.size();
+	}
+
+	void up(tex::Context& con)
+	{
+		if (!node)
+			return;
+
+		const auto target = node->box.min.x 
+			+ con.font(node->font)->offset(std::string_view(node->data).substr(0, offset));
+
+		for (auto n = node->prev(); n != nullptr; n = n->prev())
+			if (n->box.min.x <= target && target < n->box.max.x)
+			{
+				node = n;
+				findPlace(con, target);
+				return;
+			}
+	}
+	void down(tex::Context& con)
+	{
+		if (!node)
+			return;
+
+		const auto target = node->box.min.x
+			+ con.font(node->font)->offset(std::string_view(node->data).substr(0, offset));
+
+		for (auto n = node->next(); n != nullptr; n = n->next())
+			if (n->box.min.x <= target && target < n->box.max.x)
+			{
+				node = n;
+				findPlace(con, target);
+				return;
+			}
+	}
+	void eraseNext()
+	{
+		const auto handle_empty = [this]
+		{
+			if (node->next())
+			{
+				node = node->next();
+				node->prev()->detatch();
+				return;
+			}
+			if (node->prev())
+			{
+				prev();
+				node->next()->detatch();
+				return;
+			}
+		};
+
+		if (!node->isText())
+		{
+			if (offset > 0)
+				return;
+			handle_empty();
+			return;
+		}
+		node->data.erase(offset, utf8len(node->data[offset]));
+		if (node->data.empty())
+		{
+			handle_empty();
+		}
+	}
+	void erasePrev()
+	{
+		auto old_node = node;
+		auto old_off = offset;
+		prev();
+		if (old_off != offset || old_node != node)
+			eraseNext();
+	}
+};
 
 int main()
 {
@@ -470,17 +751,80 @@ int main()
 
 	auto tokens = tex::tokenize(readFile("test.tex"));
 
-
-
 	tex::Context context(window);
 
-	while (window.update(oui::Window::Messages::wait))
+	Caret caret;
+	for (auto&& e : tokens)
+		if (e.data == "document")
+		{
+			for (auto&& de : e)
+				if (de.type() == tex::Type::text)
+				{
+					caret.node = &de;
+					break;
+				}
+			break;
+		}
+
+	bool layout_dirty = true;
+	window.resize = [&](auto&&) { layout_dirty = true; };
+
+	oui::input.keydown = [&](auto key)
+	{
+		using oui::Key;
+		switch (key)
+		{
+		case Key::right: caret.next(); break;
+		case Key::left: caret.prev(); break;
+		case Key::up: caret.up(context); break;
+		case Key::down: caret.down(context); break;
+		case Key::backspace: caret.erasePrev(); layout_dirty = true; break;
+		case Key::del:       caret.eraseNext(); layout_dirty = true; break;
+		default: 
+			return;
+		}
+		window.redraw();
+	};
+	oui::input.character = [&](auto ch)
+	{
+		if (ch < ' ')
+			return;
+		if (ch == ' ')
+			return;
+
+		char utf8[] = { 0,0,0,0,0 };
+		if (ch < 0x80)
+			utf8[0] = char(ch);
+		else if (ch < 0x800)
+		{
+			utf8[0] = 0xc0 | (ch >> 6);
+			utf8[1] = 0x80 | (ch & 0x3f);
+		}
+		else
+		{
+			utf8[0] = 0xe0 | ((ch >> 12) & 0x0f);
+			utf8[1] = 0x80 | ((ch >>  6) & 0x3f);
+			utf8[2] = 0x80 | ( ch        & 0x3f);
+		}
+		caret.node->data.insert(caret.offset, utf8);
+		caret.offset += strlen(utf8);
+		layout_dirty = true;
+		window.redraw();
+		return;
+	};
+
+	while (window.update())
 	{
 		window.clear(oui::colors::white);
 		context.reset(window);
-		tokens.updateLayout(context, tex::FontType::sans, window.area().width());
+		if (std::exchange(layout_dirty, false))
+		{
+			tokens.updateLayout(context, tex::FontType::sans, window.area().width());
+		}
 
 		render({ 0,0 }, tokens, context);
+
+		caret.render(context);
 	}
 
 

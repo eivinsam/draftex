@@ -106,6 +106,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\draftex.cpp" />
+    <ClCompile Include="src\tex_node.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="oui\oui.vcxproj">
@@ -114,6 +115,10 @@
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="tex.natvis" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\tex.h" />
+    <ClInclude Include="include\tex_node.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

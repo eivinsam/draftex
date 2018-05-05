@@ -3,8 +3,15 @@
 
 namespace tex
 {
-	template <>
-	std::unique_ptr<Node> BasicNode<Node>::detatch()
+	void Node::insertBefore(Owner<Node> sibling)
+	{
+		sibling->_parent = _parent;
+		sibling->_prev = _prev;
+		auto& new_owner = _prev ? _prev->_next : _parent->_first;
+		sibling->_next = std::move(new_owner);
+		_prev = (new_owner = std::move(sibling)).get();
+	}
+	Owner<Node> Node::detach()
 	{
 		if (!_parent)
 			throw std::logic_error("trying to detach loose child");
@@ -19,29 +26,22 @@ namespace tex
 		_parent = nullptr;
 		return result;
 	}
-	template<>
-	void BasicNode<Node>::append(std::unique_ptr<Node> child)
+	Node& Group::append(Owner<Node> child)
 	{
 		if (child->_parent)
-			child->detatch();
-		child->_parent = static_cast<Node*>(this);
+			child->detach();
+		child->_parent = this;
 		child->_prev = _last;
-		if (_first)
-		{
-			_last->_next = std::move(child);
-			_last = _last->_next.get();
-		}
-		else
-		{
-			_first = std::move(child);
-			_last = _first.get();
-		}
+		auto& new_owner = !_first ? _first : _last->_next;
+		new_owner = std::move(child);
+		_last = new_owner.get();
+		return *_last;
 	}
 
 
-	Node tokenize(const char *& in, const char * const end, std::string data, Mode mode)
+	Owner<Group> tokenize(const char *& in, const char * const end, std::string data, Mode mode)
 	{
-		Node result{ data };
+		auto result = Group::create(data);
 
 		while (in != end)
 		{
@@ -49,29 +49,29 @@ namespace tex
 			{
 			case '\\':
 			{
-				auto& child = result.emplace_back(in, 1);
+				auto& child = result->append(Command::make());
 				++in;
 				child.data.push_back(*in);
 				for (++in; in != end && isalpha(*in); ++in)
 					child.data.push_back(*in);
 
-				if (child.data == "\\begin")
+				if (child.data == "begin")
 				{
-					result.back() = tokenize(in, end, readCurly(in, end), mode);
+					result->back().replace(tokenize(in, end, readCurly(in, end), mode));
 					continue;
 				}
-				if (child.data == "\\end")
+				if (child.data == "end")
 				{
-					if (const auto envname = readCurly(in, end); envname != result.data)
-						throw IllFormed("\\begin{" + result.data + "} does not match \\end{" + envname + "}");
-					result.back().detatch();
+					if (const auto envname = readCurly(in, end); envname != result->data)
+						throw IllFormed("\\begin{" + result->data + "} does not match \\end{" + envname + "}");
+					result->back().detach();
 					return result;
 				}
 				continue;
 			}
 			case '%':
 			{
-				auto& tok = result.emplace_back(in, 1).data;
+				auto& tok = result->append(Comment::make()).data;
 				for (++in; in != end && *in != '\n' && *in != '\r'; ++in)
 					tok.push_back(*in);
 				if (in != end)
@@ -90,31 +90,31 @@ namespace tex
 			}
 			case '{':
 				++in;
-				result.emplace_back(tokenize(in, end, "curly", mode));
+				result->append(tokenize(in, end, "curly", mode));
 				continue;
 			case '}':
 				++in;
 				return result;
 			case '$':
 				++in;
-				if (result.data == "math")
+				if (result->data == "math")
 					return result;
 				else if (mode == Mode::math)
 					throw IllFormed("improperly balanced group or environment in math mode");
-				result.emplace_back(tokenize(in, end, "math", Mode::math));
+				result->append(tokenize(in, end, "math", Mode::math));
 				continue;
 			default:
 			{
 				if (*in >= 0 && *in <= ' ')
 				{
-					auto& tok = result.emplace_back(in, 1).data;
-					for (++in; in != end && *in >= 0 && *in <= ' '; ++in)
+					auto& tok = result->append(Space::make()).data;
+					for (; in != end && *in >= 0 && *in <= ' '; ++in)
 						tok.push_back(*in);
 				}
 				else
 				{
-					auto& tok = result.emplace_back(in, 1).data;
-					for (++in; in != end && isregular(*in); ++in)
+					auto& tok = result->append(Text::make()).data;
+					for (; in != end && isregular(*in); ++in)
 						tok.push_back(*in);
 				}
 				continue;
@@ -139,85 +139,86 @@ namespace tex
 
 	bool Node::_collect_line(Context & con, std::vector<Node*>& out)
 	{
-		switch (type())
-		{
-		case Type::space:
-			if (count(data, '\n') >= 2)
-				return false;
-			out.push_back(this);
-			return true;
-		case Type::group:
-			if (data == "document")
-				return false;
-			for (auto&& e : *this)
-				e._collect_line(con, out);
-			return true;
-		default:
-			out.push_back(this);
-			return true;
-		}
+		out.push_back(this);
+		return true;
+	}
+	bool Group::_collect_line(Context & con, std::vector<Node*>& out)
+	{
+		if (data == "document")
+			return false;
+		for (auto&& e : *this)
+			e._collect_line(con, out);
+		return true;
+	}
+	bool Space::_collect_line(Context & con, std::vector<Node*>& out)
+	{
+		if (count(data, '\n') >= 2)
+			return false;
+		out.push_back(this);
+		return true;
 	}
 	Node::Layout Node::updateLayout(Context & con, FontType fonttype, float width)
 	{
-		font = FontType::sans;
-		switch (type())
-		{
-		case Type::space:
-			font = fonttype;
-			if (count(data, '\n') >= 2)
-				return { { 0,0 }, oui::topLeft, Flow::vertical };
-			return
-			{
-				{ ceil(con.font(font)->height()*0.25f), float(con.font(font)->height()) },
-				oui::topLeft,
-				Flow::none
-			};
-		case Type::text:
-		case Type::comment:
-			font = fonttype;
-		case Type::command:
-			return { { con.font(font)->offset(data), float(con.font(font)->height()) } };
-		case Type::group:
-		{
-			oui::Point pen;
-			Layout result;
-
-			font = fonttype;
-
-			if (data == "document")
-			{
-				font = FontType::roman;
-				width = std::min(width, con.font(fonttype)->height() * 24.0f);
-				result.flow = Flow::vertical;
-				result.align = oui::topCenter;
-			}
-
-			std::vector<Node*> line;
-
-			for (auto it = begin(); it != end(); ++it)
-			{
-				line.clear();
-				if (it->_collect_line(con, line))
-				{
-					++it;
-					while (it != end() && it->_collect_line(con, line))
-						++it;
-					_layout_line(line, pen, con, width);
-					if (it == end())  break;
-				}
-				const auto l = it->updateLayout(con, font, width);
-				it->box = l.align(oui::topLeft(pen).size({ width, 0 })).size(l.size);
-				pen.y += l.size.y;
-			}
-			result.size.x = width;
-			result.size.y = pen.y;
-			return result;
-		}
-		default:
-			throw std::logic_error("unknown tex::Type");
-		}
+		auto font = con.font(fonttype);
+		return { { font->offset(data), float(font->height()) } };
 	}
-	void Node::_layout_line(std::vector<tex::Node *> &line, oui::Point &pen, tex::Context & con, float width)
+	Node::Layout Text::updateLayout(Context & con, FontType fonttype, float width)
+	{
+		font = fonttype;
+		auto font = con.font(fonttype);
+		return { { font->offset(data), float(font->height()) } };
+	}
+	Node::Layout Group::updateLayout(Context & con, FontType fonttype, float width)
+	{
+		oui::Point pen;
+		Layout result;
+
+		//font = fonttype;
+
+		if (data == "document")
+		{
+			fonttype = FontType::roman;
+			width = std::min(width, con.font(fonttype)->height() * 24.0f);
+			result.flow = Flow::vertical;
+			result.align = oui::topCenter;
+		}
+
+		std::vector<Node*> line;
+
+		for (auto it = begin(); it != end(); ++it)
+		{
+			line.clear();
+			if (it->_collect_line(con, line))
+			{
+				++it;
+				while (it != end() && it->_collect_line(con, line))
+					++it;
+				_layout_line(line, pen, fonttype, con, width);
+				if (it == end())  break;
+			}
+			const auto l = it->updateLayout(con, fonttype, width);
+			it->box = l.align(oui::topLeft(pen).size({ width, 0 })).size(l.size);
+			pen.y += l.size.y;
+		}
+		result.size.x = width;
+		result.size.y = pen.y;
+		return result;
+	}
+	Node::Layout Space::updateLayout(Context & con, FontType fonttype, float width)
+	{
+		if (count(data, '\n') >= 2)
+			return { { 0,0 }, oui::topLeft, Flow::vertical };
+		auto font = con.font(fonttype);
+		return
+		{
+			{ ceil(font->height()*0.25f), float(font->height()) },
+			oui::topLeft,
+			Flow::none
+		};
+	}
+
+	void Group::_layout_line(std::vector<tex::Node *> &line, oui::Point &pen, FontType fonttype, 
+		tex::Context & con, float width)
 	{
 		auto line_first = line.begin();
 		while (line_first != line.end() && (*line_first)->isSpace())
@@ -228,7 +229,7 @@ namespace tex
 		int space_count = 0;
 		for (auto lit = line_first; lit != line.end(); ++lit)
 		{
-			const auto l = (*lit)->updateLayout(con, font, width);
+			const auto l = (*lit)->updateLayout(con, fonttype, width);
 			if (pen.x + l.size.x < width)
 			{
 				if ((*lit)->isSpace())
@@ -281,7 +282,7 @@ namespace tex
 		pen.y += _align_line(pen.y, line_first, line.end());
 	}
 	template<class IT>
-	float Node::_align_line(const float line_top, const IT first, const IT last)
+	float Group::_align_line(const float line_top, const IT first, const IT last)
 	{
 		float line_min = line_top;
 		float line_max = line_top;

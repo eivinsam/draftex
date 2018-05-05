@@ -45,7 +45,6 @@ namespace tex
 	}
 
 	enum class Mode : char { text, math };
-	enum class Type : char { text, space, command, comment, group };
 	enum class Flow : char { none, line, vertical };
 	enum class FontType : char { mono, sans, roman };
 

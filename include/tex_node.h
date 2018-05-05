@@ -4,78 +4,127 @@
 
 namespace tex
 {
-	class Node;
 	template <class T>
-	class BasicNode
+	using Owner = std::unique_ptr<T>;
+
+	template <class To, class From>
+	inline auto as(From* from)
 	{
-		using Owner = std::unique_ptr<T>;
-		T* _parent = nullptr;
-		Owner _next;
-		T* _prev = nullptr;
-		Owner _first;
-		T* _last = nullptr;
+		return dynamic_cast<std::conditional_t<std::is_const_v<From>, const To*, To*>>(from); 
+	}
+
+	class Group;
+	class Command;
+	class Comment;
+	class Space;
+	class Text;
+	class Node
+	{
+		friend class Group;
+
+		Group* _parent = nullptr;
+		Owner<Node> _next;
+		Node* _prev = nullptr;
+	protected:
+		virtual bool _collect_line(Context& con, std::vector<Node*>& out);
 	public:
-		constexpr BasicNode() = default;
-		BasicNode(BasicNode&& b) :
-			_parent(b._parent),
-			_next(std::move(b._next)), _prev(b._prev),
-			_first(std::move(b._first)), _last(b._last)
+		std::string data;
+		oui::Rectangle box;
+
+		Node() = default;
+
+		Node* next() const { return _next.get(); }
+		Node* prev() const { return _prev; }
+
+		Group* parent() const { return _parent; }
+		void insertBefore(Owner<Node> sibling);
+		Owner<Node> detach();
+		Owner<Node> replace(Owner<Node> replacement)
 		{
-			for (auto&& e : *this)
-				e._parent = static_cast<T*>(this);
+			insertBefore(std::move(replacement));
+			return detach();
 		}
 
-		BasicNode& operator=(BasicNode&& b)
+		struct Visitor
 		{
-			_parent = b._parent;
-			_next = std::move(b._next);
-			_prev = b._prev;
+			virtual void operator()(Group& group) = 0;
+			virtual void operator()(Command& cmd) = 0;
+			virtual void operator()(Comment& cmt) = 0;
+			virtual void operator()(Space& space) = 0;
+			virtual void operator()(Text& text) = 0;
+		};
+
+		void visit(Visitor&& v) { visit(v); }
+		virtual void visit(Visitor&) = 0;
+
+		virtual bool isSpace() const { return false; }
+		virtual bool isText() const { return false; }
+
+		struct Layout
+		{
+			oui::Vector size;
+			oui::Align align = oui::topLeft;
+			Flow flow = Flow::line;
+		};
+
+		virtual Layout updateLayout(Context& con, FontType fonttype, float width);
+	};
+
+	class Group : public Node
+	{
+		friend class Node;
+		Owner<Node> _first;
+		Node* _last;
+
+		template <class IT>
+		float _align_line(const float line_top, const IT first, const IT last);
+		void _layout_line(std::vector<tex::Node*> &line, oui::Point &pen, FontType, tex::Context & con, float width);
+		bool _collect_line(Context& con, std::vector<Node*>& out) override;
+	public:
+		using Node::visit;
+		void visit(Visitor& v) override { v(*this); }
+
+		Group() = default;
+
+		Group(Group&& b)
+			: Node(std::move(b)), _first(std::move(b._first)), _last(b._last)
+		{
+			for (auto&& n : *this)
+				n._parent = this;
+		}
+
+		static Owner<Group> create(std::string name) 
+		{
+			auto result = std::make_unique<Group>();
+			result->data = name;
+			return result;
+		}
+
+		Group& operator=(Group&& b)
+		{
+			static_cast<Node&>(*this) = std::move(b);
 			_first = std::move(b._first);
 			_last = b._last;
-
-			for (auto&& e : *this)
-				e._parent = static_cast<T*>(this);
-
-			return *this;
+			for (auto&& n : *this)
+				n._parent = this;
 		}
 
-		T* next() const { return _next.get(); }
-		T* prev() const { return _prev; }
 
-		Owner detatch();
+		Node& append(Owner<Node> child);
 
-		void append(Owner child);
-
-		void insertBefore(Owner sibling)
-		{
-			sibling->_parent = _parent;
-			sibling->_prev = _prev;
-			Owner& new_owner = _prev ? _prev->_next : _parent->_first;
-			sibling->_next = std::move(new_owner);
-			_prev = (new_owner = std::move(sibling)).get();
-		}
-
-		template <class... Args>
-		T& emplace_back(Args&&... args)
-		{
-			append(std::make_unique<T>(std::forward<Args>(args)...));
-			return back();
-		}
-
-		T* parent() const { return _parent; }
 		bool empty() const { return !_first; }
 
-		T& front() { return *_first; }
-		T& back() { return *_last; }
-		const T& front() const { return *_first; }
-		const T& back() const { return *_last; }
+		Node& front() { return *_first; }
+		Node& back() { return *_last; }
+		const Node& front() const { return *_first; }
+		const Node& back() const { return *_last; }
 
 		template <class ValueType>
 		class Iterator
 		{
-			friend class BasicNode<T>;
+			friend class Group;
 			ValueType* _it;
-			Iterator(ValueType* it) : _it(it) { }
+			constexpr Iterator(ValueType* it) : _it(it) { }
 		public:
 			using iterator_category = std::forward_iterator_tag;
 			using difference_type = void;
@@ -92,63 +141,73 @@ namespace tex
 			bool operator!=(const Iterator& other) const { return _it != other._it; }
 		};
 
-		using iterator = Iterator<T>;
-		using const_iterator = Iterator<const T>;
+		using iterator = Iterator<Node>;
+		using const_iterator = Iterator<const Node>;
 
 		iterator begin() { return { _first.get() }; }
 		const_iterator begin() const { return { _first.get() }; }
 		constexpr       iterator end() { return { nullptr }; }
 		constexpr const_iterator end() const { return { nullptr }; }
+
+		Layout updateLayout(Context& con, FontType fonttype, float width) override;
 	};
-	template<> std::unique_ptr<Node> BasicNode<Node>::detatch();
-	template<> void BasicNode<Node>::append(std::unique_ptr<Node> child);
 
-	class Node : public BasicNode<Node>
+	class Command : public Node
 	{
-		template <class IT>
-		float _align_line(const float line_top, const IT first, const IT last);
-		bool _collect_line(Context& con, std::vector<Node*>& out);
-		void _layout_line(std::vector<tex::Node *> &line, oui::Point &pen, tex::Context & con, float width);
 	public:
-		std::string data;
-		oui::Rectangle box;
-		FontType font = FontType::mono;
+		using Node::visit;
+		void visit(Visitor& v) override { v(*this); }
 
-		Node(std::string data) : data(std::move(data)) { }
-		Node(const char* str, size_t len) : data(str, len) { }
+		static auto make() { return std::make_unique<Command>(); }
+	};
 
-		Type type() const
+	class Comment : public Node
+	{
+	public:
+		using Node::visit;
+		void visit(Visitor& v) override { v(*this); }
+
+		static auto make() { return std::make_unique<Comment>(); }
+	};
+
+	class Space : public Node
+	{
+		bool _collect_line(Context& con, std::vector<Node*>& out) override;
+	public:
+		using Node::visit;
+		void visit(Visitor& v) override { v(*this); }
+
+		static auto make() { return std::make_unique<Space>(); }
+
+		bool isSpace() const final { return true; }
+
+		Layout updateLayout(Context& con, FontType fonttype, float width) final;
+	};
+
+	class Text : public Node
+	{
+	public:
+		using Node::visit;
+		void visit(Visitor& v) override { v(*this); }
+
+		FontType font;
+
+		static auto make() { return std::make_unique<Text>(); }
+		static auto make(std::string text)
 		{
-			if (!empty())
-				return Type::group;
-			switch (data.front())
-			{
-			case '\\': return Type::command;
-			case '%': return Type::comment;
-			default:
-				return data.front() < 0 || data.front() > ' ' ?
-					Type::text : Type::space;
-			}
+			auto result = make();
+			result->data = std::move(text);
+			return result;
 		}
 
-		bool isText() const { return type() == Type::text; }
-		bool isSpace() const { return type() == Type::space; }
+		bool isText() const final { return true; }
 
-		int length() const { return isText() ? narrow<int>(data.size()) : 1; }
-
-		struct Layout
-		{
-			oui::Vector size;
-			oui::Align align = oui::topLeft;
-			Flow flow = Flow::line;
-		};
-
-		Layout updateLayout(Context& con, FontType fonttype, float width);
-	private:
+		Layout updateLayout(Context& con, FontType fonttype, float width) final;
 	};
 
-	Node tokenize(const char*& in, const char* const end, std::string data, Mode mode);
-	inline Node tokenize(std::string_view in)
+
+	Owner<Group> tokenize(const char*& in, const char* const end, std::string data, Mode mode);
+	inline Owner<Group> tokenize(std::string_view in)
 	{
 		auto first = in.data();
 		return tokenize(first, first + in.size(), "root", Mode::text);

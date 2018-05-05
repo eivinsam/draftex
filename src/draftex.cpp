@@ -26,33 +26,37 @@ std::string readFile(const std::string& filename)
 	return result;
 }
 
-void render(const oui::Vector& offset, const tex::Node& node, tex::Context& con)
+struct Renderer : public tex::Node::Visitor
 {
-	using tex::Type;
-	switch (node.type())
+	oui::Vector offset;
+	tex::Context& con;
+
+	Renderer(oui::Vector offset, tex::Context& con) : offset(offset), con(con) { }
+
+	void operator()(tex::Space&) override { }
+	void operator()(tex::Group& group) override
 	{
-	case Type::text:
-	case Type::command:
-	case Type::comment:
-		con.font(node.font)->drawLine(node.box.min + offset, node.data, oui::colors::black);
-		return;
-	case Type::space:
-		return;
-	case Type::group:
-	{
-		if (node.data == "curly")
+		if (group.data == "curly")
 		{
-			oui::fill(node.box + offset, oui::Color{ 0.8f, 0.7f, 0.0f, 0.3f });
+			oui::fill(group.box + offset, oui::Color{ 0.8f, 0.7f, 0.0f, 0.3f });
 		}
-		const auto suboffset = offset + node.box.min - oui::Point{ 0,0 };
-		for (auto&& e : node)
-			render(suboffset, e, con);
-		return;
+		const auto suboffset = offset + group.box.min - oui::Point{ 0,0 };
+		for (auto&& e : group)
+			e.visit(Renderer{ suboffset, con });
 	}
-	default:
-		throw std::logic_error("unknown tex::Type");
+	void operator()(tex::Command& cmd) override
+	{
+		con.font(tex::FontType::sans)->drawLine(cmd.box.min + offset, cmd.data, oui::Color{ .3f, .9f, .1f });
 	}
-}
+	void operator()(tex::Comment& cmt) override
+	{
+		con.font(tex::FontType::sans)->drawLine(cmt.box.min + offset, cmt.data, oui::colors::blue);
+	}
+	void operator()(tex::Text& text) override 
+	{
+		con.font(text.font)->drawLine(text.box.min + offset, text.data, oui::colors::black);
+	}
+};
 
 int utf8len(unsigned char ch)
 {
@@ -68,20 +72,30 @@ int utf8len(unsigned char ch)
 
 struct Caret
 {
+	static int length(tex::Node* node) { return node->isText() ? narrow<int>(node->data.size()) : 1; }
+
 	tex::Node* node = nullptr;
 	int offset = 0;
+
+	float offsetX(tex::Context& con) const
+	{
+		if (auto text = tex::as<tex::Text>(node))
+			return node->box.min.x + con.font(text->font)->offset(std::string_view(text->data).substr(0, offset));
+		else
+			return offset ? node->box.max.x : node->box.min.x;
+	}
 
 	void render(tex::Context& con)
 	{
 		if (!con.window().focus())
 			return;
 
-		auto pos = node->box.min;
-		pos.x += con.font(node->font)->offset(std::string_view(node->data).substr(0, offset)) -1;
+		oui::Point pos = { offsetX(con) - 1, node->box.min.y };
+
 		for (auto p = node->parent(); p != nullptr; p = p->parent())
 			pos = pos + (p->box.min - oui::origo);
 
-		oui::fill(oui::topLeft(pos).size({ 2.0f, float(con.font(node->font)->height()) }), oui::colors::black);
+		oui::fill(oui::topLeft(pos).size({ 2.0f, node->box.height() }), oui::colors::black);
 	}
 
 	int repairOffset(int off)
@@ -96,13 +110,19 @@ struct Caret
 		if (!node)
 			return;
 
-		if (offset < node->length())
+		if (node->isText())
 		{
-			offset += node->isText() ? utf8len(node->data[offset]) : 1;
-			if (offset < node->length() || 
-				!node->next() || node->next()->box.min.x != node->box.max.x)
-				return;
+			const int len = narrow<int>(node->data.size());
+			if (offset < len)
+			{
+				offset += utf8len(node->data[offset]);
+				if (offset < len)
+					return;
+			}
 		}
+		else
+			offset += 1;
+
 		while (node->next())
 		{
 			node = node->next();
@@ -112,7 +132,7 @@ struct Caret
 				return;
 			}
 		}
-		offset = node->length();
+		offset = length(node);
 	}
 	void prev()
 	{
@@ -131,7 +151,7 @@ struct Caret
 			node = node->prev();
 			if (node->box.width() > 0)
 			{
-				offset = node->length();
+				offset = length(node);
 				if (node->box.max.x == old_x)
 					prev();
 				return;
@@ -142,28 +162,30 @@ struct Caret
 
 	void findPlace(tex::Context& con, const float target)
 	{
-		if (!node->isText())
+		if (auto text = tex::as<tex::Text>(node))
+		{
+			const auto font = con.font(text->font);
+			const auto textdata = std::string_view(text->data);
+			auto prev_x = node->box.min.x;
+			for (int i = 0, len = 1; size_t(i) < textdata.size(); i += len)
+			{
+				len = utf8len(node->data[i]);
+				const auto x = prev_x + font->offset(textdata.substr(i, len));
+				if (x >= target)
+				{
+					offset = x - target > target - prev_x ? i : i + len;
+					return;
+				}
+				prev_x = x;
+			}
+			offset = textdata.size();
+		}
+		else
 		{
 			offset = 0;
 			if (target - node->box.min.x > node->box.max.x - target)
 				next();
-			return;
 		}
-		const auto font = con.font(node->font);
-		const auto text = std::string_view(node->data);
-		auto prev_x = node->box.min.x;
-		for (int i = 0, len = 1; size_t(i) < text.size(); i += len)
-		{
-			len = utf8len(node->data[i]);
-			const auto x = prev_x + font->offset(text.substr(i, len));
-			if (x >= target)
-			{
-				offset = x - target > target - prev_x ? i : i + len;
-				return;
-			}
-			prev_x = x;
-		}
-		offset = text.size();
 	}
 
 	void up(tex::Context& con)
@@ -171,8 +193,7 @@ struct Caret
 		if (!node)
 			return;
 
-		const auto target = node->box.min.x 
-			+ con.font(node->font)->offset(std::string_view(node->data).substr(0, offset));
+		const auto target = offsetX(con);
 
 		for (auto n = node->prev(); n != nullptr; n = n->prev())
 			if (n->box.min.x <= target && target < n->box.max.x)
@@ -187,8 +208,7 @@ struct Caret
 		if (!node)
 			return;
 
-		const auto target = node->box.min.x
-			+ con.font(node->font)->offset(std::string_view(node->data).substr(0, offset));
+		const auto target = offsetX(con);
 
 		for (auto n = node->next(); n != nullptr; n = n->next())
 			if (n->box.min.x <= target && target < n->box.max.x)
@@ -216,7 +236,7 @@ struct Caret
 		{
 			if (node->next()->box.max.x < node->box.max.x)
 			{
-				offset = node->length();
+				offset = length(node);
 				return;
 			}
 			node = node->next();
@@ -230,13 +250,13 @@ struct Caret
 			if (node->next())
 			{
 				node = node->next();
-				node->prev()->detatch();
+				node->prev()->detach();
 				return;
 			}
 			if (node->prev())
 			{
 				prev();
-				node->next()->detatch();
+				node->next()->detach();
 				return;
 			}
 		};
@@ -268,7 +288,7 @@ struct Caret
 		{
 			if (node->prev()->isSpace())
 				return false;
-			node->insertBefore(std::make_unique<tex::Node>(" ")); 
+			node->insertBefore(tex::Space::make()); 
 			return true;
 		}
 		return false;
@@ -282,7 +302,7 @@ struct Caret
 				node->prev()->data.append(text);
 				return;
 			}
-			node->insertBefore(std::make_unique<tex::Node>(std::move(text)));
+			node->insertBefore(tex::Text::make(std::move(text)));
 			return;
 		}
 		return;
@@ -298,11 +318,11 @@ int main()
 	tex::Context context(window);
 
 	Caret caret;
-	for (auto&& e : tokens)
-		if (e.data == "document")
+	for (auto&& e : *tokens)
+		if (auto group = tex::as<tex::Group>(&e); group && group->data == "document")
 		{
-			for (auto&& de : e)
-				if (de.type() == tex::Type::text)
+			for (auto&& de : *group)
+				if (de.isText())
 				{
 					caret.node = &de;
 					break;
@@ -365,10 +385,10 @@ int main()
 		context.reset(window);
 		if (std::exchange(layout_dirty, false))
 		{
-			tokens.updateLayout(context, tex::FontType::sans, window.area().width());
+			tokens->updateLayout(context, tex::FontType::sans, window.area().width());
 		}
 
-		render({ 0,0 }, tokens, context);
+		tokens->visit(Renderer{ {0,0}, context });
 
 		caret.render(context);
 	}

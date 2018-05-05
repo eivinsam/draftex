@@ -105,19 +105,26 @@ struct Caret
 		return off;
 	}
 
-	void next()
+	bool next()
 	{
 		if (!node)
-			return;
+			return false;
 
-		if (node->isText())
+		if (node->isSpace() && node->next() && node->prev() && node->prev()->isSpace())
+		{
+			node = node->next();
+			node->prev()->detach();
+			offset = 0;
+			return true;
+		}
+		else if (node->isText())
 		{
 			const int len = narrow<int>(node->data.size());
 			if (offset < len)
 			{
 				offset += utf8len(node->data[offset]);
 				if (offset < len)
-					return;
+					return false;
 			}
 		}
 		else
@@ -129,22 +136,36 @@ struct Caret
 			if (node->box.width() > 0)
 			{
 				offset = 0;
-				return;
+				return false;
 			}
 		}
 		offset = length(node);
+		return false;
 	}
-	void prev()
+	bool prev()
 	{
 		if (!node)
-			return;
+			return false;
+
 		if (offset > 0)
 		{
 			--offset;
 			if (node->isText())
 				offset = repairOffset(offset);
-			return;
+			return false;
 		}
+
+		if (node->prev())
+		{
+			if (node->isSpace() && node->prev()->isSpace())
+			{
+				node = node->prev();
+				node->next()->detach();
+				offset = 0;
+				return true;
+			}
+		}
+
 		while (node->prev())
 		{
 			const float old_x = node->box.min.x;
@@ -154,10 +175,12 @@ struct Caret
 				offset = length(node);
 				if (node->box.max.x == old_x)
 					prev();
-				return;
+				return false;
 			}
 		}
+
 		offset = 0;
+		return false;
 	}
 
 	void findPlace(tex::Context& con, const float target)
@@ -251,6 +274,13 @@ struct Caret
 			{
 				node = node->next();
 				node->prev()->detach();
+				if (node->prev() && node->isText() && node->prev()->isText())
+				{
+					node = node->prev();
+					offset = narrow<int>(node->data.size());
+					node->data.append(node->next()->data);
+					node->next()->detach();
+				}
 				return;
 			}
 			if (node->prev())
@@ -282,30 +312,22 @@ struct Caret
 		if (old_off != offset || old_node != node)
 			eraseNext();
 	}
-	bool insertSpace()
+
+	void insertSpace()
 	{
-		if (offset == 0)
+		if (auto new_space = node->insertSpace(offset))
 		{
-			if (node->prev()->isSpace())
-				return false;
-			node->insertBefore(tex::Space::make()); 
-			return true;
-		}
-		return false;
-	}
-	void insertText(std::string text)
-	{
-		if (offset == 0)
-		{
-			if (node->prev()->isText())
+			if (new_space->next())
 			{
-				node->prev()->data.append(text);
-				return;
+				node = new_space->next();
+				offset = 0;
 			}
-			node->insertBefore(tex::Text::make(std::move(text)));
-			return;
+			else
+			{
+				node = new_space;
+				offset = 1;
+			}
 		}
-		return;
 	}
 };
 
@@ -338,15 +360,15 @@ int main()
 		using oui::Key;
 		switch (key)
 		{
-		case Key::right: caret.next(); break;
-		case Key::left: caret.prev(); break;
+		case Key::right: layout_dirty |= caret.next(); break;
+		case Key::left:  layout_dirty |= caret.prev(); break;
 		case Key::up: caret.up(context); break;
 		case Key::down: caret.down(context); break;
 		case Key::home: caret.home(); break;
 		case Key::end: caret.end(); break;
 		case Key::backspace: caret.erasePrev(); layout_dirty = true; break;
 		case Key::del:       caret.eraseNext(); layout_dirty = true; break;
-		case Key::space: if (caret.insertSpace()) layout_dirty = true; break;
+		case Key::space:     caret.insertSpace(); layout_dirty = true; break;
 		default: 
 			return;
 		}
@@ -373,7 +395,8 @@ int main()
 			utf8.push_back(0x80 | ((ch >>  6) & 0x3f));
 			utf8.push_back(0x80 | ( ch        & 0x3f));
 		}
-		caret.insertText(utf8);
+		caret.node->insert(caret.offset, utf8);
+		caret.offset += narrow<int>(utf8.size());
 		layout_dirty = true;
 		window.redraw();
 		return;
@@ -387,6 +410,11 @@ int main()
 		{
 			tokens->updateLayout(context, tex::FontType::sans, window.area().width());
 		}
+
+		auto caret_box = caret.node->box;
+		for (auto p = caret.node->parent(); p != nullptr; p = p->parent())
+			caret_box = oui::topLeft(caret_box.min + (p->box.min - oui::origo)).size(caret_box.size());
+		oui::fill(caret_box, { 0.0f, 0.1f, 1, 0.2f });
 
 		tokens->visit(Renderer{ {0,0}, context });
 

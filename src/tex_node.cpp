@@ -3,13 +3,14 @@
 
 namespace tex
 {
-	void Node::insertBefore(Owner<Node> sibling)
+	Node* Node::insertBefore(Owner<Node> sibling)
 	{
 		sibling->_parent = _parent;
 		sibling->_prev = _prev;
 		auto& new_owner = _prev ? _prev->_next : _parent->_first;
 		sibling->_next = std::move(new_owner);
 		_prev = (new_owner = std::move(sibling)).get();
+		return _prev;
 	}
 	Owner<Node> Node::detach()
 	{
@@ -38,6 +39,34 @@ namespace tex
 		return *_last;
 	}
 
+	std::string parseArg(const char*& in, const char* const end)
+	{
+		std::string result;
+		if (*in == ' ')
+		{
+			++in;
+			switch (*in)
+			{
+			case '\\':
+				result.push_back(*in);
+				++in;
+				result.push_back(*in);
+				for (; isalpha(*in); ++in)
+					result.push_back(*in);
+				++in;
+				return result;
+			case '%': case '{': case '$':
+				throw IllFormed(std::string("unsupported character sequence ' ") + *in + "' found while looking for argument");
+			default:
+				if (*in >= 0 && *in <= ' ')
+					throw IllFormed("multiple whitespace before argument not supported");
+				result.push_back(*in); 
+				++in;
+				return result;
+			}
+		}
+	}
+
 
 	Owner<Group> tokenize(const char *& in, const char * const end, std::string data, Mode mode)
 	{
@@ -49,24 +78,30 @@ namespace tex
 			{
 			case '\\':
 			{
-				auto& child = result->append(Command::make());
+				std::string cmd;
 				++in;
-				child.data.push_back(*in);
+				cmd.push_back(*in);
 				for (++in; in != end && isalpha(*in); ++in)
-					child.data.push_back(*in);
+					cmd.push_back(*in);
 
-				if (child.data == "begin")
+				//auto& child = result->append(Command::make());
+
+				if (cmd == "begin")
 				{
-					result->back().replace(tokenize(in, end, readCurly(in, end), mode));
+					result->append(tokenize(in, end, readCurly(in, end), mode));
 					continue;
 				}
-				if (child.data == "end")
+				if (cmd == "end")
 				{
 					if (const auto envname = readCurly(in, end); envname != result->data)
 						throw IllFormed("\\begin{" + result->data + "} does not match \\end{" + envname + "}");
-					result->back().detach();
 					return result;
 				}
+				//if (cmd == "frac")
+				//{
+				//	continue;
+				//}
+				result->append(Command::make()).data = std::move(cmd);
 				continue;
 			}
 			case '%':
@@ -156,6 +191,50 @@ namespace tex
 			return false;
 		out.push_back(this);
 		return true;
+	}
+	Node* Node::insertSpace(int offset)
+	{
+		if (offset == 0)
+		{
+			return (_prev && _prev->isSpace()) ?
+				nullptr : insertBefore(Space::make());
+		}
+		else
+			return insertAfter(Space::make());
+	}
+	Node * Text::insertSpace(int offset)
+	{
+		if (offset <= 0)
+		{
+			return (!prev() || !prev()->isSpace()) ?
+				insertBefore(Space::make()) : nullptr;
+		}
+		if (offset >= narrow<int>(data.size()))
+		{
+			return (!next() || !next()->isSpace()) ?
+				insertAfter(Space::make()) : nullptr;
+		}
+		const auto offset_size = narrow<size_t>(offset);
+		insertAfter(Text::make(std::string_view(data).substr(offset_size)));
+		data.resize(offset_size);
+		return insertAfter(Space::make());
+
+	}
+	void Node::insert(int offset, std::string_view text)
+	{
+		if (text.empty())
+			return;
+		if (offset == 0)
+		{
+			if (_prev && _prev->isText())
+				_prev->data.append(text.data(), text.size());
+			else
+				insertBefore(Text::make(text));
+		}
+		else
+		{
+			insertAfter(Text::make(text));
+		}
 	}
 	Node::Layout Node::updateLayout(Context & con, FontType fonttype, float width)
 	{

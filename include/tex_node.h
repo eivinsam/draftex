@@ -37,7 +37,8 @@ namespace tex
 		Node* prev() const { return _prev; }
 
 		Group* parent() const { return _parent; }
-		void insertBefore(Owner<Node> sibling);
+		Node* insertBefore(Owner<Node> sibling);
+		Node* insertAfter(Owner<Node> sibling);
 		Owner<Node> detach();
 		Owner<Node> replace(Owner<Node> replacement)
 		{
@@ -59,6 +60,9 @@ namespace tex
 
 		virtual bool isSpace() const { return false; }
 		virtual bool isText() const { return false; }
+
+		virtual Node* insertSpace(int offset);
+		virtual void insert(int offset, std::string_view text);
 
 		struct Layout
 		{
@@ -151,6 +155,12 @@ namespace tex
 
 		Layout updateLayout(Context& con, FontType fonttype, float width) override;
 	};
+	inline Node* Node::insertAfter(Owner<Node> sibling)
+	{
+		return _next ? 
+			_next->insertBefore(std::move(sibling)) : 
+			&_parent->append(std::move(sibling)); 
+	}
 
 	class Command : public Node
 	{
@@ -181,6 +191,12 @@ namespace tex
 
 		bool isSpace() const final { return true; }
 
+		Node* insertSpace(int offset) final 
+		{ 
+			return (offset == 0 && !(prev() && prev()->isSpace())) ? 
+				insertBefore(Space::make()) : nullptr;
+		}
+
 		Layout updateLayout(Context& con, FontType fonttype, float width) final;
 	};
 
@@ -199,8 +215,15 @@ namespace tex
 			result->data = std::move(text);
 			return result;
 		}
+		static auto make(std::string_view text) { return make(std::string(text)); }
 
 		bool isText() const final { return true; }
+
+		Node* insertSpace(int offset) final;
+		void insert(int offset, std::string_view text) final
+		{
+			data.insert(narrow<size_t>(offset), text.data(), text.size());
+		}
 
 		Layout updateLayout(Context& con, FontType fonttype, float width) final;
 	};

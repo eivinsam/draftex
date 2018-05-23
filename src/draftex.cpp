@@ -58,17 +58,6 @@ struct Renderer : public tex::Node::Visitor
 	}
 };
 
-int utf8len(unsigned char ch)
-{
-	switch (ch >> 4)
-	{
-	case 0xf: return 4;
-	case 0xe: return 3;
-	case 0xd: case 0xc: return 2;
-	default:
-		return (ch >> 7) ^ 1;
-	}
-}
 
 struct Caret
 {
@@ -336,6 +325,7 @@ int main()
 	oui::Window window{ { "draftex", 1280, 720 } };
 
 	auto tokens = tex::tokenize(readFile("test.tex"));
+	tokens->expand();
 
 	tex::Context context(window);
 

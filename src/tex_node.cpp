@@ -27,6 +27,13 @@ namespace tex
 		_parent = nullptr;
 		return result;
 	}
+	Node* Group::expand()
+	{
+		for (auto child = _first.get(); child != nullptr; child = child->_next.get())
+			child = child->expand();
+
+		return this;
+	}
 	Node& Group::append(Owner<Node> child)
 	{
 		if (child->_parent)
@@ -39,38 +46,9 @@ namespace tex
 		return *_last;
 	}
 
-	std::string parseArg(const char*& in, const char* const end)
-	{
-		std::string result;
-		if (*in == ' ')
-		{
-			++in;
-			switch (*in)
-			{
-			case '\\':
-				result.push_back(*in);
-				++in;
-				result.push_back(*in);
-				for (; isalpha(*in); ++in)
-					result.push_back(*in);
-				++in;
-				return result;
-			case '%': case '{': case '$':
-				throw IllFormed(std::string("unsupported character sequence ' ") + *in + "' found while looking for argument");
-			default:
-				if (*in >= 0 && *in <= ' ')
-					throw IllFormed("multiple whitespace before argument not supported");
-				result.push_back(*in); 
-				++in;
-				return result;
-			}
-		}
-	}
-
-
 	Owner<Group> tokenize(const char *& in, const char * const end, std::string data, Mode mode)
 	{
-		auto result = Group::create(data);
+		auto result = Group::make(data);
 
 		while (in != end)
 		{
@@ -84,8 +62,6 @@ namespace tex
 				for (++in; in != end && isalpha(*in); ++in)
 					cmd.push_back(*in);
 
-				//auto& child = result->append(Command::make());
-
 				if (cmd == "begin")
 				{
 					result->append(tokenize(in, end, readCurly(in, end), mode));
@@ -97,10 +73,6 @@ namespace tex
 						throw IllFormed("\\begin{" + result->data + "} does not match \\end{" + envname + "}");
 					return result;
 				}
-				//if (cmd == "frac")
-				//{
-				//	continue;
-				//}
 				result->append(Command::make()).data = std::move(cmd);
 				continue;
 			}
@@ -380,5 +352,50 @@ namespace tex
 		}
 		return line_max - line_min;
 	}
+
+	void Node::popArgument(Group & dst)
+	{
+		const auto n = next();
+		if (n == nullptr)
+			throw IllFormed("end of group reached while looking for command argument");
+		dst.append(detach());
+		n->popArgument(dst);
+	}
+	void Text::popArgument(Group & dst)
+	{
+		if (data.empty())
+		{
+			Node::popArgument(dst);
+			return;
+		}
+
+		const auto frontlen = narrow<size_t>(utf8len(data.front()));
+		if (data.size() == frontlen)
+		{
+			dst.append(detach());
+			return;
+		}
+
+		dst.append(Text::make(std::string_view(data).substr(0, frontlen)));
+		data.erase(0, frontlen);
+	}
+	Node * Command::expand()
+	{
+		if (data == "frac")
+		{
+			if (next() == nullptr)
+				throw IllFormed("no arguments present for frac");
+			auto result = Group::make(data);
+			next()->popArgument(*result);
+			next()->popArgument(*result);
+			
+			const auto raw_result = result.get();
+			replace(std::move(result));
+			return raw_result;
+		}
+
+		return this;
+	}
+
 
 }

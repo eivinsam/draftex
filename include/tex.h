@@ -21,6 +21,19 @@ To narrow(From from)
 	return to;
 }
 
+inline int utf8len(unsigned char ch)
+{
+	switch (ch >> 4)
+	{
+	case 0xf: return 4;
+	case 0xe: return 3;
+	case 0xd: case 0xc: return 2;
+	default:
+		return (ch >> 7) ^ 1;
+	}
+}
+
+
 namespace tex
 {
 	class IllFormed : public std::exception

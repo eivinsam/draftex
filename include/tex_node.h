@@ -46,8 +46,12 @@ namespace tex
 			return detach();
 		}
 
+		virtual Node* expand() { return this; }
+		virtual void popArgument(Group& dst);
+
 		struct Visitor
 		{
+			virtual ~Visitor() = default;
 			virtual void operator()(Group& group) = 0;
 			virtual void operator()(Command& cmd) = 0;
 			virtual void operator()(Comment& cmt) = 0;
@@ -97,7 +101,7 @@ namespace tex
 				n._parent = this;
 		}
 
-		static Owner<Group> create(std::string name) 
+		static Owner<Group> make(std::string name) 
 		{
 			auto result = std::make_unique<Group>();
 			result->data = name;
@@ -113,6 +117,8 @@ namespace tex
 				n._parent = this;
 		}
 
+		Node* expand() final;
+		void popArgument(Group& dst) final { dst.append(detach()); }
 
 		Node& append(Owner<Node> child);
 
@@ -169,6 +175,9 @@ namespace tex
 		void visit(Visitor& v) override { v(*this); }
 
 		static auto make() { return std::make_unique<Command>(); }
+
+		Node* expand() final;
+		void popArgument(Group& dst) final { dst.append(detach()); }
 	};
 
 	class Comment : public Node
@@ -216,6 +225,8 @@ namespace tex
 			return result;
 		}
 		static auto make(std::string_view text) { return make(std::string(text)); }
+
+		void popArgument(Group& dst) final;
 
 		bool isText() const final { return true; }
 

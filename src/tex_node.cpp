@@ -1,8 +1,13 @@
 #include <tex_node.h>
 #include <algorithm>
+#include <cassert>
+
+inline std::string_view view(const std::string& s) { return std::string_view{ s }; }
 
 namespace tex
 {
+	namespace align = oui::align;
+
 	Node* Node::insertBefore(Owner<Node> sibling)
 	{
 		sibling->_parent = _parent;
@@ -153,6 +158,11 @@ namespace tex
 	{
 		if (data == "document")
 			return false;
+		if (data == "frac")
+		{
+			out.push_back(this);
+			return true;
+		}
 		for (auto&& e : *this)
 			e._collect_line(con, out);
 		return true;
@@ -211,13 +221,13 @@ namespace tex
 	Node::Layout Node::updateLayout(Context & con, FontType fonttype, float width)
 	{
 		auto font = con.font(fonttype);
-		return { { font->offset(data), float(font->height()) } };
+		return { { font->offset(data), float(font->height()) }, align::center };
 	}
 	Node::Layout Text::updateLayout(Context & con, FontType fonttype, float width)
 	{
 		font = fonttype;
 		auto font = con.font(fonttype);
-		return { { font->offset(data), float(font->height()) } };
+		return { { font->offset(data), float(font->height()) }, align::center };
 	}
 	Node::Layout Group::updateLayout(Context & con, FontType fonttype, float width)
 	{
@@ -226,12 +236,67 @@ namespace tex
 
 		//font = fonttype;
 
+		if (data == "curly")
+		{
+			result.flow = Flow::line;
+
+			float asc = 0;
+			float dsc = 0;
+
+			result.size = { 0,0 };
+			for (auto&& e : *this)
+			{
+				auto l = e.updateLayout(con, fonttype, width);
+				assert(l.flow != Flow::vertical);
+
+				e.box = l.place(pen);
+
+				asc = std::max(asc, -e.box.min.y);
+				dsc = std::max(dsc, +e.box.max.y);
+
+				pen.x += l.size.x;
+			}
+			for (auto&& e : *this)
+			{
+				e.box.min.y += asc;
+				e.box.max.y += asc;
+			}
+			result.size.x = pen.x;
+			result.size.y = asc + dsc;
+			result.align = { asc / (result.size.x) };
+
+			return result;
+		}
+
+
+		if (data == "frac")
+		{
+			result.flow = Flow::line;
+
+			Node*const p = front().getArgument();
+			Node*const q = p->next()->getArgument();
+
+			const auto playout = p->updateLayout(con, fonttype, width);
+			const auto qlayout = q->updateLayout(con, fonttype, width);
+
+			result.size.y = playout.size.y + qlayout.size.y;
+			result.size.x = std::max(playout.size.x, qlayout.size.y);
+			result.align = { playout.size.y / result.size.y };
+
+			p->box.min = { (result.size.x - playout.size.x)*0.5f, 0 };
+			p->box.max = p->box.min + playout.size;
+			q->box.min = { (result.size.x - qlayout.size.x)*0.5f, playout.size.y };
+			q->box.max = q->box.min + qlayout.size;
+
+			return result;
+		}
+
 		if (data == "document")
 		{
 			fonttype = FontType::roman;
 			width = std::min(width, con.font(fonttype)->height() * 24.0f);
 			result.flow = Flow::vertical;
-			result.align = oui::topCenter;
+			result.align = align::center;
 		}
 
 		std::vector<Node*> line;
@@ -248,7 +313,7 @@ namespace tex
 				if (it == end())  break;
 			}
 			const auto l = it->updateLayout(con, fonttype, width);
-			it->box = l.align(oui::topLeft(pen).size({ width, 0 })).size(l.size);
+			it->box = l.place(align::topLeft(pen).size({ width, 0 }));
 			pen.y += l.size.y;
 		}
 		result.size.x = width;
@@ -258,12 +323,12 @@ namespace tex
 	Node::Layout Space::updateLayout(Context & con, FontType fonttype, float width)
 	{
 		if (count(data, '\n') >= 2)
-			return { { 0,0 }, oui::topLeft, Flow::vertical };
+			return { { 0,0 }, align::min, Flow::vertical };
 		auto font = con.font(fonttype);
 		return
 		{
 			{ ceil(font->height()*0.25f), float(font->height()) },
-			oui::topLeft,
+			align::center,
 			Flow::none
 		};
 	}
@@ -274,7 +339,7 @@ namespace tex
 		auto line_first = line.begin();
 		while (line_first != line.end() && (*line_first)->isSpace())
 		{
-			(*line_first)->box = oui::topLeft(pen).size({ 0,0 });
+			(*line_first)->box = align::topLeft(pen).size({ 0,0 });
 			++line_first;
 		}
 		int space_count = 0;
@@ -285,7 +350,7 @@ namespace tex
 			{
 				if ((*lit)->isSpace())
 					++space_count;
-				(*lit)->box = l.align(pen).size(l.size);
+				(*lit)->box = l.place(pen);
 				pen.x = (*lit)->box.max.x;
 				continue;
 			}
@@ -323,7 +388,7 @@ namespace tex
 			pen.y += _align_line(pen.y, line_first, lit);
 			while (lit != line.end() && (*lit)->isSpace())
 			{
-				(*lit)->box = oui::topLeft(pen).size({ 0,0 });
+				(*lit)->box = align::topLeft(pen).size({ 0,0 });
 				++lit;
 			}
 			line_first = lit;
@@ -343,7 +408,7 @@ namespace tex
 			line_min = std::min(line_min, e.box.min.y);
 			line_max = std::max(line_max, e.box.max.y);
 		}
-		const float adjust_y = line_min - line_top;
+		const float adjust_y = line_top - line_min;
 		for (auto it = first; it != last; ++it)
 		{
 			Node& e = **it;
@@ -356,18 +421,12 @@ namespace tex
 	void Node::popArgument(Group & dst)
 	{
 		const auto n = next();
-		if (n == nullptr)
-			throw IllFormed("end of group reached while looking for command argument");
 		dst.append(detach());
-		n->popArgument(dst);
+		tryPopArgument(n, dst);
 	}
 	void Text::popArgument(Group & dst)
 	{
-		if (data.empty())
-		{
-			Node::popArgument(dst);
-			return;
-		}
+		assert(!data.empty());
 
 		const auto frontlen = narrow<size_t>(utf8len(data.front()));
 		if (data.size() == frontlen)
@@ -376,25 +435,79 @@ namespace tex
 			return;
 		}
 
-		dst.append(Text::make(std::string_view(data).substr(0, frontlen)));
+		dst.append(Text::make(view(data).substr(0, frontlen)));
 		data.erase(0, frontlen);
 	}
+
+	static std::string_view read_optional_text(std::string_view data)
+	{
+		assert(!data.empty());
+		if (data[0] != '[')
+			return {};
+
+		for (size_t i = 1; i < data.size(); ++i)
+		{
+			if (data[i] == ']')
+				return data.substr(0, i + 1);
+		}
+		throw IllFormed("could not find end of optional argument (only non-space text supported)");
+	}
+	static Owner<Node> read_optional(Node* next)
+	{
+		if (!next || !next->isText())
+			return {};
+
+		assert(!next->data.empty());
+
+		if (next->data[0] != '[')
+			return {};
+
+		const auto opt = read_optional_text(next->data);
+
+		if (opt.empty())
+			return {};
+
+		if (opt.size() == next->data.size())
+			return next->detach();
+	
+		auto result = Text::make(opt);
+		next->data.erase(0, opt.size());
+		return result;
+	}
+
 	Node * Command::expand()
 	{
-		if (data == "frac")
+		Owner<Group> result;
+		if (data == "newcommand")
 		{
-			if (next() == nullptr)
-				throw IllFormed("no arguments present for frac");
-			auto result = Group::make(data);
-			next()->popArgument(*result);
-			next()->popArgument(*result);
-			
-			const auto raw_result = result.get();
-			replace(std::move(result));
-			return raw_result;
+			result = Group::make(data);
+			tryPopArgument(next(), *result);
+			if (auto opt = read_optional(next()))
+				result->append(std::move(opt));
+			tryPopArgument(next(), *result);
 		}
 
-		return this;
+		if (data == "usepackage" || data == "documentclass")
+		{
+			result = Group::make(data);
+			if (auto opt = read_optional(next()))
+				result->append(std::move(opt));
+			tryPopArgument(next(), *result);
+		}
+
+		if (data == "frac")
+		{
+			result = Group::make(data);
+			tryPopArgument(next(), *result); result->back().expand();
+			tryPopArgument(next(), *result); result->back().expand();
+		}
+
+		if (!result)
+			return this;
+
+		const auto raw_result = result.get();
+		replace(std::move(result));
+		return raw_result;
 	}
 
 

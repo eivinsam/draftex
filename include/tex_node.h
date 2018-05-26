@@ -13,6 +13,7 @@ namespace tex
 		return dynamic_cast<std::conditional_t<std::is_const_v<From>, const To*, To*>>(from); 
 	}
 
+
 	class Group;
 	class Command;
 	class Comment;
@@ -27,7 +28,10 @@ namespace tex
 		Node* _prev = nullptr;
 	protected:
 		virtual bool _collect_line(Context& con, std::vector<Node*>& out);
+
 	public:
+		enum class Type : char { space, text, group, command, comment };
+
 		std::string data;
 		oui::Rectangle box;
 
@@ -48,6 +52,7 @@ namespace tex
 
 		virtual Node* expand() { return this; }
 		virtual void popArgument(Group& dst);
+		virtual Node* getArgument() { return _next->getArgument(); }
 
 		struct Visitor
 		{
@@ -62,8 +67,9 @@ namespace tex
 		void visit(Visitor&& v) { visit(v); }
 		virtual void visit(Visitor&) = 0;
 
-		virtual bool isSpace() const { return false; }
-		virtual bool isText() const { return false; }
+		virtual Type type() const = 0;
+		bool isSpace() const { return type()==Type::space; }
+		bool isText()  const { return type()==Type::text; }
 
 		virtual Node* insertSpace(int offset);
 		virtual void insert(int offset, std::string_view text);
@@ -71,12 +77,29 @@ namespace tex
 		struct Layout
 		{
 			oui::Vector size;
-			oui::Align align = oui::topLeft;
+			oui::Align align = oui::align::min;
 			Flow flow = Flow::line;
+
+			oui::Align2 boxAlign() const
+			{
+				return flow == Flow::vertical ?
+					oui::Align2{ align.c, 0 } :
+					oui::Align2{ 0, align.c };
+			}
+
+			auto place(oui::Point    point) const { return boxAlign()(point).size(size); }
+			auto place(oui::Rectangle area) const { return boxAlign()(area) .size(size); }
 		};
 
 		virtual Layout updateLayout(Context& con, FontType fonttype, float width);
 	};
+
+	inline void tryPopArgument(Node* next, Group& dst)
+	{
+		if (next == nullptr)
+			throw IllFormed("end of group reached while looking for command argument");
+		next->popArgument(dst);
+	}
 
 	class Group : public Node
 	{
@@ -101,6 +124,8 @@ namespace tex
 				n._parent = this;
 		}
 
+		Type type() const final { return Type::group; }
+
 		static Owner<Group> make(std::string name) 
 		{
 			auto result = std::make_unique<Group>();
@@ -119,6 +144,7 @@ namespace tex
 
 		Node* expand() final;
 		void popArgument(Group& dst) final { dst.append(detach()); }
+		Node* getArgument() final { return this; }
 
 		Node& append(Owner<Node> child);
 
@@ -174,10 +200,13 @@ namespace tex
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
 
+		Type type() const final { return Type::command; }
+
 		static auto make() { return std::make_unique<Command>(); }
 
 		Node* expand() final;
 		void popArgument(Group& dst) final { dst.append(detach()); }
+		Node* getArgument() final { return this; }
 	};
 
 	class Comment : public Node
@@ -185,6 +214,8 @@ namespace tex
 	public:
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
+
+		Type type() const final { return Type::comment; }
 
 		static auto make() { return std::make_unique<Comment>(); }
 	};
@@ -196,9 +227,9 @@ namespace tex
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
 
-		static auto make() { return std::make_unique<Space>(); }
+		Type type() const final { return Type::space; }
 
-		bool isSpace() const final { return true; }
+		static auto make() { return std::make_unique<Space>(); }
 
 		Node* insertSpace(int offset) final 
 		{ 
@@ -217,6 +248,8 @@ namespace tex
 
 		FontType font;
 
+		Type type() const final { return Type::text; }
+
 		static auto make() { return std::make_unique<Text>(); }
 		static auto make(std::string text)
 		{
@@ -227,8 +260,7 @@ namespace tex
 		static auto make(std::string_view text) { return make(std::string(text)); }
 
 		void popArgument(Group& dst) final;
-
-		bool isText() const final { return true; }
+		Node* getArgument() final { return this; }
 
 		Node* insertSpace(int offset) final;
 		void insert(int offset, std::string_view text) final

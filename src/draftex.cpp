@@ -63,8 +63,11 @@ struct Caret
 {
 	static int length(tex::Node* node) { return node->isText() ? narrow<int>(node->data.size()) : 1; }
 
+	static constexpr float no_target = std::numeric_limits<float>::quiet_NaN();
+
 	tex::Node* node = nullptr;
 	int offset = 0;
+	float target_x = no_target;
 
 	float offsetX(tex::Context& con) const
 	{
@@ -84,7 +87,7 @@ struct Caret
 		for (auto p = node->parent(); p != nullptr; p = p->parent())
 			pos = pos + (p->box.min - oui::origo);
 
-		oui::fill(oui::topLeft(pos).size({ 2.0f, node->box.height() }), oui::colors::black);
+		oui::fill(oui::align::topLeft(pos).size({ 2.0f, node->box.height() }), oui::colors::black);
 	}
 
 	int repairOffset(int off)
@@ -98,6 +101,7 @@ struct Caret
 	{
 		if (!node)
 			return false;
+		target_x = no_target;
 
 		if (node->isSpace() && node->next() && node->prev() && node->prev()->isSpace())
 		{
@@ -106,23 +110,27 @@ struct Caret
 			offset = 0;
 			return true;
 		}
-		else if (node->isText())
+		if (node->isText())
 		{
 			const int len = narrow<int>(node->data.size());
 			if (offset < len)
 			{
 				offset += utf8len(node->data[offset]);
-				if (offset < len)
+				if (offset < len || node->next()->isSpace())
 					return false;
 			}
 		}
-		else
-			offset += 1;
+		else if (offset == 0)
+		{
+			offset = 1;
+			if (node->next()->isSpace())
+				return false;
+		}
 
 		while (node->next())
 		{
 			node = node->next();
-			if (node->box.width() > 0)
+			if (node->box.width() > 0 && !node->isSpace())
 			{
 				offset = 0;
 				return false;
@@ -135,6 +143,7 @@ struct Caret
 	{
 		if (!node)
 			return false;
+		target_x = no_target;
 
 		if (offset > 0)
 		{
@@ -157,13 +166,10 @@ struct Caret
 
 		while (node->prev())
 		{
-			const float old_x = node->box.min.x;
 			node = node->prev();
-			if (node->box.width() > 0)
+			if (node->box.width() > 0 && !node->isSpace())
 			{
 				offset = length(node);
-				if (node->box.max.x == old_x)
-					prev();
 				return false;
 			}
 		}
@@ -194,9 +200,24 @@ struct Caret
 		}
 		else
 		{
-			offset = 0;
 			if (target - node->box.min.x > node->box.max.x - target)
-				next();
+			{
+				if (node->next())
+				{
+					offset = 0;
+					node = node->next();
+				}
+				else
+				{
+					offset = 1;
+				}
+				return;
+			}
+			while (node->isSpace() && node->prev())
+			{
+				node = node->prev();
+				offset = length(node);
+			}
 		}
 	}
 
@@ -205,33 +226,62 @@ struct Caret
 		if (!node)
 			return;
 
-		const auto target = offsetX(con);
+		if (isnan(target_x))
+			target_x = offsetX(con);
 
-		for (auto n = node->prev(); n != nullptr; n = n->prev())
-			if (n->box.min.x <= target && target < n->box.max.x)
+		while (node->prev() && node->prev()->box.max.y > node->box.min.y)
+			node = node->prev();
+
+		while (node->prev())
+		{
+			node = node->prev();
+			if (node->box.width() == 0 || node->box.height() == 0)
+				continue;
+			if (target_x > node->box.min.x)
 			{
-				node = n;
-				findPlace(con, target);
+				findPlace(con, target_x);
 				return;
 			}
+			if (node->prev()->box.max.y <= node->box.min.y)
+			{
+				offset = 0;
+				return;
+			}
+		}
+		offset = 0;
 	}
 	void down(tex::Context& con)
 	{
 		if (!node)
 			return;
 
-		const auto target = offsetX(con);
+		if (isnan(target_x))
+			target_x = offsetX(con);
 
-		for (auto n = node->next(); n != nullptr; n = n->next())
-			if (n->box.min.x <= target && target < n->box.max.x)
+		while (node->next() && node->next()->box.min.y < node->box.max.y)
+			node = node->next();
+
+		while (node->next())
+		{
+			node = node->next();
+			if (node->box.width() == 0 || node->box.height() == 0)
+				continue;
+			if (target_x < node->box.max.x)
 			{
-				node = n;
-				findPlace(con, target);
+				findPlace(con, target_x);
 				return;
 			}
+			if (node->next()->box.min.y >= node->box.max.y)
+			{
+				offset = length(node);
+				return;
+			}
+		}
+		offset = length(node);
 	}
 	void home()
 	{
+		target_x = no_target;
 		while (node->prev())
 		{
 			if (node->prev()->box.min.x > node->box.min.x)
@@ -244,6 +294,7 @@ struct Caret
 	}
 	void end()
 	{
+		target_x = no_target;
 		while (node->next())
 		{
 			if (node->next()->box.max.x < node->box.max.x)
@@ -403,7 +454,7 @@ int main()
 
 		auto caret_box = caret.node->box;
 		for (auto p = caret.node->parent(); p != nullptr; p = p->parent())
-			caret_box = oui::topLeft(caret_box.min + (p->box.min - oui::origo)).size(caret_box.size());
+			caret_box = oui::align::topLeft(caret_box.min + (p->box.min - oui::origo)).size(caret_box.size());
 		oui::fill(caret_box, { 0.0f, 0.1f, 1, 0.2f });
 
 		tokens->visit(Renderer{ {0,0}, context });

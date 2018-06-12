@@ -58,6 +58,9 @@ struct Renderer : public tex::Node::Visitor
 	}
 };
 
+template <class Base, class Derived>
+static constexpr bool is = 
+	std::is_base_of_v<Base, std::remove_reference_t<std::remove_const_t<Derived>>>;
 
 struct Caret
 {
@@ -101,43 +104,62 @@ struct Caret
 	{
 		if (!node)
 			return false;
+
+		using namespace tex;
+		struct V 
+		{
+			Caret& caret;
+
+			bool recurse(Node& node)
+			{
+				caret.offset = -1;
+				return node.next()->visit(*this);
+			}
+			bool operator()(Node& node)
+			{
+				caret.node = &node;
+				if (caret.offset < 0)
+					caret.offset = 0;
+				else
+				{
+					if (node.next() && (caret.offset > 0 || !node.next()->isSpace()))
+						return recurse(node);
+					else
+						caret.offset = 1;
+				}
+				return false;
+			}
+			bool operator()(Space& space)
+			{
+				if (space.next())
+					return recurse(space);
+				else
+				{
+					caret.node = &space;
+					caret.offset = 1;
+				}
+				return false;
+			}
+			bool operator()(Text& text)
+			{
+				caret.node = &text;
+				if (caret.offset < 0)
+					caret.offset = 0;
+				else if (caret.offset < narrow<int>(text.data.size()))
+				{
+					caret.offset += utf8len(text.data[caret.offset]);
+
+					if (caret.offset >= narrow<int>(text.data.size()) && text.next() && !text.next()->isSpace())
+						return recurse(text);
+				}
+				else if (text.next())
+					return recurse(text);
+				return false;
+			}
+		};
+
 		target_x = no_target;
-
-		if (node->isSpace() && node->next() && node->prev() && node->prev()->isSpace())
-		{
-			node = node->next();
-			node->prev()->detach();
-			offset = 0;
-			return true;
-		}
-		if (node->isText())
-		{
-			const int len = narrow<int>(node->data.size());
-			if (offset < len)
-			{
-				offset += utf8len(node->data[offset]);
-				if (offset < len || node->next()->isSpace())
-					return false;
-			}
-		}
-		else if (offset == 0)
-		{
-			offset = 1;
-			if (node->next()->isSpace())
-				return false;
-		}
-
-		while (node->next())
-		{
-			node = node->next();
-			if (node->box.width() > 0 && !node->isSpace())
-			{
-				offset = 0;
-				return false;
-			}
-		}
-		offset = length(node);
-		return false;
+		return node->visit(V{ *this });
 	}
 	bool prev()
 	{
@@ -145,37 +167,53 @@ struct Caret
 			return false;
 		target_x = no_target;
 
-		if (offset > 0)
+		using namespace tex;
+		struct V
 		{
-			--offset;
-			if (node->isText())
-				offset = repairOffset(offset);
-			return false;
-		}
+			Caret& caret;
 
-		if (node->prev())
-		{
-			if (node->isSpace() && node->prev()->isSpace())
+			bool recurse(Node* to, int shift)
 			{
-				node = node->prev();
-				node->next()->detach();
-				offset = 0;
-				return true;
+				caret.offset = narrow<int>(to->data.size()) + shift;
+				return to->visit(*this);
 			}
-		}
 
-		while (node->prev())
-		{
-			node = node->prev();
-			if (node->box.width() > 0 && !node->isSpace())
+			bool operator()(Node& node)
 			{
-				offset = length(node);
+				if (caret.offset == 0 && node.prev())
+					return recurse(node.prev(), 0);
+				caret.node = &node;
+				caret.offset = 0;
 				return false;
 			}
-		}
-
-		offset = 0;
-		return false;
+			bool operator()(Space& space)
+			{
+				if (space.prev())
+					return recurse(space.prev(), 1);
+				caret.node = &space;
+				caret.offset = 0;
+				return false;
+			}
+			bool operator()(Text& text)
+			{
+				caret.node = &text;
+				if (const int textlen = narrow<int>(text.data.size()); caret.offset > textlen)
+				{
+					caret.offset = textlen;
+					return false;
+				}
+				if (caret.offset <= 0)
+				{
+					if (text.prev())
+						return recurse(text.prev(), 0);
+					caret.offset = 0;
+					return false;
+				}
+				caret.offset = caret.repairOffset(caret.offset-1);
+				return false;
+			}
+		};
+		return node->visit(V{ *this });
 	}
 
 	void findPlace(tex::Context& con, const float target)

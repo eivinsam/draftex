@@ -13,12 +13,71 @@ namespace tex
 		return dynamic_cast<std::conditional_t<std::is_const_v<From>, const To*, To*>>(from); 
 	}
 
-
 	class Group;
 	class Command;
 	class Comment;
 	class Space;
 	class Text;
+
+
+	namespace details
+	{
+		template <class V>
+		struct ResultType
+		{
+			template <class N>
+			using result_with = decltype(std::declval<V>()(std::declval<N&>()));
+			using type = result_with<Group>;
+			static_assert(
+				std::is_same_v<type, result_with<Command>> &&
+				std::is_same_v<type, result_with<Comment>> &&
+				std::is_same_v<type, result_with<Space>> &&
+				std::is_same_v<type, result_with<Text>>,
+				"result must be the same for all node types");
+		};
+
+		struct Visitor
+		{
+			virtual ~Visitor() = default;
+			virtual void operator()(Group& group) = 0;
+			virtual void operator()(Command& cmd) = 0;
+			virtual void operator()(Comment& cmt) = 0;
+			virtual void operator()(Space& space) = 0;
+			virtual void operator()(Text& text) = 0;
+		};
+
+		template <class V, class Result = typename ResultType<V>::type>
+		struct GenericVisitor : Visitor
+		{
+			V& v;
+
+			Result result;
+
+			GenericVisitor(V& v) : v(v) { }
+
+			void operator()(Group&   n) final { result = v(n); }
+			void operator()(Command& n) final { result = v(n); }
+			void operator()(Comment& n) final { result = v(n); }
+			void operator()(Space&   n) final { result = v(n); }
+			void operator()(Text&    n) final { result = v(n); }
+		};
+		template <class V>
+		struct GenericVisitor<V, void> : Visitor
+		{
+			V& v;
+
+			GenericVisitor(V& v) : v(v) { }
+
+			void operator()(Group&   n) final { v(n); }
+			void operator()(Command& n) final { v(n); }
+			void operator()(Comment& n) final { v(n); }
+			void operator()(Space&   n) final { v(n); }
+			void operator()(Text&    n) final { v(n); }
+		};
+	}
+
+	enum class Offset : int {};
+
 	class Node
 	{
 		friend class Group;
@@ -30,6 +89,8 @@ namespace tex
 		virtual bool _collect_line(Context& con, std::vector<Node*>& out);
 
 	public:
+		using Visitor = details::Visitor;
+
 		enum class Type : char { space, text, group, command, comment };
 
 		std::string data;
@@ -54,18 +115,20 @@ namespace tex
 		virtual void popArgument(Group& dst);
 		virtual Node* getArgument() { return _next->getArgument(); }
 
-		struct Visitor
-		{
-			virtual ~Visitor() = default;
-			virtual void operator()(Group& group) = 0;
-			virtual void operator()(Command& cmd) = 0;
-			virtual void operator()(Comment& cmt) = 0;
-			virtual void operator()(Space& space) = 0;
-			virtual void operator()(Text& text) = 0;
-		};
 
 		void visit(Visitor&& v) { visit(v); }
 		virtual void visit(Visitor&) = 0;
+
+		template <class V, class Result = 
+			std::enable_if_t<!std::is_base_of_v<Visitor, V>, typename details::ResultType<V>::type>>
+		Result visit(V&& v)
+		{
+			details::GenericVisitor<V> vrt{ v };
+			visit(static_cast<Visitor&>(vrt));
+			if constexpr (!std::is_same_v<void, Result>)
+				return vrt.result;
+		}
+
 
 		virtual Type type() const = 0;
 		bool isSpace() const { return type()==Type::space; }

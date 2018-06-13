@@ -110,29 +110,51 @@ struct Caret
 		{
 			Caret& caret;
 
-			bool recurse(Node& node)
+			bool recurse(Node* to)
 			{
 				caret.offset = -1;
-				return node.next()->visit(*this);
+				return to->visit(*this);
+			}
+			bool escape(Node& node)
+			{
+				if (node.next() && (caret.offset > 0 || !node.next()->isSpace()))
+					return recurse(node.next());
+
+				if (node.parent() && node.parent()->data != "root")
+				{
+					caret.offset = 1;
+					return node.parent()->visit(*this);
+				}
+
+				caret.offset = length(&node);
+				return false;
 			}
 			bool operator()(Node& node)
 			{
 				caret.node = &node;
 				if (caret.offset < 0)
-					caret.offset = 0;
-				else
 				{
-					if (node.next() && (caret.offset > 0 || !node.next()->isSpace()))
-						return recurse(node);
-					else
-						caret.offset = 1;
+					caret.offset = 0;
+					return false;
 				}
-				return false;
+				return escape(node);
+			}
+			bool operator()(Group& group)
+			{
+				if (caret.offset < 0)
+				{
+					if (!group.empty())
+						return recurse(&group.front());
+					caret.node = &group;
+					caret.offset = 0;
+					return false;
+				}
+				return escape(group);
 			}
 			bool operator()(Space& space)
 			{
 				if (space.next())
-					return recurse(space);
+					return recurse(space.next());
 				else
 				{
 					caret.node = &space;
@@ -144,17 +166,19 @@ struct Caret
 			{
 				caret.node = &text;
 				if (caret.offset < 0)
+				{
 					caret.offset = 0;
-				else if (caret.offset < narrow<int>(text.data.size()))
+					return false;
+				}
+				if (caret.offset < narrow<int>(text.data.size()))
 				{
 					caret.offset += utf8len(text.data[caret.offset]);
 
 					if (caret.offset >= narrow<int>(text.data.size()) && text.next() && !text.next()->isSpace())
-						return recurse(text);
+						return recurse(text.next());
+					return false;
 				}
-				else if (text.next())
-					return recurse(text);
-				return false;
+				return escape(text);
 			}
 		};
 
@@ -177,17 +201,43 @@ struct Caret
 				caret.offset = narrow<int>(to->data.size()) + shift;
 				return to->visit(*this);
 			}
-
+			bool escape(Node& node)
+			{
+				for (Node* n = &node; ; n = n->parent())
+				{
+					if (!n->parent() || n->parent()->data == "root")
+					{
+						caret.offset = 0;
+						return false;
+					}
+					if (n->prev())
+						return recurse(n->prev(), 1);
+				}
+			}
 			bool operator()(Node& node)
 			{
-				if (caret.offset == 0 && node.prev())
-					return recurse(node.prev(), 0);
+				if (caret.offset <= 0)
+					return escape(node);
+
 				caret.node = &node;
+				caret.offset = 0;
+				return false;
+			}
+			bool operator()(Group& group)
+			{
+				if (caret.offset <= 0)
+					return escape(group);
+
+				if (!group.empty())
+					return recurse(&group.back(), caret.offset-1);
+
+				caret.node = &group;
 				caret.offset = 0;
 				return false;
 			}
 			bool operator()(Space& space)
 			{
+				return escape(space);
 				if (space.prev())
 					return recurse(space.prev(), 1);
 				caret.node = &space;
@@ -203,12 +253,7 @@ struct Caret
 					return false;
 				}
 				if (caret.offset <= 0)
-				{
-					if (text.prev())
-						return recurse(text.prev(), 0);
-					caret.offset = 0;
-					return false;
-				}
+					return escape(text);
 				caret.offset = caret.repairOffset(caret.offset-1);
 				return false;
 			}

@@ -6,22 +6,13 @@
 #include <oui_text.h>
 #include <oui_window.h>
 
+#include <gsl-lite.hpp>
+
 template <class C, class T>
 auto count(C&& c, const T& value) { return std::count(std::begin(c), std::end(c), value); }
 
-template <class To, class From>
-To narrow(From from)
-{
-	auto to = static_cast<To>(from);
-	if (static_cast<From>(to) != to)
-		throw std::runtime_error("narrowing falied");
-	if constexpr (std::is_signed_v<To> != std::is_signed_v<From>)
-		if (to < To{} != from < From{})
-			throw std::runtime_error("narrowing failed");
-	return to;
-}
 
-inline int utf8len(unsigned char ch)
+inline constexpr int utf8len(unsigned char ch)
 {
 	switch (ch >> 4)
 	{
@@ -36,14 +27,16 @@ inline int utf8len(unsigned char ch)
 
 namespace tex
 {
+	using gsl::narrow;
+
 	class IllFormed : public std::exception
 	{
 		std::string _message;
 	public:
 
-		IllFormed(std::string message) : _message(std::move(message)) {  }
+		IllFormed(std::string message) noexcept : _message(std::move(message)) {  }
 
-		const char* what() const final { return _message.c_str(); }
+		const char* what() const noexcept final { return _message.c_str(); }
 	};
 
 	namespace details
@@ -53,7 +46,7 @@ namespace tex
 			int size = 0;
 			int capacity = 0;
 
-			VectorHead(int capacity) : capacity(capacity) { }
+			constexpr VectorHead(int capacity) : capacity(capacity) { }
 		};
 	}
 
@@ -75,12 +68,12 @@ namespace tex
 			sans{ "fonts/LinBiolinum_Rah.ttf", int(20 * _w->dpiFactor()) },
 			roman{ "fonts/LinLibertine_Rah.ttf", int(20 * _w->dpiFactor()) } {}
 
-		void reset(oui::Window& window)
+		void reset(oui::Window& window) noexcept
 		{
 			_w = &window;
 		}
 
-		oui::Font* font(FontType f)
+		gsl::not_null<oui::Font*> font(FontType f)
 		{
 			switch (f)
 			{
@@ -92,11 +85,11 @@ namespace tex
 			}
 		}
 
-		oui::Window& window() const { return *_w; }
+		oui::Window& window() const noexcept { return *_w; }
 	};
 
 
-	inline bool isregular(char ch)
+	inline constexpr bool isregular(char ch)
 	{
 		switch (ch)
 		{

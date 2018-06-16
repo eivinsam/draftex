@@ -8,7 +8,7 @@ namespace tex
 	using Owner = std::unique_ptr<T>;
 
 	template <class To, class From>
-	inline auto as(From* from)
+	inline auto as(From* from) noexcept
 	{
 		return dynamic_cast<std::conditional_t<std::is_const_v<From>, const To*, To*>>(from); 
 	}
@@ -53,7 +53,7 @@ namespace tex
 
 			Result result;
 
-			GenericVisitor(V& v) : v(v) { }
+			constexpr GenericVisitor(V& v) : v(v) { }
 
 			void operator()(Group&   n) final { result = v(n); }
 			void operator()(Command& n) final { result = v(n); }
@@ -66,7 +66,7 @@ namespace tex
 		{
 			V& v;
 
-			GenericVisitor(V& v) : v(v) { }
+			constexpr GenericVisitor(V& v) : v(v) { }
 
 			void operator()(Group&   n) final { v(n); }
 			void operator()(Command& n) final { v(n); }
@@ -85,6 +85,8 @@ namespace tex
 		Group* _parent = nullptr;
 		Owner<Node> _next;
 		Node* _prev = nullptr;
+
+		bool _changed = true;
 	protected:
 		virtual bool _collect_line(Context& con, std::vector<Node*>& out);
 
@@ -97,14 +99,28 @@ namespace tex
 		oui::Rectangle box;
 
 		Node() = default;
+		virtual ~Node() = default;
+		Node(Node&&) = delete;
+		Node(const Node&) = delete;
 
-		Node* next() const { return _next.get(); }
-		Node* prev() const { return _prev; }
+		Node& operator=(Node&&) = delete;
+		Node& operator=(const Node&) = delete;
 
-		Group* parent() const { return _parent; }
-		Node* insertBefore(Owner<Node> sibling);
-		Node* insertAfter(Owner<Node> sibling);
+		constexpr bool changed() const { return _changed; }
+		void change() noexcept;
+		virtual void commit() noexcept { _changed = false; }
+
+		Node* next() const noexcept { return _next.get(); }
+		Node* prev() const noexcept { return _prev; }
+
+		Group* parent() const noexcept { return _parent; }
+		Node* insertBefore(Owner<Node> sibling) noexcept;
+		Node* insertAfter (Owner<Node> sibling) noexcept;
 		Owner<Node> detach();
+		void remove()
+		{
+			auto forget = detach();
+		}
 		Owner<Node> replace(Owner<Node> replacement)
 		{
 			insertBefore(std::move(replacement));
@@ -143,15 +159,15 @@ namespace tex
 			oui::Align align = oui::align::min;
 			Flow flow = Flow::line;
 
-			oui::Align2 boxAlign() const
+			constexpr oui::Align2 boxAlign() const
 			{
 				return flow == Flow::vertical ?
 					oui::Align2{ align.c, 0 } :
 					oui::Align2{ 0, align.c };
 			}
 
-			auto place(oui::Point    point) const { return boxAlign()(point).size(size); }
-			auto place(oui::Rectangle area) const { return boxAlign()(area) .size(size); }
+			constexpr auto place(oui::Point    point) const { return boxAlign()(point).size(size); }
+			constexpr auto place(oui::Rectangle area) const { return boxAlign()(area) .size(size); }
 		};
 
 		virtual Layout updateLayout(Context& con, FontType fonttype, float width);
@@ -168,7 +184,7 @@ namespace tex
 	{
 		friend class Node;
 		Owner<Node> _first;
-		Node* _last;
+		Node* _last = nullptr;
 
 		template <class IT>
 		float _align_line(const float line_top, const IT first, const IT last);
@@ -180,14 +196,9 @@ namespace tex
 
 		Group() = default;
 
-		Group(Group&& b)
-			: Node(std::move(b)), _first(std::move(b._first)), _last(b._last)
-		{
-			for (auto&& n : *this)
-				n._parent = this;
-		}
+		void commit() noexcept final;
 
-		Type type() const final { return Type::group; }
+		Type type() const noexcept final { return Type::group; }
 
 		static Owner<Group> make(std::string name) 
 		{
@@ -196,27 +207,18 @@ namespace tex
 			return result;
 		}
 
-		Group& operator=(Group&& b)
-		{
-			static_cast<Node&>(*this) = std::move(b);
-			_first = std::move(b._first);
-			_last = b._last;
-			for (auto&& n : *this)
-				n._parent = this;
-		}
-
 		Node* expand() final;
 		void popArgument(Group& dst) final { dst.append(detach()); }
-		Node* getArgument() final { return this; }
+		Node* getArgument() noexcept final { return this; }
 
-		Node& append(Owner<Node> child);
+		Node& append(Owner<Node> child) noexcept;
 
-		bool empty() const { return !_first; }
+		bool empty() const noexcept { return !_first; }
 
-		Node& front() { return *_first; }
-		Node& back() { return *_last; }
+		      Node& front()       { return *_first; }
 		const Node& front() const { return *_first; }
-		const Node& back() const { return *_last; }
+		      Node& back()        noexcept { return *_last; }
+		const Node& back()  const noexcept { return *_last; }
 
 		template <class ValueType>
 		class Iterator
@@ -231,26 +233,26 @@ namespace tex
 			using reference = ValueType & ;
 			using pointer = ValueType * ;
 
-			Iterator& operator++() { _it = _it->_next.get(); return *this; }
+			constexpr Iterator& operator++() { _it = _it->_next.get(); return *this; }
 
-			reference operator*() const { return *_it; }
-			pointer operator->() const { return _it; }
+			constexpr reference operator*() const { return *_it; }
+			constexpr pointer  operator->() const { return _it; }
 
-			bool operator==(const Iterator& other) const { return _it == other._it; }
-			bool operator!=(const Iterator& other) const { return _it != other._it; }
+			constexpr bool operator==(const Iterator& other) const { return _it == other._it; }
+			constexpr bool operator!=(const Iterator& other) const { return _it != other._it; }
 		};
 
 		using iterator = Iterator<Node>;
 		using const_iterator = Iterator<const Node>;
 
-		iterator begin() { return { _first.get() }; }
-		const_iterator begin() const { return { _first.get() }; }
-		constexpr       iterator end() { return { nullptr }; }
+		      iterator begin()       noexcept { return { _first.get() }; }
+		const_iterator begin() const noexcept { return { _first.get() }; }
+		constexpr       iterator end()       { return { nullptr }; }
 		constexpr const_iterator end() const { return { nullptr }; }
 
 		Layout updateLayout(Context& con, FontType fonttype, float width) override;
 	};
-	inline Node* Node::insertAfter(Owner<Node> sibling)
+	inline Node* Node::insertAfter(Owner<Node> sibling) noexcept
 	{
 		return _next ? 
 			_next->insertBefore(std::move(sibling)) : 
@@ -263,13 +265,13 @@ namespace tex
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
 
-		Type type() const final { return Type::command; }
+		Type type() const noexcept final { return Type::command; }
 
 		static auto make() { return std::make_unique<Command>(); }
 
 		Node* expand() final;
 		void popArgument(Group& dst) final { dst.append(detach()); }
-		Node* getArgument() final { return this; }
+		Node* getArgument() noexcept final { return this; }
 	};
 
 	class Comment : public Node
@@ -278,7 +280,7 @@ namespace tex
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
 
-		Type type() const final { return Type::comment; }
+		Type type() const noexcept final { return Type::comment; }
 
 		static auto make() { return std::make_unique<Comment>(); }
 	};
@@ -290,7 +292,7 @@ namespace tex
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
 
-		Type type() const final { return Type::space; }
+		Type type() const noexcept final { return Type::space; }
 
 		static auto make() { return std::make_unique<Space>(); }
 
@@ -299,6 +301,8 @@ namespace tex
 			return (offset == 0 && !(prev() && prev()->isSpace())) ? 
 				insertBefore(Space::make()) : nullptr;
 		}
+
+		void insert(int offset, std::string_view text) final;
 
 		Layout updateLayout(Context& con, FontType fonttype, float width) final;
 	};
@@ -309,9 +313,9 @@ namespace tex
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
 
-		FontType font;
+		FontType fonttype = FontType::mono;
 
-		Type type() const final { return Type::text; }
+		Type type() const noexcept final { return Type::text; }
 
 		static auto make() { return std::make_unique<Text>(); }
 		static auto make(std::string text)
@@ -323,7 +327,7 @@ namespace tex
 		static auto make(std::string_view text) { return make(std::string(text)); }
 
 		void popArgument(Group& dst) final;
-		Node* getArgument() final { return this; }
+		Node* getArgument() noexcept final { return this; }
 
 		Node* insertSpace(int offset) final;
 		void insert(int offset, std::string_view text) final
@@ -335,12 +339,11 @@ namespace tex
 	};
 
 
-	Owner<Group> tokenize(const char*& in, const char* const end, std::string data, Mode mode);
+	Owner<Group> tokenize(std::string_view& in, std::string data, Mode mode);
 	inline Owner<Group> tokenize(std::string_view in)
 	{
-		auto first = in.data();
-		return tokenize(first, first + in.size(), "root", Mode::text);
+		return tokenize(in, "root", Mode::text);
 	}
-	std::string readCurly(const char*& in, const char* const end);
+	std::string readCurly(std::string_view& in);
 
 }

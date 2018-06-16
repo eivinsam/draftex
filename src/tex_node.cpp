@@ -2,25 +2,49 @@
 #include <algorithm>
 #include <cassert>
 
-inline std::string_view view(const std::string& s) { return std::string_view{ s }; }
+inline std::string_view view(const std::string& s) noexcept { return std::string_view{ s }; }
 
 namespace tex
 {
+	using std::string_view;
+
+	constexpr char pop_front(std::string_view& in)
+	{
+		const char result = in.front();
+		in.remove_prefix(1);
+		return result;
+	}
+
 	namespace align = oui::align;
 
-	Node* Node::insertBefore(Owner<Node> sibling)
+	void Node::change() noexcept
+	{
+		for (Node* n = this; n != nullptr; n = n->_parent)
+			n->_changed = true;
+	}
+	void Group::commit() noexcept
+	{
+		Node::commit();
+		for (auto&& child : *this)
+			child.commit();
+	}
+
+	Node* Node::insertBefore(Owner<Node> sibling) noexcept
 	{
 		sibling->_parent = _parent;
 		sibling->_prev = _prev;
 		auto& new_owner = _prev ? _prev->_next : _parent->_first;
 		sibling->_next = std::move(new_owner);
 		_prev = (new_owner = std::move(sibling)).get();
+		_prev->change();
 		return _prev;
 	}
 	Owner<Node> Node::detach()
 	{
 		if (!_parent)
 			throw std::logic_error("trying to detach loose child");
+		
+		change();
 		auto result = std::move(this == _parent->_first.get() ?
 			_parent->_first : _prev->_next);
 		if (_next)
@@ -39,42 +63,52 @@ namespace tex
 
 		return this;
 	}
-	Node& Group::append(Owner<Node> child)
+	Node& Group::append(Owner<Node> child) noexcept
 	{
-		if (child->_parent)
-			child->detach();
+		Expects(child->parent() == nullptr);
 		child->_parent = this;
 		child->_prev = _last;
 		auto& new_owner = !_first ? _first : _last->_next;
 		new_owner = std::move(child);
 		_last = new_owner.get();
+		_last->change();
 		return *_last;
 	}
 
-	Owner<Group> tokenize(const char *& in, const char * const end, std::string data, Mode mode)
+
+	template <char... Values>
+	constexpr bool is(char ch)
+	{
+		return ((ch == Values) || ...);
+	}
+
+
+	Owner<Group> tokenize(string_view& in, std::string data, Mode mode)
 	{
 		auto result = Group::make(data);
 
-		while (in != end)
+		while (!in.empty())
 		{
-			switch (*in)
+			switch (in.front())
 			{
 			case '\\':
 			{
 				std::string cmd;
-				++in;
-				cmd.push_back(*in);
-				for (++in; in != end && isalpha(*in); ++in)
-					cmd.push_back(*in);
+				in.remove_prefix(1);
+				if (in.empty())
+					throw IllFormed("end of input after '\\'");
+				cmd.push_back(pop_front(in));
+				for (; !in.empty() && isalpha(in.front()); in.remove_prefix(1))
+					cmd.push_back(in.front());
 
 				if (cmd == "begin")
 				{
-					result->append(tokenize(in, end, readCurly(in, end), mode));
+					result->append(tokenize(in, readCurly(in), mode));
 					continue;
 				}
 				if (cmd == "end")
 				{
-					if (const auto envname = readCurly(in, end); envname != result->data)
+					if (const auto envname = readCurly(in); envname != result->data)
 						throw IllFormed("\\begin{" + result->data + "} does not match \\end{" + envname + "}");
 					return result;
 				}
@@ -83,51 +117,50 @@ namespace tex
 			}
 			case '%':
 			{
+				in.remove_prefix(1);
 				auto& tok = result->append(Comment::make()).data;
-				for (++in; in != end && *in != '\n' && *in != '\r'; ++in)
-					tok.push_back(*in);
-				if (in != end)
+				while (!in.empty() &&  !is<'\n', '\r'>(in.front()))
+					tok.push_back(pop_front(in));
+				if (!in.empty())
 				{
-					tok.push_back(*in);
-					++in;
-					if (in != end &&
-						((in[-1] == '\n' && in[0] == '\r') ||
-						(in[-1] == '\r' && in[0] == '\n')))
+					tok.push_back(pop_front(in));
+					if (!in.empty() &&
+						((tok.back() == '\n' && in.front() == '\r') ||
+						 (tok.back() == '\r' && in.front() == '\n')))
 					{
-						tok.push_back(*in);
-						++in;
+						tok.push_back(pop_front(in));
 					}
 				}
 				continue;
 			}
 			case '{':
-				++in;
-				result->append(tokenize(in, end, "curly", mode));
+				in.remove_prefix(1);
+				result->append(tokenize(in, "curly", mode));
 				continue;
 			case '}':
-				++in;
+				in.remove_prefix(1);
 				return result;
 			case '$':
-				++in;
+				in.remove_prefix(1);
 				if (result->data == "math")
 					return result;
 				else if (mode == Mode::math)
 					throw IllFormed("improperly balanced group or environment in math mode");
-				result->append(tokenize(in, end, "math", Mode::math));
+				result->append(tokenize(in, "math", Mode::math));
 				continue;
 			default:
 			{
-				if (*in >= 0 && *in <= ' ')
+				if (in.front() >= 0 && in.front() <= ' ')
 				{
 					auto& tok = result->append(Space::make()).data;
-					for (; in != end && *in >= 0 && *in <= ' '; ++in)
-						tok.push_back(*in);
+					while (!in.empty() && in.front() >= 0 && in.front()<= ' ')
+						tok.push_back(pop_front(in));
 				}
 				else
 				{
 					auto& tok = result->append(Text::make()).data;
-					for (; in != end && isregular(*in); ++in)
-						tok.push_back(*in);
+					while (!in.empty() && isregular(in.front()))
+						tok.push_back(pop_front(in));
 				}
 				continue;
 			}
@@ -136,20 +169,21 @@ namespace tex
 		return result;
 	}
 
-	std::string readCurly(const char *& in, const char * const end)
+	std::string readCurly(string_view& in)
 	{
-		if (in == end || *in != '{')
+		if (in.empty() || in.front() != '{')
 			throw IllFormed("expected '{'");
+		in.remove_prefix(1);
 		std::string result;
-		for (++in; in != end && *in != '}'; ++in)
-			result.push_back(*in);
-		if (in == end)
+		while (!in.empty() && in.front() != '}')
+			result.push_back(pop_front(in));
+		if (in.empty())
 			throw IllFormed("no matching '}'");
-		++in;
+		in.remove_prefix(1);
 		return result;
 	}
 
-	bool Node::_collect_line(Context & con, std::vector<Node*>& out)
+	bool Node::_collect_line(Context & /*con*/, std::vector<Node*>& out)
 	{
 		out.push_back(this);
 		return true;
@@ -158,7 +192,7 @@ namespace tex
 	{
 		if (data == "document")
 			return false;
-		if (data == "frac")
+		if (data == "frac" || data == "math")
 		{
 			out.push_back(this);
 			return true;
@@ -167,7 +201,7 @@ namespace tex
 			e._collect_line(con, out);
 		return true;
 	}
-	bool Space::_collect_line(Context & con, std::vector<Node*>& out)
+	bool Space::_collect_line(Context & /*con*/, std::vector<Node*>& out)
 	{
 		if (count(data, '\n') >= 2)
 			return false;
@@ -176,7 +210,7 @@ namespace tex
 	}
 	Node* Node::insertSpace(int offset)
 	{
-		if (offset == 0)
+		if (offset <= 0)
 		{
 			return (_prev && _prev->isSpace()) ?
 				nullptr : insertBefore(Space::make());
@@ -193,8 +227,7 @@ namespace tex
 		}
 		if (offset >= narrow<int>(data.size()))
 		{
-			return (!next() || !next()->isSpace()) ?
-				insertAfter(Space::make()) : nullptr;
+			return insertAfter(Space::make());
 		}
 		const auto offset_size = narrow<size_t>(offset);
 		insertAfter(Text::make(std::string_view(data).substr(offset_size)));
@@ -218,16 +251,33 @@ namespace tex
 			insertAfter(Text::make(text));
 		}
 	}
-	Node::Layout Node::updateLayout(Context & con, FontType fonttype, float width)
+	void Space::insert(int offset, std::string_view text)
 	{
-		auto font = con.font(fonttype);
-		return { { font->offset(data), float(font->height()) }, align::center };
+		if (offset <= 0)
+		{
+			if (!prev() || !prev()->isText())
+				insertBefore(Text::make(text));
+			else
+				prev()->data.append(text.data(), text.size());
+		}
+		else
+		{
+			if (!next() || !next()->isText())
+				insertAfter(Text::make(text));
+			else
+				next()->data.insert(0, text.data(), text.size());
+		}
 	}
-	Node::Layout Text::updateLayout(Context & con, FontType fonttype, float width)
+	Node::Layout Node::updateLayout(Context & con, FontType fonttype, float /*width*/)
 	{
-		font = fonttype;
-		auto font = con.font(fonttype);
-		return { { font->offset(data), float(font->height()) }, align::center };
+		const auto font = con.font(fonttype);
+		return { { font->offset(data), font->height() }, align::center };
+	}
+	Node::Layout Text::updateLayout(Context & con, FontType new_fonttype, float /*width*/)
+	{
+		fonttype = new_fonttype;
+		const auto font = con.font(fonttype);
+		return { { font->offset(data), font->height() }, align::center };
 	}
 	Node::Layout Group::updateLayout(Context & con, FontType fonttype, float width)
 	{
@@ -236,7 +286,7 @@ namespace tex
 
 		//font = fonttype;
 
-		if (data == "curly")
+		if (data == "curly" || data == "math")
 		{
 			result.flow = Flow::line;
 
@@ -246,7 +296,7 @@ namespace tex
 			result.size = { 0,0 };
 			for (auto&& e : *this)
 			{
-				auto l = e.updateLayout(con, fonttype, width);
+				const auto l = e.updateLayout(con, fonttype, width);
 				assert(l.flow != Flow::vertical);
 
 				e.box = l.place(pen);
@@ -261,13 +311,18 @@ namespace tex
 				e.box.min.y += asc;
 				e.box.max.y += asc;
 			}
+			if (empty())
+			{
+				// if empty we'll make it an em big!
+				asc = dsc = 0.5f*con.font(fonttype)->height();
+				pen.x = asc + dsc;
+			}
 			result.size.x = pen.x;
 			result.size.y = asc + dsc;
-			result.align = { asc / (result.size.x) };
+			result.align = { asc / (result.size.y) };
 
 			return result;
 		}
-
 
 		if (data == "frac")
 		{
@@ -320,14 +375,14 @@ namespace tex
 		result.size.y = pen.y;
 		return result;
 	}
-	Node::Layout Space::updateLayout(Context & con, FontType fonttype, float width)
+	Node::Layout Space::updateLayout(Context & con, FontType fonttype, float /*width*/)
 	{
 		if (count(data, '\n') >= 2)
 			return { { 0,0 }, align::min, Flow::vertical };
-		auto font = con.font(fonttype);
+		const auto font = con.font(fonttype);
 		return
 		{
-			{ ceil(font->height()*0.25f), float(font->height()) },
+			{ ceil(font->height()*0.25f), font->height() },
 			align::center,
 			Flow::none
 		};
@@ -404,7 +459,7 @@ namespace tex
 		float line_max = line_top;
 		for (auto it = first; it != last; ++it)
 		{
-			Node& e = **it;
+			const Node& e = **it;
 			line_min = std::min(line_min, e.box.min.y);
 			line_max = std::max(line_max, e.box.max.y);
 		}
@@ -442,14 +497,12 @@ namespace tex
 	static std::string_view read_optional_text(std::string_view data)
 	{
 		assert(!data.empty());
-		if (data[0] != '[')
+		if (data.front() != '[')
 			return {};
 
-		for (size_t i = 1; i < data.size(); ++i)
-		{
-			if (data[i] == ']')
-				return data.substr(0, i + 1);
-		}
+		if (const auto found = data.find_first_of(']', 1); found != data.npos)
+			return data.substr(0, found + 1);
+
 		throw IllFormed("could not find end of optional argument (only non-space text supported)");
 	}
 	static Owner<Node> read_optional(Node* next)
@@ -459,7 +512,7 @@ namespace tex
 
 		assert(!next->data.empty());
 
-		if (next->data[0] != '[')
+		if (next->data.front() != '[')
 			return {};
 
 		const auto opt = read_optional_text(next->data);
@@ -506,7 +559,7 @@ namespace tex
 			return this;
 
 		const auto raw_result = result.get();
-		replace(std::move(result));
+		const auto forget_self = replace(std::move(result));
 		return raw_result;
 	}
 

@@ -8,7 +8,10 @@
 #include <stdexcept>
 #include <unordered_map>
 
+
 #include "tex_node.h"
+
+using gsl::narrow;
 
 #pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
 
@@ -19,7 +22,7 @@ std::string readFile(const std::string& filename)
 	file.seekg(0, std::ios::end);
 	if (!file)
 		return result;
-	auto size = static_cast<size_t>(file.tellg());
+	const auto size = static_cast<size_t>(file.tellg());
 	result.resize(size);
 	file.seekg(0, std::ios::beg);
 	file.read(result.data(), result.size());
@@ -31,14 +34,14 @@ struct Renderer : public tex::Node::Visitor
 	oui::Vector offset;
 	tex::Context& con;
 
-	Renderer(oui::Vector offset, tex::Context& con) : offset(offset), con(con) { }
+	Renderer(oui::Vector offset, tex::Context& con) noexcept : offset(offset), con(con) { }
 
-	void operator()(tex::Space&) override { }
+	void operator()(tex::Space&) noexcept override { }
 	void operator()(tex::Group& group) override
 	{
-		if (group.data == "curly")
+		if (group.data == "math")
 		{
-			oui::fill(group.box + offset, oui::Color{ 0.8f, 0.7f, 0.0f, 0.3f });
+			oui::fill(group.box + offset, oui::Color{ 0.1f, 0.2f, 1.0f, 0.1f });
 		}
 		const auto suboffset = offset + group.box.min - oui::Point{ 0,0 };
 		for (auto&& e : group)
@@ -54,7 +57,7 @@ struct Renderer : public tex::Node::Visitor
 	}
 	void operator()(tex::Text& text) override 
 	{
-		con.font(text.font)->drawLine(text.box.min + offset, text.data, oui::colors::black);
+		con.font(text.fonttype)->drawLine(text.box.min + offset, text.data, oui::colors::black);
 	}
 };
 
@@ -64,18 +67,22 @@ static constexpr bool is =
 
 struct Caret
 {
-	static int length(tex::Node* node) { return node->isText() ? narrow<int>(node->data.size()) : 1; }
+	static int length(gsl::not_null<const tex::Node*> node) 
+	{ 
+		return node->isText() ? narrow<int>(node->data.size()) : 1; 
+	}
 
 	static constexpr float no_target = std::numeric_limits<float>::quiet_NaN();
 
 	tex::Node* node = nullptr;
 	int offset = 0;
 	float target_x = no_target;
+	bool change = false;
 
 	float offsetX(tex::Context& con) const
 	{
 		if (auto text = tex::as<tex::Text>(node))
-			return node->box.min.x + con.font(text->font)->offset(std::string_view(text->data).substr(0, offset));
+			return node->box.min.x + con.font(text->fonttype)->offset(std::string_view(text->data).substr(0, offset));
 		else
 			return offset ? node->box.max.x : node->box.min.x;
 	}
@@ -95,27 +102,39 @@ struct Caret
 
 	int repairOffset(int off)
 	{
+		Expects(off < narrow<int>(node->data.size()));
 		while (off > 0 && utf8len(node->data[off]) == 0)
 			--off;
 		return off;
 	}
 
-	bool next()
+	void beforeMove()
+	{
+		if (node && node->prev() &&
+			node->isSpace() && node->prev()->isSpace())
+		{
+			node->prev()->remove();
+			change = true;
+		}
+	}
+
+	void next()
 	{
 		if (!node)
-			return false;
+			return;
+		beforeMove();
 
 		using namespace tex;
 		struct V 
 		{
 			Caret& caret;
 
-			bool recurse(Node* to)
+			void recurse(gsl::not_null<Node*> to)
 			{
 				caret.offset = -1;
 				return to->visit(*this);
 			}
-			bool escape(Node& node)
+			void escape(const Node& node)
 			{
 				if (node.next() && (caret.offset > 0 || !node.next()->isSpace()))
 					return recurse(node.next());
@@ -127,19 +146,20 @@ struct Caret
 				}
 
 				caret.offset = length(&node);
-				return false;
+				return;
 			}
-			bool operator()(Node& node)
+			void operator()(Node& node)
 			{
 				caret.node = &node;
 				if (caret.offset < 0)
 				{
 					caret.offset = 0;
-					return false;
+					return;
 				}
+				caret.offset = 1;
 				return escape(node);
 			}
-			bool operator()(Group& group)
+			void operator()(Group& group)
 			{
 				if (caret.offset < 0)
 				{
@@ -147,11 +167,12 @@ struct Caret
 						return recurse(&group.front());
 					caret.node = &group;
 					caret.offset = 0;
-					return false;
+					return;
 				}
+				caret.offset = 1;
 				return escape(group);
 			}
-			bool operator()(Space& space)
+			void operator()(Space& space)
 			{
 				if (space.next())
 					return recurse(space.next());
@@ -160,23 +181,23 @@ struct Caret
 					caret.node = &space;
 					caret.offset = 1;
 				}
-				return false;
+				return;
 			}
-			bool operator()(Text& text)
+			void operator()(Text& text)
 			{
 				caret.node = &text;
 				if (caret.offset < 0)
 				{
 					caret.offset = 0;
-					return false;
+					return;
 				}
 				if (caret.offset < narrow<int>(text.data.size()))
 				{
-					caret.offset += utf8len(text.data[caret.offset]);
+					caret.offset += utf8len(gsl::at(text.data, caret.offset));
 
 					if (caret.offset >= narrow<int>(text.data.size()) && text.next() && !text.next()->isSpace())
 						return recurse(text.next());
-					return false;
+					return;
 				}
 				return escape(text);
 			}
@@ -185,10 +206,12 @@ struct Caret
 		target_x = no_target;
 		return node->visit(V{ *this });
 	}
-	bool prev()
+	void prev()
 	{
 		if (!node)
-			return false;
+			return;
+
+		beforeMove();
 		target_x = no_target;
 
 		using namespace tex;
@@ -196,34 +219,34 @@ struct Caret
 		{
 			Caret& caret;
 
-			bool recurse(Node* to, int shift)
+			void recurse(gsl::not_null<Node*> to, int shift)
 			{
 				caret.offset = narrow<int>(to->data.size()) + shift;
 				return to->visit(*this);
 			}
-			bool escape(Node& node)
+			void escape(Node& node)
 			{
-				for (Node* n = &node; ; n = n->parent())
+				for (gsl::not_null<Node*> n = &node; ; n = n->parent())
 				{
 					if (!n->parent() || n->parent()->data == "root")
 					{
 						caret.offset = 0;
-						return false;
+						return;
 					}
 					if (n->prev())
 						return recurse(n->prev(), 1);
 				}
 			}
-			bool operator()(Node& node)
+			void operator()(Node& node)
 			{
 				if (caret.offset <= 0)
 					return escape(node);
 
 				caret.node = &node;
 				caret.offset = 0;
-				return false;
+				return;
 			}
-			bool operator()(Group& group)
+			void operator()(Group& group)
 			{
 				if (caret.offset <= 0)
 					return escape(group);
@@ -233,29 +256,24 @@ struct Caret
 
 				caret.node = &group;
 				caret.offset = 0;
-				return false;
+				return;
 			}
-			bool operator()(Space& space)
+			void operator()(Space& space)
 			{
 				return escape(space);
-				if (space.prev())
-					return recurse(space.prev(), 1);
-				caret.node = &space;
-				caret.offset = 0;
-				return false;
 			}
-			bool operator()(Text& text)
+			void operator()(Text& text)
 			{
 				caret.node = &text;
 				if (const int textlen = narrow<int>(text.data.size()); caret.offset > textlen)
 				{
 					caret.offset = textlen;
-					return false;
+					return;
 				}
 				if (caret.offset <= 0)
 					return escape(text);
 				caret.offset = caret.repairOffset(caret.offset-1);
-				return false;
+				return;
 			}
 		};
 		return node->visit(V{ *this });
@@ -265,10 +283,11 @@ struct Caret
 	{
 		if (auto text = tex::as<tex::Text>(node))
 		{
-			const auto font = con.font(text->font);
+			const auto font = con.font(text->fonttype);
 			const auto textdata = std::string_view(text->data);
 			auto prev_x = node->box.min.x;
-			for (int i = 0, len = 1; size_t(i) < textdata.size(); i += len)
+
+			for (int i = 0, len = 1; i < gsl::narrow<int>(textdata.size()); i += len)
 			{
 				len = utf8len(node->data[i]);
 				const auto x = prev_x + font->offset(textdata.substr(i, len));
@@ -308,6 +327,7 @@ struct Caret
 	{
 		if (!node)
 			return;
+		beforeMove();
 
 		if (isnan(target_x))
 			target_x = offsetX(con);
@@ -337,6 +357,7 @@ struct Caret
 	{
 		if (!node)
 			return;
+		beforeMove();
 
 		if (isnan(target_x))
 			target_x = offsetX(con);
@@ -364,6 +385,7 @@ struct Caret
 	}
 	void home()
 	{
+		beforeMove();
 		target_x = no_target;
 		while (node->prev())
 		{
@@ -377,6 +399,7 @@ struct Caret
 	}
 	void end()
 	{
+		beforeMove();
 		target_x = no_target;
 		while (node->next())
 		{
@@ -396,20 +419,20 @@ struct Caret
 			if (node->next())
 			{
 				node = node->next();
-				node->prev()->detach();
+				node->prev()->remove();
 				if (node->prev() && node->isText() && node->prev()->isText())
 				{
 					node = node->prev();
 					offset = narrow<int>(node->data.size());
 					node->data.append(node->next()->data);
-					node->next()->detach();
+					node->next()->remove();
 				}
 				return;
 			}
 			if (node->prev())
 			{
 				prev();
-				node->next()->detach();
+				node->next()->remove();
 				return;
 			}
 		};
@@ -421,7 +444,18 @@ struct Caret
 			handle_empty();
 			return;
 		}
-		node->data.erase(offset, utf8len(node->data[offset]));
+		if (offset >= narrow<int>(node->data.size()))
+		{
+			if (!node->next())
+				return;
+
+			node = node->next();
+			offset = 0;
+			eraseNext();
+			return;
+		}
+		node->change();
+		node->data.erase(offset, utf8len(gsl::at(node->data, offset)));
 		if (node->data.empty())
 		{
 			handle_empty();
@@ -429,8 +463,8 @@ struct Caret
 	}
 	void erasePrev()
 	{
-		auto old_node = node;
-		auto old_off = offset;
+		const auto* const old_node = node;
+		const auto old_off = offset;
 		prev();
 		if (old_off != offset || old_node != node)
 			eraseNext();
@@ -476,30 +510,33 @@ int main()
 			break;
 		}
 
-	bool layout_dirty = true;
-	window.resize = [&](auto&&) { layout_dirty = true; };
+
+	window.resize = [&](auto&&) { tokens->change(); };
 
 	oui::input.keydown = [&](auto key)
 	{
 		using oui::Key;
 		switch (key)
 		{
-		case Key::right: layout_dirty |= caret.next(); break;
-		case Key::left:  layout_dirty |= caret.prev(); break;
+		case Key::right: caret.next(); break;
+		case Key::left:  caret.prev(); break;
 		case Key::up: caret.up(context); break;
 		case Key::down: caret.down(context); break;
 		case Key::home: caret.home(); break;
 		case Key::end: caret.end(); break;
-		case Key::backspace: caret.erasePrev(); layout_dirty = true; break;
-		case Key::del:       caret.eraseNext(); layout_dirty = true; break;
-		case Key::space:     caret.insertSpace(); layout_dirty = true; break;
+		case Key::backspace: caret.erasePrev(); break;
+		case Key::del:       caret.eraseNext(); break;
+		case Key::space:     caret.insertSpace(); break;
 		default: 
 			return;
 		}
 		window.redraw();
 	};
-	oui::input.character = [&](auto ch)
+	oui::input.character = [&](int charcode)
 	{
+		if (charcode < 0 || charcode > 0xff)
+			return;
+		const char ch = gsl::narrow_cast<char>(charcode);
 		if (ch < ' ')
 			return;
 		if (ch == ' ')
@@ -521,7 +558,7 @@ int main()
 		}
 		caret.node->insert(caret.offset, utf8);
 		caret.offset += narrow<int>(utf8.size());
-		layout_dirty = true;
+		caret.node->change();
 		window.redraw();
 		return;
 	};
@@ -530,9 +567,10 @@ int main()
 	{
 		window.clear(oui::colors::white);
 		context.reset(window);
-		if (std::exchange(layout_dirty, false))
+		if (tokens->changed())
 		{
 			tokens->updateLayout(context, tex::FontType::sans, window.area().width());
+			tokens->commit();
 		}
 
 		auto caret_box = caret.node->box;

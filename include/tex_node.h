@@ -15,7 +15,6 @@ namespace tex
 
 	class Group;
 	class Command;
-	class Comment;
 	class Space;
 	class Text;
 
@@ -30,7 +29,6 @@ namespace tex
 			using type = result_with<Group>;
 			static_assert(
 				std::is_same_v<type, result_with<Command>> &&
-				std::is_same_v<type, result_with<Comment>> &&
 				std::is_same_v<type, result_with<Space>> &&
 				std::is_same_v<type, result_with<Text>>,
 				"result must be the same for all node types");
@@ -41,7 +39,6 @@ namespace tex
 			virtual ~Visitor() = default;
 			virtual void operator()(Group& group) = 0;
 			virtual void operator()(Command& cmd) = 0;
-			virtual void operator()(Comment& cmt) = 0;
 			virtual void operator()(Space& space) = 0;
 			virtual void operator()(Text& text) = 0;
 		};
@@ -57,7 +54,6 @@ namespace tex
 
 			void operator()(Group&   n) final { result = v(n); }
 			void operator()(Command& n) final { result = v(n); }
-			void operator()(Comment& n) final { result = v(n); }
 			void operator()(Space&   n) final { result = v(n); }
 			void operator()(Text&    n) final { result = v(n); }
 		};
@@ -70,7 +66,6 @@ namespace tex
 
 			void operator()(Group&   n) final { v(n); }
 			void operator()(Command& n) final { v(n); }
-			void operator()(Comment& n) final { v(n); }
 			void operator()(Space&   n) final { v(n); }
 			void operator()(Text&    n) final { v(n); }
 		};
@@ -90,6 +85,8 @@ namespace tex
 	protected:
 		virtual bool _collect_line(Context& con, std::vector<Node*>& out);
 
+		virtual Text* _this_or_prev_text() noexcept { return prevText(); };
+		virtual Text* _this_or_next_text() noexcept { return nextText(); };
 	public:
 		using Visitor = details::Visitor;
 
@@ -150,6 +147,9 @@ namespace tex
 		bool isSpace() const { return type()==Type::space; }
 		bool isText()  const { return type()==Type::text; }
 
+		Text* prevText() noexcept;
+		Text* nextText() noexcept;
+
 		virtual Node* insertSpace(int offset);
 		virtual void insert(int offset, std::string_view text);
 
@@ -173,6 +173,7 @@ namespace tex
 		virtual Layout updateLayout(Context& con, FontType fonttype, float width);
 	};
 
+
 	inline void tryPopArgument(Node* next, Group& dst)
 	{
 		if (next == nullptr)
@@ -190,6 +191,9 @@ namespace tex
 		float _align_line(const float line_top, const IT first, const IT last);
 		void _layout_line(std::vector<tex::Node*> &line, oui::Point &pen, FontType, tex::Context & con, float width);
 		bool _collect_line(Context& con, std::vector<Node*>& out) override;
+
+		Text* _this_or_prev_text() noexcept final { return _last  ? _last ->_this_or_prev_text() : prevText(); }
+		Text* _this_or_next_text() noexcept final { return _first ? _first->_this_or_next_text() : nextText(); }
 	public:
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
@@ -258,6 +262,21 @@ namespace tex
 			_next->insertBefore(std::move(sibling)) : 
 			&_parent->append(std::move(sibling)); 
 	}
+	inline Text* Node::prevText() noexcept
+	{
+		return
+			_prev ? _prev->_this_or_prev_text() :
+			_parent ? _parent->prevText() :
+			nullptr;
+	}
+	inline Text* Node::nextText() noexcept
+	{
+		return
+			_next ? _next->_this_or_next_text() :
+			_parent ? _parent->nextText() :
+			nullptr;
+	}
+
 
 	class Command : public Node
 	{
@@ -272,17 +291,6 @@ namespace tex
 		Node* expand() final;
 		void popArgument(Group& dst) final { dst.append(detach()); }
 		Node* getArgument() noexcept final { return this; }
-	};
-
-	class Comment : public Node
-	{
-	public:
-		using Node::visit;
-		void visit(Visitor& v) override { v(*this); }
-
-		Type type() const noexcept final { return Type::comment; }
-
-		static auto make() { return std::make_unique<Comment>(); }
 	};
 
 	class Space : public Node
@@ -309,6 +317,8 @@ namespace tex
 
 	class Text : public Node
 	{
+		Text* _this_or_prev_text() noexcept final { return this; };
+		Text* _this_or_next_text() noexcept final { return this; };
 	public:
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }

@@ -116,23 +116,7 @@ namespace tex
 				continue;
 			}
 			case '%':
-			{
-				in.remove_prefix(1);
-				auto& tok = result->append(Comment::make()).data;
-				while (!in.empty() &&  !is<'\n', '\r'>(in.front()))
-					tok.push_back(pop_front(in));
-				if (!in.empty())
-				{
-					tok.push_back(pop_front(in));
-					if (!in.empty() &&
-						((tok.back() == '\n' && in.front() == '\r') ||
-						 (tok.back() == '\r' && in.front() == '\n')))
-					{
-						tok.push_back(pop_front(in));
-					}
-				}
-				continue;
-			}
+				throw IllFormed("comments not supported");
 			case '{':
 				in.remove_prefix(1);
 				result->append(tokenize(in, "curly", mode));

@@ -51,10 +51,6 @@ struct Renderer : public tex::Node::Visitor
 	{
 		con.font(tex::FontType::sans)->drawLine(cmd.box.min + offset, cmd.data, oui::Color{ .3f, .9f, .1f });
 	}
-	void operator()(tex::Comment& cmt) override
-	{
-		con.font(tex::FontType::sans)->drawLine(cmt.box.min + offset, cmt.data, oui::colors::blue);
-	}
 	void operator()(tex::Text& text) override 
 	{
 		con.font(text.fonttype)->drawLine(text.box.min + offset, text.data, oui::colors::black);
@@ -123,160 +119,41 @@ struct Caret
 		if (!node)
 			return;
 		beforeMove();
-
-		using namespace tex;
-		struct V 
-		{
-			Caret& caret;
-
-			void recurse(gsl::not_null<Node*> to)
-			{
-				caret.offset = -1;
-				return to->visit(*this);
-			}
-			void escape(const Node& node)
-			{
-				if (node.next() && (caret.offset > 0 || !node.next()->isSpace()))
-					return recurse(node.next());
-
-				if (node.parent() && node.parent()->data != "root")
-				{
-					caret.offset = 1;
-					return node.parent()->visit(*this);
-				}
-
-				caret.offset = length(&node);
-				return;
-			}
-			void operator()(Node& node)
-			{
-				caret.node = &node;
-				if (caret.offset < 0)
-				{
-					caret.offset = 0;
-					return;
-				}
-				caret.offset = 1;
-				return escape(node);
-			}
-			void operator()(Group& group)
-			{
-				if (caret.offset < 0)
-				{
-					if (!group.empty())
-						return recurse(&group.front());
-					caret.node = &group;
-					caret.offset = 0;
-					return;
-				}
-				caret.offset = 1;
-				return escape(group);
-			}
-			void operator()(Space& space)
-			{
-				if (space.next())
-					return recurse(space.next());
-				else
-				{
-					caret.node = &space;
-					caret.offset = 1;
-				}
-				return;
-			}
-			void operator()(Text& text)
-			{
-				caret.node = &text;
-				if (caret.offset < 0)
-				{
-					caret.offset = 0;
-					return;
-				}
-				if (caret.offset < narrow<int>(text.data.size()))
-				{
-					caret.offset += utf8len(gsl::at(text.data, caret.offset));
-
-					if (caret.offset >= narrow<int>(text.data.size()) && text.next() && !text.next()->isSpace())
-						return recurse(text.next());
-					return;
-				}
-				return escape(text);
-			}
-		};
-
 		target_x = no_target;
-		return node->visit(V{ *this });
+
+		if (offset < length(node))
+		{
+			offset += utf8len(gsl::at(node->data, offset));
+			return;
+		}
+		if (auto next_text = node->nextText())
+		{
+			node = next_text;
+			offset = 0;
+			return;
+		}
+		return;
 	}
 	void prev()
 	{
 		if (!node)
 			return;
-
 		beforeMove();
 		target_x = no_target;
 
-		using namespace tex;
-		struct V
+		if (offset > 0)
 		{
-			Caret& caret;
+			offset = repairOffset(offset-1);
+			return;
+		}
+		if (auto prev_text = node->prevText())
+		{
+			node = prev_text;
+			offset = node->data.size();
 
-			void recurse(gsl::not_null<Node*> to, int shift)
-			{
-				caret.offset = narrow<int>(to->data.size()) + shift;
-				return to->visit(*this);
-			}
-			void escape(Node& node)
-			{
-				for (gsl::not_null<Node*> n = &node; ; n = n->parent())
-				{
-					if (!n->parent() || n->parent()->data == "root")
-					{
-						caret.offset = 0;
-						return;
-					}
-					if (n->prev())
-						return recurse(n->prev(), 1);
-				}
-			}
-			void operator()(Node& node)
-			{
-				if (caret.offset <= 0)
-					return escape(node);
-
-				caret.node = &node;
-				caret.offset = 0;
-				return;
-			}
-			void operator()(Group& group)
-			{
-				if (caret.offset <= 0)
-					return escape(group);
-
-				if (!group.empty())
-					return recurse(&group.back(), caret.offset-1);
-
-				caret.node = &group;
-				caret.offset = 0;
-				return;
-			}
-			void operator()(Space& space)
-			{
-				return escape(space);
-			}
-			void operator()(Text& text)
-			{
-				caret.node = &text;
-				if (const int textlen = narrow<int>(text.data.size()); caret.offset > textlen)
-				{
-					caret.offset = textlen;
-					return;
-				}
-				if (caret.offset <= 0)
-					return escape(text);
-				caret.offset = caret.repairOffset(caret.offset-1);
-				return;
-			}
-		};
-		return node->visit(V{ *this });
+			return;
+		}
+		return;
 	}
 
 	void findPlace(tex::Context& con, const float target)

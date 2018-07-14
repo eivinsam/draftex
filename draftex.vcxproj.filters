@@ -21,6 +21,9 @@
     <ClCompile Include="src\tex_node.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="tex_node_layout.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="tex.natvis" />
@@ -30,6 +33,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\tex_node.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ranged.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\express.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -8,10 +8,9 @@
 #include <stdexcept>
 #include <unordered_map>
 
-
 #include "tex_node.h"
 
-using gsl::narrow;
+using tex::int_size;
 
 #pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
 
@@ -31,56 +30,67 @@ std::string readFile(const std::string& filename)
 
 struct Renderer : public tex::Node::Visitor
 {
-	oui::Vector offset;
 	tex::Context& con;
 
-	Renderer(oui::Vector offset, tex::Context& con) noexcept : offset(offset), con(con) { }
+	oui::Vector offset;
+
+	Renderer(tex::Context& con, oui::Vector offset = { 0,0 }) noexcept : con(con), offset(offset) { }
 
 	void operator()(tex::Space&) noexcept override { }
 	void operator()(tex::Group& group) override
 	{
+		offset = offset + group.box.offset;
 		if (group.data == "math")
 		{
-			oui::fill(group.box + offset, oui::Color{ 0.1f, 0.2f, 1.0f, 0.1f });
+			oui::fill(group.absBox(), oui::Color{ 0.1f, 0.2f, 1.0f, 0.1f });
 		}
-		const auto suboffset = offset + group.box.min - oui::Point{ 0,0 };
+		if (group.data == "frac")
+		{
+			oui::fill(oui::align::centerLeft(oui::origo + offset).size({ group.box.width(), 1 }), oui::colors::black);
+		}
 		for (auto&& e : group)
-			e.visit(Renderer{ suboffset, con });
+			e.visit(Renderer{ con, offset });
 	}
-	void operator()(tex::Command& cmd) override
+	void operator()(tex::Command& cmd) override 
 	{
-		con.font(tex::FontType::sans)->drawLine(cmd.box.min + offset, cmd.data, oui::Color{ .3f, .9f, .1f });
+		con.font(tex::FontType::sans)->drawLine(offset + cmd.box.min(), cmd.data, oui::Color{ .3f, .9f, .1f });
 	}
 	void operator()(tex::Text& text) override 
 	{
-		con.font(text.fonttype)->drawLine(text.box.min + offset, text.data, oui::colors::black);
+		con.font(text.fonttype)->drawLine(offset + text.box.min(), text.data, oui::colors::black);
 	}
 };
 
-template <class Base, class Derived>
-static constexpr bool is = 
-	std::is_base_of_v<Base, std::remove_reference_t<std::remove_const_t<Derived>>>;
+inline auto is_above(const tex::Node& node)
+{ 
+	return [&node](const tex::Node& other)
+	{ 
+		return other.absBottom() <= node.absTop(); 
+	};
+}
+inline auto is_below(const tex::Node& node)
+{
+	return [&node](const tex::Node& other)
+	{
+		return other.absTop() >= node.absBottom();
+	};
+}
 
 struct Caret
 {
-	static int length(gsl::not_null<const tex::Node*> node) 
-	{ 
-		return node->isText() ? narrow<int>(node->data.size()) : 1; 
-	}
-
 	static constexpr float no_target = std::numeric_limits<float>::quiet_NaN();
 
-	tex::Node* node = nullptr;
+	tex::Text* node = nullptr;
 	int offset = 0;
 	float target_x = no_target;
 	bool change = false;
 
+
+	int maxOffset() const { Expects(node); return int_size(node->data); }
+
 	float offsetX(tex::Context& con) const
 	{
-		if (auto text = tex::as<tex::Text>(node))
-			return node->box.min.x + con.font(text->fonttype)->offset(std::string_view(text->data).substr(0, offset));
-		else
-			return offset ? node->box.max.x : node->box.min.x;
+		return con.font(node->fonttype)->offset(std::string_view(node->data).substr(0, offset));
 	}
 
 	void render(tex::Context& con)
@@ -88,17 +98,15 @@ struct Caret
 		if (!con.window().focus())
 			return;
 
-		oui::Point pos = { offsetX(con) - 1, node->box.min.y };
-
-		for (auto p = node->parent(); p != nullptr; p = p->parent())
-			pos = pos + (p->box.min - oui::origo);
+		oui::Point pos = node->absBox().min;
+		pos.x += offsetX(con) - 1;
 
 		oui::fill(oui::align::topLeft(pos).size({ 2.0f, node->box.height() }), oui::colors::black);
 	}
 
 	int repairOffset(int off)
 	{
-		Expects(off < narrow<int>(node->data.size()));
+		Expects(node && off < int_size(node->data));
 		while (off > 0 && utf8len(node->data[off]) == 0)
 			--off;
 		return off;
@@ -106,10 +114,10 @@ struct Caret
 
 	void beforeMove()
 	{
-		if (node && node->prev() &&
-			node->isSpace() && node->prev()->isSpace())
+		if (node && node->prev &&
+			node->isSpace() && node->prev->isSpace())
 		{
-			node->prev()->remove();
+			node->prev->remove();
 			change = true;
 		}
 	}
@@ -121,7 +129,7 @@ struct Caret
 		beforeMove();
 		target_x = no_target;
 
-		if (offset < length(node))
+		if (offset < int_size(node->data))
 		{
 			offset += utf8len(gsl::at(node->data, offset));
 			return;
@@ -156,212 +164,169 @@ struct Caret
 		return;
 	}
 
-	void findPlace(tex::Context& con, const float target)
+	void findPlace(tex::Context& con)
 	{
-		if (auto text = tex::as<tex::Text>(node))
-		{
-			const auto font = con.font(text->fonttype);
-			const auto textdata = std::string_view(text->data);
-			auto prev_x = node->box.min.x;
+		const auto font = con.font(node->fonttype);
+		const auto textdata = std::string_view(node->data);
+		auto prev_x = node->absLeft();
 
-			for (int i = 0, len = 1; i < gsl::narrow<int>(textdata.size()); i += len)
-			{
-				len = utf8len(node->data[i]);
-				const auto x = prev_x + font->offset(textdata.substr(i, len));
-				if (x >= target)
-				{
-					offset = x - target > target - prev_x ? i : i + len;
-					return;
-				}
-				prev_x = x;
-			}
-			offset = textdata.size();
-		}
-		else
+		for (int i = 0, len = 1; i < int_size(textdata); i += len)
 		{
-			if (target - node->box.min.x > node->box.max.x - target)
+			len = utf8len(node->data[i]);
+			const auto x = prev_x + font->offset(textdata.substr(i, len));
+			if (x >= target_x)
 			{
-				if (node->next())
-				{
-					offset = 0;
-					node = node->next();
-				}
-				else
-				{
-					offset = 1;
-				}
+				offset = x - target_x > target_x - prev_x ? i : i + len;
 				return;
 			}
-			while (node->isSpace() && node->prev())
-			{
-				node = node->prev();
-				offset = length(node);
-			}
+			prev_x = x;
 		}
+		offset = int_size(textdata);
 	}
 
 	void up(tex::Context& con)
 	{
+		using namespace tex;
+		using namespace xpr;
+
 		if (!node)
 			return;
 		beforeMove();
 
 		if (isnan(target_x))
-			target_x = offsetX(con);
+			target_x = node->absLeft() + offsetX(con);
 
-		while (node->prev() && node->prev()->box.max.y > node->box.min.y)
-			node = node->prev();
-
-		while (node->prev())
+		if (auto first_above = first.of(those.of(node->allTextBefore()).that(is_above(*node)))) 
 		{
-			node = node->prev();
-			if (node->box.width() == 0 || node->box.height() == 0)
-				continue;
-			if (target_x > node->box.min.x)
+			if (target_x >= first_above->absLeft())
 			{
-				findPlace(con, target_x);
-				return;
+				node = first_above;
+				return findPlace(con);
 			}
-			if (node->prev()->box.max.y <= node->box.min.y)
+			Text* prev_above = first_above;
+			for (auto&& above : first_above->allTextBefore())
 			{
-				offset = 0;
-				return;
+				if (target_x >= above.absLeft())
+				{
+					node = (target_x - above.absRight() < prev_above->absLeft() - target_x) ? 
+						&above : prev_above;
+					return findPlace(con);
+				}
+				prev_above = &above;
 			}
 		}
-		offset = 0;
 	}
 	void down(tex::Context& con)
 	{
+		using namespace tex;
+		using namespace xpr;
+
 		if (!node)
 			return;
 		beforeMove();
 
 		if (isnan(target_x))
-			target_x = offsetX(con);
+			target_x = node->absLeft() + offsetX(con);
 
-		while (node->next() && node->next()->box.min.y < node->box.max.y)
-			node = node->next();
-
-		while (node->next())
+		if (auto first_below = first.of(those.of(node->allTextAfter()).that(is_below(*node))))
 		{
-			node = node->next();
-			if (node->box.width() == 0 || node->box.height() == 0)
-				continue;
-			if (target_x < node->box.max.x)
+			if (target_x <= first_below->absRight())
 			{
-				findPlace(con, target_x);
-				return;
+				node = first_below;
+				return findPlace(con);
 			}
-			if (node->next()->box.min.y >= node->box.max.y)
+			auto prev_below = first_below;
+			for (auto&& below : first_below->allTextAfter())
 			{
-				offset = length(node);
-				return;
+				if (target_x <= below.absRight())
+				{
+					node = (target_x - below.absLeft() > prev_below->absRight() - target_x) ?
+						&below : prev_below;
+					return findPlace(con);
+				}
+				prev_below = &below;
 			}
 		}
-		offset = length(node);
 	}
 	void home()
 	{
 		beforeMove();
 		target_x = no_target;
-		while (node->prev())
+		while (auto prev_text = node->prevText())
 		{
-			if (node->prev()->box.min.x > node->box.min.x)
+			if (prev_text->absLeft() > node->absLeft())
 			{
 				offset = 0;
 				return;
 			}
-			node = node->prev();
+			node = prev_text;
 		}
 	}
 	void end()
 	{
 		beforeMove();
 		target_x = no_target;
-		while (node->next())
+		while (auto next_text = node->nextText())
 		{
-			if (node->next()->box.max.x < node->box.max.x)
+			if (next_text->absRight() < node->absRight())
 			{
-				offset = length(node);
+				offset = maxOffset();
 				return;
 			}
-			node = node->next();
+			node = next_text;
 		}
 	}
 
 	void eraseNext()
 	{
-		const auto handle_empty = [this]
+		beforeMove();
+		target_x = no_target;
+		if (offset >= maxOffset())
 		{
-			if (node->next())
+			if (node->next)
 			{
-				node = node->next();
-				node->prev()->remove();
-				if (node->prev() && node->isText() && node->prev()->isText())
+				Expects(!node->next->isText());
+				node->next->remove();
+				if (node->next && node->next->isText())
 				{
-					node = node->prev();
-					offset = narrow<int>(node->data.size());
-					node->data.append(node->next()->data);
-					node->next()->remove();
+					node->data.append(node->next->data);
+					node->next->remove();
 				}
-				return;
 			}
-			if (node->prev())
-			{
-				prev();
-				node->next()->remove();
-				return;
-			}
-		};
-
-		if (!node->isText())
-		{
-			if (offset > 0)
-				return;
-			handle_empty();
-			return;
-		}
-		if (offset >= narrow<int>(node->data.size()))
-		{
-			if (!node->next())
-				return;
-
-			node = node->next();
-			offset = 0;
-			eraseNext();
 			return;
 		}
 		node->change();
 		node->data.erase(offset, utf8len(gsl::at(node->data, offset)));
 		if (node->data.empty())
 		{
-			handle_empty();
+			//handle_empty();
 		}
 	}
 	void erasePrev()
 	{
-		const auto* const old_node = node;
-		const auto old_off = offset;
+		beforeMove();
+		target_x = no_target;
+		if (offset <= 0)
+		{
+			if (node->prev)
+			{
+				Expects(!node->prev->isText());
+				node->prev->remove();
+				if (node->prev && node->prev->isText())
+				{
+					offset = int_size(node->prev->data);
+					node->data.insert(0, node->prev->data);
+					node->prev->remove();
+				}
+			}
+			return;
+		}
 		prev();
-		if (old_off != offset || old_node != node)
-			eraseNext();
+		eraseNext();
 	}
 
 	void insertSpace()
 	{
-		if (auto new_space = node->insertSpace(offset))
-		{
-			if (new_space->next())
-			{
-				node = new_space->next();
-				offset = 0;
-			}
-			else
-			{
-				node = new_space;
-				offset = 1;
-			}
-		}
 	}
 };
 
@@ -378,10 +343,10 @@ int main()
 	for (auto&& e : *tokens)
 		if (auto group = tex::as<tex::Group>(&e); group && group->data == "document")
 		{
-			for (auto&& de : *group)
-				if (de.isText())
+			for (auto&& de : tex::as<tex::Group>(group->front()))
+				if (auto text = tex::as<tex::Text>(&de))
 				{
-					caret.node = &de;
+					caret.node = text;
 					break;
 				}
 			break;
@@ -395,12 +360,12 @@ int main()
 		using oui::Key;
 		switch (key)
 		{
+		case Key::home:  caret.home(); break;
+		case Key::end:   caret.end();  break;
 		case Key::right: caret.next(); break;
 		case Key::left:  caret.prev(); break;
-		case Key::up: caret.up(context); break;
+		case Key::up:     caret.up(context); break;
 		case Key::down: caret.down(context); break;
-		case Key::home: caret.home(); break;
-		case Key::end: caret.end(); break;
 		case Key::backspace: caret.erasePrev(); break;
 		case Key::del:       caret.eraseNext(); break;
 		case Key::space:     caret.insertSpace(); break;
@@ -434,8 +399,9 @@ int main()
 			utf8.push_back(0x80 | ( ch        & 0x3f));
 		}
 		caret.node->insert(caret.offset, utf8);
-		caret.offset += narrow<int>(utf8.size());
+		caret.offset += int_size(utf8);
 		caret.node->change();
+		caret.target_x = Caret::no_target;
 		window.redraw();
 		return;
 	};
@@ -446,16 +412,17 @@ int main()
 		context.reset(window);
 		if (tokens->changed())
 		{
-			tokens->updateLayout(context, tex::FontType::sans, window.area().width());
+			tokens->updateSize(context, tex::FontType::sans, window.area().width());
+			tokens->updateLayout({ window.area().width()*0.5f, 0 });
 			tokens->commit();
 		}
 
-		auto caret_box = caret.node->box;
-		for (auto p = caret.node->parent(); p != nullptr; p = p->parent())
-			caret_box = oui::align::topLeft(caret_box.min + (p->box.min - oui::origo)).size(caret_box.size());
-		oui::fill(caret_box, { 0.0f, 0.1f, 1, 0.2f });
+		oui::fill(caret.node->absBox(), { 0.0f, 0.1f, 1, 0.2f });
+		for (tex::Group* p = caret.node->parent; p != nullptr; p = p->parent)
+			if (p->data == "par")
+				oui::fill(p->absBox(), { 0, 0, 1, 0.1f });
 
-		tokens->visit(Renderer{ {0,0}, context });
+		tokens->visit(Renderer{ context });
 
 		caret.render(context);
 	}

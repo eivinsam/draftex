@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tex.h"
+#include "express.h"
 
 namespace tex
 {
@@ -12,6 +13,12 @@ namespace tex
 	{
 		return dynamic_cast<std::conditional_t<std::is_const_v<From>, const To*, To*>>(from); 
 	}
+	template <class To, class From>
+	inline auto& as(From& from) noexcept
+	{
+		return dynamic_cast<std::conditional_t<std::is_const_v<From>, const To&, To&>>(from);
+	}
+
 
 	class Group;
 	class Command;
@@ -69,31 +76,128 @@ namespace tex
 			void operator()(Space&   n) final { v(n); }
 			void operator()(Text&    n) final { v(n); }
 		};
+
+		template <class T, class Friend>
+		class Property
+		{
+			friend Friend;
+			T value;
+
+		public:
+			constexpr operator T() const { return value; }
+		};
+		template <class T, class Friend>
+		class Property<T*, Friend>
+		{
+			friend Friend;
+			T* value = nullptr;
+
+			constexpr Property() = default;
+			constexpr Property(Property&&) = default;
+			constexpr Property(const Property&) = default;
+			constexpr Property& operator=(Property&&) = default;
+			constexpr Property& operator=(const Property&) = default;
+
+			constexpr Property(T* value) : value(value) { }
+			constexpr Property& operator=(T* new_value) { value = new_value; return *this; }
+		public:
+			constexpr operator T*() const { return value; }
+			constexpr operator const T*() const { return value; }
+			explicit constexpr operator bool() const { return static_cast<bool>(value); }
+
+			constexpr T* operator->() const { return value; }
+			constexpr T& operator*() const { return *value; }
+
+			template <class S> constexpr bool operator==(S&& other) const { return value == other; }
+			template <class S> constexpr bool operator!=(S&& other) const { return value != other; }
+		};
+		template <class T, class Friend>
+		class Property<Owner<T>, Friend>
+		{
+			friend Friend;
+			Owner<T> value;
+
+			constexpr Property() = default;
+			constexpr Property(Property&&) = default;
+			constexpr Property(const Property&) = default;
+			constexpr Property& operator=(Property&&) = default;
+			constexpr Property& operator=(const Property&) = default;
+
+			constexpr Property(Owner<T> value) : value(std::move(value)) { }
+			constexpr Property& operator=(Owner<T> new_value) { value = std::move(new_value); return *this; }
+
+			constexpr Owner<T>& owning() { return value; }
+		public:
+			constexpr operator T*() const { return value.get(); }
+			constexpr operator const T*() const { return value.get(); }
+			explicit constexpr operator bool() const { return static_cast<bool>(value); }
+
+			constexpr T* operator->() const { return value.get(); }
+			constexpr T& operator*() const { return *value; }
+
+			template <class S> constexpr bool operator==(S&& other) const { return value == other; }
+			template <class S> constexpr bool operator!=(S&& other) const { return value != other; }
+		};
 	}
 
 	enum class Offset : int {};
 
+	class Paragraph;
 	class Node
 	{
 		friend class Group;
 
-		Group* _parent = nullptr;
-		Owner<Node> _next;
-		Node* _prev = nullptr;
-
 		bool _changed = true;
 	protected:
-		virtual bool _collect_line(Context& con, std::vector<Node*>& out);
+		Owner<Node>& _owning_next() { return next.owning(); }
+		void _set_parent(Group* p) { parent = p; }
+		void _set_prev(Node* p) { prev = p; }
+
 
 		virtual Text* _this_or_prev_text() noexcept { return prevText(); };
 		virtual Text* _this_or_next_text() noexcept { return nextText(); };
 	public:
+		details::Property<Group*, Node> parent;
+		details::Property<Owner<Node>, Node> next;
+		details::Property<Node*, Node> prev;
+
 		using Visitor = details::Visitor;
 
 		enum class Type : char { space, text, group, command, comment };
 
 		std::string data;
-		oui::Rectangle box;
+
+		class Shape
+		{
+		public:
+			oui::Vector offset;
+			float before;
+			float above;
+			float after;
+			float below;
+
+			constexpr float left() const { return offset.x - before; }
+			constexpr float top() const { return offset.y - above; }
+			constexpr float right() const { return offset.x + after; }
+			constexpr float bottom() const { return offset.y + below; }
+
+			constexpr oui::Point min() const { return { left(), top() }; }
+			constexpr oui::Point max() const { return { right(),  bottom() }; }
+
+			constexpr float width() const { return before + after; }
+			constexpr float height() const { return above + below; }
+
+			constexpr void width(float w, oui::Align a) { before = w * a.c; after = w - before; }
+			constexpr void height(float h, oui::Align a) { above = h * a.c; below = h - above; }
+		};
+		oui::Vector boxSize;
+		Shape box;
+
+		float absLeft() const;
+		float absRight() const { return absLeft() + box.width(); }
+		float absTop() const;
+		float absBottom() const { return absTop() + box.height(); }
+		oui::Rectangle absBox() const;
 
 		Node() = default;
 		virtual ~Node() = default;
@@ -107,12 +211,9 @@ namespace tex
 		void change() noexcept;
 		virtual void commit() noexcept { _changed = false; }
 
-		Node* next() const noexcept { return _next.get(); }
-		Node* prev() const noexcept { return _prev; }
+		template <class T> T* insertBefore(Owner<T> sibling) noexcept;
+		template <class T> T* insertAfter (Owner<T> sibling) noexcept;
 
-		Group* parent() const noexcept { return _parent; }
-		Node* insertBefore(Owner<Node> sibling) noexcept;
-		Node* insertAfter (Owner<Node> sibling) noexcept;
 		Owner<Node> detach();
 		void remove()
 		{
@@ -126,7 +227,7 @@ namespace tex
 
 		virtual Node* expand() { return this; }
 		virtual void popArgument(Group& dst);
-		virtual Node* getArgument() { return _next->getArgument(); }
+		virtual Node* getArgument() { return next->getArgument(); }
 
 
 		void visit(Visitor&& v) { visit(v); }
@@ -147,30 +248,17 @@ namespace tex
 		bool isSpace() const { return type()==Type::space; }
 		bool isText()  const { return type()==Type::text; }
 
+		virtual std::optional<std::string> asEnd() const { return {}; }
+
 		Text* prevText() noexcept;
 		Text* nextText() noexcept;
 
-		virtual Node* insertSpace(int offset);
-		virtual void insert(int offset, std::string_view text);
+		auto allTextBefore() { return xpr::generator(&Node::prevText, this); }
+		auto allTextAfter()  { return xpr::generator(&Node::nextText, this); }
 
-		struct Layout
-		{
-			oui::Vector size;
-			oui::Align align = oui::align::min;
-			Flow flow = Flow::line;
-
-			constexpr oui::Align2 boxAlign() const
-			{
-				return flow == Flow::vertical ?
-					oui::Align2{ align.c, 0 } :
-					oui::Align2{ 0, align.c };
-			}
-
-			constexpr auto place(oui::Point    point) const { return boxAlign()(point).size(size); }
-			constexpr auto place(oui::Rectangle area) const { return boxAlign()(area) .size(size); }
-		};
-
-		virtual Layout updateLayout(Context& con, FontType fonttype, float width);
+		virtual bool collect(Paragraph& out);
+		virtual void updateSize(Context& con, FontType fonttype, float width);
+		virtual void updateLayout(oui::Vector offset);
 	};
 
 
@@ -187,10 +275,6 @@ namespace tex
 		Owner<Node> _first;
 		Node* _last = nullptr;
 
-		template <class IT>
-		float _align_line(const float line_top, const IT first, const IT last);
-		void _layout_line(std::vector<tex::Node*> &line, oui::Point &pen, FontType, tex::Context & con, float width);
-		bool _collect_line(Context& con, std::vector<Node*>& out) override;
 
 		Text* _this_or_prev_text() noexcept final { return _last  ? _last ->_this_or_prev_text() : prevText(); }
 		Text* _this_or_next_text() noexcept final { return _first ? _first->_this_or_next_text() : nextText(); }
@@ -204,18 +288,14 @@ namespace tex
 
 		Type type() const noexcept final { return Type::group; }
 
-		static Owner<Group> make(std::string name) 
-		{
-			auto result = std::make_unique<Group>();
-			result->data = name;
-			return result;
-		}
+		static Owner<Group> make(std::string name);
 
 		Node* expand() final;
 		void popArgument(Group& dst) final { dst.append(detach()); }
 		Node* getArgument() noexcept final { return this; }
 
-		Node& append(Owner<Node> child) noexcept;
+		template <class T>
+		T* append(Owner<T> child) noexcept;
 
 		bool empty() const noexcept { return !_first; }
 
@@ -237,7 +317,7 @@ namespace tex
 			using reference = ValueType & ;
 			using pointer = ValueType * ;
 
-			constexpr Iterator& operator++() { _it = _it->_next.get(); return *this; }
+			constexpr Iterator& operator++() { _it = _it->next; return *this; }
 
 			constexpr reference operator*() const { return *_it; }
 			constexpr pointer  operator->() const { return _it; }
@@ -254,26 +334,56 @@ namespace tex
 		constexpr       iterator end()       { return { nullptr }; }
 		constexpr const_iterator end() const { return { nullptr }; }
 
-		Layout updateLayout(Context& con, FontType fonttype, float width) override;
+		bool collect(Paragraph& out) override;
+		void updateSize(Context& con, FontType fonttype, float width) override;
+		void updateLayout(oui::Vector offset) override;
 	};
-	inline Node* Node::insertAfter(Owner<Node> sibling) noexcept
+	template <class T>
+	T* Group::append(Owner<T> child) noexcept
 	{
-		return _next ? 
-			_next->insertBefore(std::move(sibling)) : 
-			&_parent->append(std::move(sibling)); 
+		Expects(child->parent == nullptr);
+		T* const raw_child = child.get();
+		child->_set_parent(this);
+		child->_set_prev(_last);
+		auto& new_owner = !_first ? _first : _last->_owning_next();
+		new_owner = std::move(child);
+		_last = raw_child;
+		_last->change();
+		return raw_child;
+	}
+
+	template <class T>
+	inline T* Node::insertBefore(Owner<T> sibling) noexcept
+	{
+		T* const raw_sibling = sibling.get();
+		sibling->parent = parent;
+		sibling->prev = prev;
+		auto& new_owner = prev ? prev->_owning_next() : parent->_first;
+		sibling->_owning_next() = std::move(new_owner);
+		new_owner = std::move(sibling);
+		prev = raw_sibling;
+		prev->change();
+		return raw_sibling;
+	}
+	template <class T>
+	inline T* Node::insertAfter(Owner<T> sibling) noexcept
+	{
+		return next ? 
+			next->insertBefore(std::move(sibling)) : 
+			parent->append(std::move(sibling)); 
 	}
 	inline Text* Node::prevText() noexcept
 	{
 		return
-			_prev ? _prev->_this_or_prev_text() :
-			_parent ? _parent->prevText() :
+			prev ? prev->_this_or_prev_text() :
+			parent ? parent->prevText() :
 			nullptr;
 	}
 	inline Text* Node::nextText() noexcept
 	{
 		return
-			_next ? _next->_this_or_next_text() :
-			_parent ? _parent->nextText() :
+			next ? next->_this_or_next_text() :
+			parent ? parent->nextText() :
 			nullptr;
 	}
 
@@ -287,15 +397,28 @@ namespace tex
 		Type type() const noexcept final { return Type::command; }
 
 		static auto make() { return std::make_unique<Command>(); }
+		static auto make(std::string data)
+		{
+			auto result = make();
+			result->data = std::move(data);
+			return result;
+		}
 
 		Node* expand() final;
 		void popArgument(Group& dst) final { dst.append(detach()); }
 		Node* getArgument() noexcept final { return this; }
+
+		std::optional<std::string> asEnd() const final
+		{
+			if (data.size() > 4 && std::string_view(data).substr(0,4) == "end ")
+				return data.substr(4);
+			else
+				return {};
+		}
 	};
 
 	class Space : public Node
 	{
-		bool _collect_line(Context& con, std::vector<Node*>& out) override;
 	public:
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
@@ -304,15 +427,8 @@ namespace tex
 
 		static auto make() { return std::make_unique<Space>(); }
 
-		Node* insertSpace(int offset) final 
-		{ 
-			return (offset == 0 && !(prev() && prev()->isSpace())) ? 
-				insertBefore(Space::make()) : nullptr;
-		}
-
-		void insert(int offset, std::string_view text) final;
-
-		Layout updateLayout(Context& con, FontType fonttype, float width) final;
+		bool collect(Paragraph& out) override;
+		void updateSize(Context& con, FontType fonttype, float width) final;
 	};
 
 	class Text : public Node
@@ -339,13 +455,13 @@ namespace tex
 		void popArgument(Group& dst) final;
 		Node* getArgument() noexcept final { return this; }
 
-		Node* insertSpace(int offset) final;
-		void insert(int offset, std::string_view text) final
+		Space* insertSpace(int offset);
+		void insert(int offset, std::string_view text)
 		{
 			data.insert(narrow<size_t>(offset), text.data(), text.size());
 		}
 
-		Layout updateLayout(Context& con, FontType fonttype, float width) final;
+		void updateSize(Context& con, FontType fonttype, float width) final;
 	};
 
 

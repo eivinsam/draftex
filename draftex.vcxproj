@@ -85,6 +85,7 @@
       <ConformanceMode>true</ConformanceMode>
       <TreatWarningAsError>true</TreatWarningAsError>
       <EnablePREfast>false</EnablePREfast>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
     </ClCompile>
     <Link>
       <TargetMachine>MachineX86</TargetMachine>
@@ -115,6 +116,7 @@
   <ItemGroup>
     <ClCompile Include="src\draftex.cpp" />
     <ClCompile Include="src\tex_node.cpp" />
+    <ClCompile Include="tex_node_layout.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="oui\oui.vcxproj">
@@ -122,9 +124,13 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <Natvis Include="tex.natvis" />
+    <Natvis Include="tex.natvis">
+      <SubType>Designer</SubType>
+    </Natvis>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\express.h" />
+    <ClInclude Include="include\ranged.h" />
     <ClInclude Include="include\tex.h" />
     <ClInclude Include="include\tex_node.h" />
   </ItemGroup>

@@ -29,6 +29,9 @@ namespace tex
 {
 	using gsl::narrow;
 
+	template <class C>
+	constexpr int int_size(C&& c) { return narrow<int>(std::size(c)); }
+
 	class IllFormed : public std::exception
 	{
 		std::string _message;

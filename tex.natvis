@@ -1,16 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?> 
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 
-  <Type Name="tex::Vector&lt;*&gt;">
-    <DisplayString>{{size = {(_data._Mypair._Myval2 ? _data->size : 0),d}}}</DisplayString>
-    <Expand>
-      <ArrayItems>
-        <Size>_data._Mypair._Myval2 ? _data->size : 0</Size>
-        <ValuePointer>reinterpret_cast&lt;$T1*&gt;(_data+1)</ValuePointer>
-      </ArrayItems>
-    </Expand>
-  </Type>
-
   <Type Name="tex::Node">
     <DisplayString>{data}</DisplayString>
     <Expand>
@@ -24,7 +14,7 @@
       <Item Name="box">box</Item>
       <LinkedListItems>
         <HeadPointer>_first._Mypair._Myval2</HeadPointer>
-        <NextPointer>_next._Mypair._Myval2</NextPointer>
+        <NextPointer>next.value._Mypair._Myval2</NextPointer>
         <ValueNode>this</ValueNode>
       </LinkedListItems>
     </Expand>

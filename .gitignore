@@ -9,3 +9,4 @@ obj
 *.pdf
 *.gz
 /Debug
+/Release

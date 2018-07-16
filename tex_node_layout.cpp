@@ -165,56 +165,48 @@ namespace tex
 		out.push_back(this);
 		return true;
 	}
-	Space * Text::insertSpace(int offset)
-	{
-		if (offset >= narrow<int>(data.size()))
-		{
-			return insertAfter(Space::make());
-		}
-		const auto offset_size = narrow<size_t>(offset);
-		insertAfter(Text::make(string_view(data).substr(offset_size)));
-		data.resize(offset_size);
-		return insertAfter(Space::make());
 
-	}
-
-	void Node::updateSize(Context& con, FontType fonttype, float /*width*/)
+	void Node::updateSize(Context& con, Mode, Font font, float /*width*/)
 	{
-		const auto font = con.font(fonttype);
-		box.width(font->offset(data), align::min);
-		box.height(font->height(), align::center);
+		const auto F = con.font(font);
+		box.width(F->offset(data, con.ptsize(font)), align::min);
+		box.height(con.ptsize(font), align::center);
 	}
-	void Text::updateSize(Context& con, FontType new_fonttype, float /*width*/)
+	void Text::updateSize(Context& con, Mode new_mode, Font new_font, float /*width*/)
 	{
-		fonttype = new_fonttype;
-		const auto font = con.font(fonttype);
-		box.width(font->offset(data), align::min);
-		box.height(font->height(), align::center);
+		mode = new_mode;
+		font = new_font;
+		const auto F = con.font(font);
+		box.width(F->offset(data, con.ptsize(font)), align::min);
+		box.height(con.ptsize(font), align::center);
 	}
-	void Space::updateSize(Context& con, FontType fonttype, float /*width*/)
+	void Space::updateSize(Context& con, Mode mode, Font font, float /*width*/)
 	{
 		if (count(data, '\n') >= 2)
 		{
+			Expects(mode != Mode::math);
 			box.width(0, align::min);
 			box.height(0, align::min);
 			return;
 		}
-		const auto font = con.font(fonttype);
-		box.width(font->height()*0.25f, align::min);
-		box.height(font->height(), align::center);
+		box.width(con.ptsize(font)*(mode == Mode::math ? 0 : 0.25f), align::min);
+		box.height(con.ptsize(font), align::center);
 	}
 
 
 	class Frac : public Group
 	{
 	public:
-		void updateSize(Context& con, FontType fonttype, float width) final
+		void updateSize(Context& con, Mode mode, Font font, float width) final
 		{
+			Expects(mode == Mode::math);
 			const auto p = front().getArgument();
 			const auto q = p->next->getArgument();
 
-			p->updateSize(con, fonttype, width);
-			q->updateSize(con, fonttype, width);
+			font.size = shift(font.size, -2);
+
+			p->updateSize(con, Mode::math, font, width);
+			q->updateSize(con, Mode::math, font, width);
 
 			box.width(std::max(p->box.width(), q->box.width()), align::min);
 			box.above = p->box.height();
@@ -235,12 +227,12 @@ namespace tex
 	class VerticalGroup : public Group
 	{
 	public:
-		void updateSize(Context& con, FontType fonttype, float width) final
+		void updateSize(Context& con, Mode mode, Font font, float width) final
 		{
 			if (data == "document")
 			{
-				fonttype = FontType::roman;
-				box.width(std::min(width, con.font(fonttype)->height() * 24.0f), align::center);
+				font.type = FontType::roman;
+				box.width(std::min(width, con.ptsize(font) * 24.0f), align::center);
 				box.above = box.below = 0;
 			}
 			else
@@ -251,7 +243,7 @@ namespace tex
 
 			for (auto&& sub : *this)
 			{
-				sub.updateSize(con, fonttype, box.width());
+				sub.updateSize(con, mode, font, box.width());
 				box.below += sub.box.height();
 			}
 		}
@@ -273,13 +265,13 @@ namespace tex
 	class Par : public Group
 	{
 	public:
-		void updateSize(Context& con, FontType fonttype, float width) final
+		void updateSize(Context& con, Mode mode, Font font, float width) final
 		{
 			box.width(width, align::min);
 			box.height(0, align::min);
 
 			for (auto&& sub : *this)
-				sub.updateSize(con, fonttype, width);
+				sub.updateSize(con, mode, font, width);
 		}
 		void updateLayout(oui::Vector offset) final
 		{
@@ -309,12 +301,17 @@ namespace tex
 		}
 	};
 
-	void Group::updateSize(Context& con, FontType fonttype, float width)
+	void Group::updateSize(Context& con, Mode mode, Font font, float width)
 	{
+		if (data == "math")
+		{
+			mode = Mode::math;
+			font.type = FontType::italic;
+		}
 		box.before = box.after = 0;
 		for (auto&& e : *this)
 		{
-			e.updateSize(con, fonttype, width);
+			e.updateSize(con, mode, font, width);
 			box.above = std::max(box.above, e.box.above);
 			box.below = std::max(box.below, e.box.below);
 			box.after += e.box.width();

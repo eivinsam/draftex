@@ -257,7 +257,7 @@ namespace tex
 		auto allTextAfter()  { return xpr::generator(&Node::nextText, this); }
 
 		virtual bool collect(Paragraph& out);
-		virtual void updateSize(Context& con, FontType fonttype, float width);
+		virtual void updateSize(Context& con, Mode mode, Font font, float width);
 		virtual void updateLayout(oui::Vector offset);
 	};
 
@@ -335,7 +335,7 @@ namespace tex
 		constexpr const_iterator end() const { return { nullptr }; }
 
 		bool collect(Paragraph& out) override;
-		void updateSize(Context& con, FontType fonttype, float width) override;
+		void updateSize(Context& con, Mode mode, Font font, float width) override;
 		void updateLayout(oui::Vector offset) override;
 	};
 	template <class T>
@@ -428,7 +428,7 @@ namespace tex
 		static auto make() { return std::make_unique<Space>(); }
 
 		bool collect(Paragraph& out) override;
-		void updateSize(Context& con, FontType fonttype, float width) final;
+		void updateSize(Context& con, Mode mode, Font font, float width) final;
 	};
 
 	class Text : public Node
@@ -439,7 +439,8 @@ namespace tex
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
 
-		FontType fonttype = FontType::mono;
+		Font font = { FontType::mono, FontSize::normalsize };
+		Mode mode = Mode::text;
 
 		Type type() const noexcept final { return Type::text; }
 
@@ -456,12 +457,9 @@ namespace tex
 		Node* getArgument() noexcept final { return this; }
 
 		Space* insertSpace(int offset);
-		void insert(int offset, std::string_view text)
-		{
-			data.insert(narrow<size_t>(offset), text.data(), text.size());
-		}
+		int insert(int offset, std::string_view text);
 
-		void updateSize(Context& con, FontType fonttype, float width) final;
+		void updateSize(Context& con, Mode mode, Font font, float width) final;
 	};
 
 

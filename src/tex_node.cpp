@@ -12,6 +12,48 @@ inline string_view view(const string& s) noexcept { return string_view{ s }; }
 
 namespace tex
 {
+	using uchar = unsigned char;
+
+	static inline int popCodepoint(std::string_view& text)
+	{
+		if (text.empty())
+			return 0;
+		int code = 0;
+		const uchar x = uchar(text.front()); text.remove_prefix(1);
+		uchar remaining = 0;
+		switch (x >> 4)
+		{
+		case 0b1111:
+			code = x & 0x7;
+			remaining = 3;
+			break;
+		case 0b1110:
+			code = x & 0xf;
+			remaining = 2;
+			break;
+		case 0b1100:
+		case 0b1101:
+			code = x & 0x1f;
+			remaining = 1;
+			break;
+		default:
+			if (x & 0x80)
+				throw std::runtime_error("unepected continuation byte");
+			return x;
+		}
+		for (; remaining > 0; --remaining)
+		{
+			if (text.empty())
+				return 0;
+			const uchar y = uchar(text.front()); text.remove_prefix(1);
+			if (y >> 6 != 2)
+				throw std::runtime_error("continuation byte expected");
+			code = (code << 6) | (y & 0x3f);
+		}
+		return code;
+	}
+
+
 	constexpr char pop_front(string_view& in)
 	{
 		const char result = in.front();
@@ -74,13 +116,27 @@ namespace tex
 		parent = nullptr;
 		return result;
 	}
-	Node* Group::expand()
-	{
-		for (auto child = _first.get(); child != nullptr; child = child->next)
-			child = child->expand();
 
-		return this;
+	Space * Text::insertSpace(int offset)
+	{
+		if (offset > int_size(data))
+			offset = int_size(data);
+		const auto offset_size = narrow<size_t>(offset);
+		insertAfter(Text::make(string_view(data).substr(offset_size)));
+		data.resize(offset_size);
+		return insertAfter(Space::make());
+
 	}
+
+	int Text::insert(int offset, std::string_view text)
+	{
+		change();
+		const auto uoffset = narrow<size_t>(offset);
+
+		data.insert(uoffset, text.data(), text.size());
+		return int_size(text);
+	}
+
 
 
 	template <char... Values>
@@ -260,6 +316,13 @@ namespace tex
 		return result;
 	}
 
+	Node* Group::expand()
+	{
+		for (auto child = _first.get(); child != nullptr; child = child->next)
+			child = child->expand();
+
+		return this;
+	}
 	Node * Command::expand()
 	{
 		Owner<Group> result;

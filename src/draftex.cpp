@@ -387,12 +387,11 @@ int main()
 	};
 	oui::input.character = [&](int charcode)
 	{
-		if (charcode < 0 || charcode > 0xff)
+		if (charcode < 0)
 			return;
-		const char ch = gsl::narrow_cast<char>(charcode);
-		if (ch < ' ')
+		if (charcode < ' ')
 			return;
-		if (ch == ' ')
+		if (charcode == ' ')
 			return;
 
 		caret.offset += caret.node->insert(caret.offset, oui::utf8(charcode));

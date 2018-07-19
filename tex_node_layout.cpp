@@ -5,6 +5,7 @@ using std::string;
 using std::string_view;
 using std::make_unique;
 
+
 inline string_view view(const string& s) noexcept { return string_view{ s }; }
 
 template <class V>
@@ -68,75 +69,116 @@ namespace tex
 		iterator begin() { return { _nodes.begin() }; }
 		iterator end() { return { _nodes.end() }; }
 	};
-	float Paragraph::updateLayout(oui::Vector pen, float width)
+	class LineBulider
 	{
-		const auto x0 = pen.x;
-		auto rest = xpr::those.from(begin()).until(end());
+		using iterator = Paragraph::iterator;
+		int space_count;
+		float max_above;
+		float max_below;
+		float width_left;
+		oui::Vector pen;
+		xpr::Range<iterator, iterator> rest;
+		iterator it;
 
-		while (!rest.empty())
+		enum class Align { left, justified };
+	public:
+		LineBulider(oui::Vector pen, iterator par_begin, iterator par_end) :
+			pen(pen), rest(par_begin, par_end) { }
+
+		bool done() const { return rest.empty(); }
+		float height() const { return pen.y; }
+
+		auto currentLine()
 		{
-			// skip initial spaces
-			if (rest.first->isSpace())
-			{
-				++rest.first;
-				continue;
-			}
-			// find line ned and collect line stats
-			int space_count = 0;
-			float max_above = 0;
-			float max_below = 0;
-			float width_left = width;
-			iterator line_end;
+			return xpr::those.from(rest.begin()).until(it);
+		}
 
-			for (line_end = rest.begin(); line_end != rest.end(); ++line_end)
+		void buildLine(float start_x, float width)
+		{
+			reset(start_x, width);
+
+			skipSpaces();
+			if (rest.empty())
+				return;
+
+			collectLine();
+
+			position(it == rest.end() ? Align::left : Align::justified);
+
+			rest.first = it;
+		}
+	private:
+		void reset(float start_x, float width)
+		{
+			space_count = 0;
+			max_above = 0;
+			max_below = 0;
+			pen.x = start_x;
+			width_left = width;
+			it = rest.first;
+		}
+		void skipSpaces()
+		{
+			while (it != rest.end() && it->isSpace())
+				++it;
+			rest.first = it;
+		}
+		void collectLine()
+		{
+			for (it = rest.begin(); it != rest.end(); ++it)
 			{
-				const auto box_width = line_end->box.width();
-				if (width_left < box_width && line_end != rest.begin())
+				const auto box_width = it->box.width();
+				if (width_left < box_width && it != rest.begin())
 					break;
-				space_count += line_end->isSpace() ? 1 : 0;
-				max_above = std::max(max_above, line_end->box.above);
-				max_below = std::max(max_below, line_end->box.below);
+				space_count += it->isSpace() ? 1 : 0;
+				max_above = std::max(max_above, it->box.above);
+				max_below = std::max(max_below, it->box.below);
 				width_left -= box_width;
 			}
-			// position line elements
+			unwindEndSpace();
+		}
+		void unwindEndSpace()
+		{
+			Expects(it != rest.begin());
+			if (it != rest.end() && it->isSpace())
+				return;
+
+			--it;
+			for (; it->isSpace(); --it)
+			{
+				Expects(it != rest.begin());
+				width_left += it->box.width();
+				space_count -= 1;
+			}
+			++it;
+		}
+		void position(const Align alignment)
+		{
 			pen.y += max_above;
-			if (line_end == rest.end())
-			{
-				for (auto&& e : rest)
-				{
-					e.updateLayout(pen);
-					pen.x += e.box.width();
-				}
-				pen.y += max_below;
-				return pen.y;
-			}
-			if (line_end != rest.begin() && line_end->isSpace())
-			{
-				--line_end;
-				while (line_end != rest.begin() && line_end->isSpace())
-				{
-					--line_end;
-					--space_count;
-				}
-				++line_end;
-			}
-			for (auto&& e : xpr::those.from(rest.begin()).until(line_end))
+			for (auto&& e : currentLine())
 			{
 				e.updateLayout(pen);
 				pen.x += e.box.width();
-				if (e.isSpace())
+
+				if (alignment == Align::justified && e.isSpace())
 				{
-					const float incr = ceil(width_left / space_count);
+					const float incr = width_left / space_count;
 					width_left -= incr;
 					space_count -= 1;
 					pen.x += incr;
 				}
 			}
-			rest.first = line_end;
 			pen.y += max_below;
-			pen.x = x0;
 		}
-		return pen.y;
+	};
+	float Paragraph::updateLayout(oui::Vector pen, float width)
+	{
+		LineBulider builder(pen, begin(), end());
+
+		while (!builder.done())
+			builder.buildLine(pen.x, width);
+
+		return builder.height();
 	}
 
 

@@ -5,19 +5,6 @@
 
 namespace tex
 {
-	template <class T>
-	using Owner = std::unique_ptr<T>;
-
-	template <class To, class From>
-	inline auto as(From* from) noexcept
-	{
-		return dynamic_cast<std::conditional_t<std::is_const_v<From>, const To*, To*>>(from); 
-	}
-	template <class To, class From>
-	inline auto& as(From& from) noexcept
-	{
-		return dynamic_cast<std::conditional_t<std::is_const_v<From>, const To&, To&>>(from);
-	}
 
 
 	class Group;
@@ -76,68 +63,6 @@ namespace tex
 			void operator()(Space&   n) final { v(n); }
 			void operator()(Text&    n) final { v(n); }
 		};
-
-		template <class T, class Friend>
-		class Property
-		{
-			friend Friend;
-			T value;
-
-		public:
-			constexpr operator T() const { return value; }
-		};
-		template <class T, class Friend>
-		class Property<T*, Friend>
-		{
-			friend Friend;
-			T* value = nullptr;
-
-			constexpr Property() = default;
-			constexpr Property(Property&&) = default;
-			constexpr Property(const Property&) = default;
-			constexpr Property& operator=(Property&&) = default;
-			constexpr Property& operator=(const Property&) = default;
-
-			constexpr Property(T* value) : value(value) { }
-			constexpr Property& operator=(T* new_value) { value = new_value; return *this; }
-		public:
-			constexpr operator T*() const { return value; }
-			constexpr operator const T*() const { return value; }
-			explicit constexpr operator bool() const { return static_cast<bool>(value); }
-
-			constexpr T* operator->() const { return value; }
-			constexpr T& operator*() const { return *value; }
-
-			template <class S> constexpr bool operator==(S&& other) const { return value == other; }
-			template <class S> constexpr bool operator!=(S&& other) const { return value != other; }
-		};
-		template <class T, class Friend>
-		class Property<Owner<T>, Friend>
-		{
-			friend Friend;
-			Owner<T> value;
-
-			constexpr Property() = default;
-			constexpr Property(Property&&) = default;
-			constexpr Property(const Property&) = default;
-			constexpr Property& operator=(Property&&) = default;
-			constexpr Property& operator=(const Property&) = default;
-
-			constexpr Property(Owner<T> value) : value(std::move(value)) { }
-			constexpr Property& operator=(Owner<T> new_value) { value = std::move(new_value); return *this; }
-
-			constexpr Owner<T>& owning() { return value; }
-		public:
-			constexpr operator T*() const { return value.get(); }
-			constexpr operator const T*() const { return value.get(); }
-			explicit constexpr operator bool() const { return static_cast<bool>(value); }
-
-			constexpr T* operator->() const { return value.get(); }
-			constexpr T& operator*() const { return *value; }
-
-			template <class S> constexpr bool operator==(S&& other) const { return value == other; }
-			template <class S> constexpr bool operator!=(S&& other) const { return value != other; }
-		};
 	}
 
 	enum class Offset : int {};
@@ -170,31 +95,7 @@ namespace tex
 
 		std::string data;
 
-		class Shape
-		{
-		public:
-			oui::Vector offset;
-			float before;
-			float above;
-			float after;
-			float below;
-
-			constexpr float left() const { return offset.x - before; }
-			constexpr float top() const { return offset.y - above; }
-			constexpr float right() const { return offset.x + after; }
-			constexpr float bottom() const { return offset.y + below; }
-
-			constexpr oui::Point min() const { return { left(), top() }; }
-			constexpr oui::Point max() const { return { right(),  bottom() }; }
-
-			constexpr float width() const { return before + after; }
-			constexpr float height() const { return above + below; }
-
-			constexpr void width(float w, oui::Align a) { before = w * a.c; after = w - before; }
-			constexpr void height(float h, oui::Align a) { above = h * a.c; below = h - above; }
-		};
-		oui::Vector boxSize;
-		Shape box;
+		Box box;
 
 		float absLeft() const;
 		float absRight() const { return absLeft() + box.width(); }
@@ -454,6 +355,4 @@ namespace tex
 	{
 		return tokenize(in, "root", Mode::text);
 	}
-	std::string readCurly(std::string_view& in);
-
 }

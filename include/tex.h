@@ -6,29 +6,10 @@
 #include <oui_text.h>
 #include <oui_window.h>
 
-#include <gsl-lite.hpp>
-
-template <class C, class T>
-auto count(C&& c, const T& value) { return std::count(std::begin(c), std::end(c), value); }
-
-
-inline constexpr int utf8len(unsigned char ch)
-{
-	switch (ch >> 4)
-	{
-	case 0xf: return 4;
-	case 0xe: return 3;
-	case 0xd: case 0xc: return 2;
-	default:
-		return (ch >> 7) ^ 1;
-	}
-}
-
+#include "tex_util.h"
 
 namespace tex
 {
-	using gsl::narrow;
-
 	template <class C>
 	constexpr int int_size(C&& c) { return narrow<int>(std::size(c)); }
 
@@ -41,17 +22,6 @@ namespace tex
 
 		const char* what() const noexcept final { return _message.c_str(); }
 	};
-
-	namespace details
-	{
-		struct VectorHead
-		{
-			int size = 0;
-			int capacity = 0;
-
-			constexpr VectorHead(int capacity) : capacity(capacity) { }
-		};
-	}
 
 	enum class Mode : char { text, math };
 	enum class Flow : char { none, line, vertical };
@@ -84,6 +54,30 @@ namespace tex
 	{ 
 		return key * pow(2.0f, static_cast<char>(size) / 5.0f);
 	}
+
+	class Box
+	{
+	public:
+		oui::Vector offset;
+		float before;
+		float above;
+		float after;
+		float below;
+
+		constexpr float left() const { return offset.x - before; }
+		constexpr float top() const { return offset.y - above; }
+		constexpr float right() const { return offset.x + after; }
+		constexpr float bottom() const { return offset.y + below; }
+
+		constexpr oui::Point min() const { return { left(), top() }; }
+		constexpr oui::Point max() const { return { right(),  bottom() }; }
+
+		constexpr float width() const { return before + after; }
+		constexpr float height() const { return above + below; }
+
+		constexpr void width(float w, oui::Align a) { before = w * a.c; after = w - before; }
+		constexpr void height(float h, oui::Align a) { above = h * a.c; below = h - above; }
+	};
 
 	class Context
 	{
@@ -136,6 +130,4 @@ namespace tex
 			return ch < 0 || ch > ' ';
 		}
 	}
-
-
 }

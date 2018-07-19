@@ -8,55 +8,32 @@ using std::string;
 using std::string_view;
 using std::make_unique;
 
+using oui::utf8len;
+using oui::popCodepoint;
+
 inline string_view view(const string& s) noexcept { return string_view{ s }; }
 
 namespace tex
 {
 	using uchar = unsigned char;
 
-	static inline int popCodepoint(std::string_view& text)
-	{
-		if (text.empty())
-			return 0;
-		int code = 0;
-		const uchar x = uchar(text.front()); text.remove_prefix(1);
-		uchar remaining = 0;
-		switch (x >> 4)
-		{
-		case 0b1111:
-			code = x & 0x7;
-			remaining = 3;
-			break;
-		case 0b1110:
-			code = x & 0xf;
-			remaining = 2;
-			break;
-		case 0b1100:
-		case 0b1101:
-			code = x & 0x1f;
-			remaining = 1;
-			break;
-		default:
-			if (x & 0x80)
-				throw std::runtime_error("unepected continuation byte");
-			return x;
-		}
-		for (; remaining > 0; --remaining)
-		{
-			if (text.empty())
-				return 0;
-			const uchar y = uchar(text.front()); text.remove_prefix(1);
-			if (y >> 6 != 2)
-				throw std::runtime_error("continuation byte expected");
-			code = (code << 6) | (y & 0x3f);
-		}
-		return code;
-	}
-
-
 	constexpr char pop_front(string_view& in)
 	{
 		const char result = in.front();
+		in.remove_prefix(1);
+		return result;
+	}
+
+	static string readCurly(string_view& in)
+	{
+		if (in.empty() || in.front() != '{')
+			throw IllFormed("expected '{'");
+		in.remove_prefix(1);
+		string result;
+		while (!in.empty() && in.front() != '}')
+			result.push_back(pop_front(in));
+		if (in.empty())
+			throw IllFormed("no matching '}'");
 		in.remove_prefix(1);
 		return result;
 	}
@@ -138,12 +115,19 @@ namespace tex
 		change();
 		auto result = move(this == parent->_first.get() ?
 			parent->_first : prev->next.owning());
+
 		if (next)
 			next->prev = prev;
 		else
 			parent->_last = prev;
-		prev->next = move(next.owning());
-		prev = nullptr;
+
+		if (prev)
+		{
+			prev->next = move(next.owning());
+			prev = nullptr;
+		}
+		else
+			parent->_first = move(next.owning());
 		parent = nullptr;
 		return result;
 	}
@@ -275,22 +259,6 @@ namespace tex
 				
 		return result;
 	}
-
-	string readCurly(string_view& in)
-	{
-		if (in.empty() || in.front() != '{')
-			throw IllFormed("expected '{'");
-		in.remove_prefix(1);
-		string result;
-		while (!in.empty() && in.front() != '}')
-			result.push_back(pop_front(in));
-		if (in.empty())
-			throw IllFormed("no matching '}'");
-		in.remove_prefix(1);
-		return result;
-	}
-
-
 
 	void Node::popArgument(Group & dst)
 	{

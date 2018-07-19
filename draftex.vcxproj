@@ -135,6 +135,7 @@
     <ClInclude Include="include\ranged.h" />
     <ClInclude Include="include\tex.h" />
     <ClInclude Include="include\tex_node.h" />
+    <ClInclude Include="include\tex_util.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

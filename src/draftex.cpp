@@ -10,6 +10,8 @@
 
 #include "tex_node.h"
 
+using oui::utf8len;
+
 using tex::int_size;
 
 #pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")

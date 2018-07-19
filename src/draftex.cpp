@@ -123,8 +123,7 @@ struct Caret
 
 	void prepare(Move move)
 	{
-		if (node->data.empty() && node->prev && node->next &&
-			node->prev->isSpace() && node->next->isSpace())
+		if (node->data.empty() && space(node->prev) && space(node->next))
 		{
 			move == Move::forward ?
 				erasePrev() :
@@ -294,9 +293,9 @@ struct Caret
 		{
 			if (node->next)
 			{
-				Expects(!node->next->isText());
+				Expects(not text(*node->next));
 				node->next->remove();
-				if (node->next && node->next->isText())
+				if (text(node->next))
 				{
 					node->data.append(node->next->data);
 					node->next->remove();
@@ -318,9 +317,9 @@ struct Caret
 		{
 			if (node->prev)
 			{
-				Expects(!node->prev->isText());
+				Expects(not text(*node->prev));
 				node->prev->remove();
-				if (node->prev && node->prev->isText())
+				if (text(node->prev))
 				{
 					offset = int_size(node->prev->data);
 					node->data.insert(0, node->prev->data);
@@ -335,7 +334,7 @@ struct Caret
 
 	void insertSpace()
 	{
-		if (offset == 0 && (!node->prev || node->prev->isSpace()))
+		if (offset == 0 && nullOrSpace(node->prev))
 			return;
 		const auto space = node->insertSpace(offset);
 		node = space->nextText();

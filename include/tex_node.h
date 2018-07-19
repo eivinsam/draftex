@@ -159,8 +159,6 @@ namespace tex
 
 
 		virtual Type type() const = 0;
-		bool isSpace() const { return type()==Type::space; }
-		bool isText()  const { return type()==Type::text; }
 
 		virtual std::optional<std::string> asEnd() const { return {}; }
 
@@ -174,7 +172,12 @@ namespace tex
 		virtual void updateSize(Context& con, Mode mode, Font font, float width);
 		virtual void updateLayout(oui::Vector offset);
 	};
-
+	inline bool space(const Node& n) { return n.type() == Node::Type::space; }
+	inline bool text(const Node& n) { return n.type() == Node::Type::text; }
+	inline bool space(const Node* n) { return n && space(*n); }
+	inline bool text(const Node* n) { return n && text(*n); }
+	inline bool nullOrSpace(const Node* n) { return !n || space(*n); }
+	inline bool nullOrText(const Node* n) { return !n || text(*n); }
 
 	inline void tryPopArgument(Node* next, Group& dst)
 	{

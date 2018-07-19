@@ -23,6 +23,13 @@ namespace tex
 		return dynamic_cast<std::conditional_t<std::is_const_v<From>, const To&, To&>>(from);
 	}
 
+	template <auto... Values, class T>
+	constexpr bool is_any_of(const T& value)
+	{
+		return ((value == Values) || ...);
+	}
+
+
 	namespace details
 	{
 		template <class T, class Friend>

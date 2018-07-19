@@ -42,6 +42,8 @@ namespace tex
 
 	void Node::_insert_before(Owner<Node> sibling)
 	{
+		if (!is_any_of<Type::text, Type::space>(sibling->type()) && !text(next))
+
 		Expects(sibling->parent == nullptr);
 		auto& sibling_ref = *sibling;
 		sibling->parent = parent;
@@ -112,6 +114,7 @@ namespace tex
 		if (!parent)
 			throw std::logic_error("trying to detach loose child");
 		
+		// do removing
 		change();
 		auto result = move(this == parent->_first.get() ?
 			parent->_first : prev->next.owning());
@@ -128,7 +131,9 @@ namespace tex
 		}
 		else
 			parent->_first = move(next.owning());
+
 		parent = nullptr;
+
 		return result;
 	}
 
@@ -154,11 +159,6 @@ namespace tex
 
 
 
-	template <char... Values>
-	constexpr bool is(char ch)
-	{
-		return ((ch == Values) || ...);
-	}
 
 	enum class OnEnd : char { pass, match, fail };
 
@@ -240,7 +240,7 @@ namespace tex
 			while (!in.empty())
 				if (auto sub = tokenize_single(in, result->data, mode, OnEnd::match))
 				{
-					if (sub->isSpace() && count(sub->data, '\n') >= 2)
+					if (space(*sub) && count(sub->data, '\n') >= 2)
 					{
 						result->append(move(par));
 						par = Group::make("par");
@@ -294,7 +294,7 @@ namespace tex
 	}
 	static Owner<Node> read_optional(Node* next)
 	{
-		if (!next || !next->isText())
+		if (!next || !text(next))
 			return {};
 
 		assert(!next->data.empty());

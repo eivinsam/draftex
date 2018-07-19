@@ -119,7 +119,7 @@ namespace tex
 		}
 		void skipSpaces()
 		{
-			while (it != rest.end() && it->isSpace())
+			while (it != rest.end() && space(*it))
 				++it;
 			rest.first = it;
 		}
@@ -130,7 +130,7 @@ namespace tex
 				const auto box_width = it->box.width();
 				if (width_left < box_width && it != rest.begin())
 					break;
-				space_count += it->isSpace() ? 1 : 0;
+				space_count += space(*it) ? 1 : 0;
 				max_above = std::max(max_above, it->box.above);
 				max_below = std::max(max_below, it->box.below);
 				width_left -= box_width;
@@ -140,11 +140,11 @@ namespace tex
 		void unwindEndSpace()
 		{
 			Expects(it != rest.begin());
-			if (it != rest.end() && it->isSpace())
+			if (it != rest.end() && space(*it))
 				return;
 
 			--it;
-			for (; it->isSpace(); --it)
+			for (; space(*it); --it)
 			{
 				Expects(it != rest.begin());
 				width_left += it->box.width();
@@ -160,7 +160,7 @@ namespace tex
 				e.updateLayout(pen);
 				pen.x += e.box.width();
 
-				if (alignment == Align::justified && e.isSpace())
+				if (alignment == Align::justified && space(e))
 				{
 					const float incr = width_left / space_count;
 					width_left -= incr;

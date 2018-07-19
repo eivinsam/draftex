@@ -156,6 +156,9 @@ namespace tex
 
 		virtual Text* _this_or_prev_text() noexcept { return prevText(); };
 		virtual Text* _this_or_next_text() noexcept { return nextText(); };
+
+		void _insert_before(Owner<Node> sibling);
+		void _insert_after(Owner<Node> sibling);
 	public:
 		details::Property<Group*, Node> parent;
 		details::Property<Owner<Node>, Node> next;
@@ -211,8 +214,18 @@ namespace tex
 		void change() noexcept;
 		virtual void commit() noexcept { _changed = false; }
 
-		template <class T> T* insertBefore(Owner<T> sibling) noexcept;
-		template <class T> T* insertAfter (Owner<T> sibling) noexcept;
+		template <class T> T* insertBefore(Owner<T> sibling) noexcept
+		{
+			auto raw = sibling.get();
+			_insert_before(std::move(sibling));
+			return raw;
+		}
+		template <class T> T* insertAfter(Owner<T> sibling) noexcept
+		{
+			auto raw = sibling.get();
+			_insert_after(std::move(sibling));
+			return raw;
+		}
 
 		Owner<Node> detach();
 		void remove()
@@ -278,6 +291,8 @@ namespace tex
 
 		Text* _this_or_prev_text() noexcept final { return _last  ? _last ->_this_or_prev_text() : prevText(); }
 		Text* _this_or_next_text() noexcept final { return _first ? _first->_this_or_next_text() : nextText(); }
+
+		void _append(Owner<Node> child);
 	public:
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
@@ -295,7 +310,12 @@ namespace tex
 		Node* getArgument() noexcept final { return this; }
 
 		template <class T>
-		T* append(Owner<T> child) noexcept;
+		T* append(Owner<T> child) noexcept
+		{
+			auto raw = child.get();
+			_append(std::move(child));
+			return raw;
+		}
 
 		bool empty() const noexcept { return !_first; }
 
@@ -338,40 +358,6 @@ namespace tex
 		void updateSize(Context& con, Mode mode, Font font, float width) override;
 		void updateLayout(oui::Vector offset) override;
 	};
-	template <class T>
-	T* Group::append(Owner<T> child) noexcept
-	{
-		Expects(child->parent == nullptr);
-		T* const raw_child = child.get();
-		child->_set_parent(this);
-		child->_set_prev(_last);
-		auto& new_owner = !_first ? _first : _last->_owning_next();
-		new_owner = std::move(child);
-		_last = raw_child;
-		_last->change();
-		return raw_child;
-	}
-
-	template <class T>
-	inline T* Node::insertBefore(Owner<T> sibling) noexcept
-	{
-		T* const raw_sibling = sibling.get();
-		sibling->parent = parent;
-		sibling->prev = prev;
-		auto& new_owner = prev ? prev->_owning_next() : parent->_first;
-		sibling->_owning_next() = std::move(new_owner);
-		new_owner = std::move(sibling);
-		prev = raw_sibling;
-		prev->change();
-		return raw_sibling;
-	}
-	template <class T>
-	inline T* Node::insertAfter(Owner<T> sibling) noexcept
-	{
-		return next ? 
-			next->insertBefore(std::move(sibling)) : 
-			parent->append(std::move(sibling)); 
-	}
 	inline Text* Node::prevText() noexcept
 	{
 		return

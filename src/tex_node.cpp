@@ -63,6 +63,37 @@ namespace tex
 
 	namespace align = oui::align;
 
+	void Node::_insert_before(Owner<Node> sibling)
+	{
+		Expects(sibling->parent == nullptr);
+		auto& sibling_ref = *sibling;
+		sibling->parent = parent;
+		sibling->prev = prev;
+		auto& new_owner = prev ? prev->_owning_next() : parent->_first;
+		sibling->_owning_next() = std::move(new_owner);
+		new_owner = std::move(sibling);
+		prev = &sibling_ref;
+		prev->change();
+	}
+	void Group::_append(Owner<Node> child)
+	{
+		Expects(child->parent == nullptr);
+		Node& child_ref = *child;
+		child->_set_parent(this);
+		child->_set_prev(_last);
+		auto& new_owner = !_first ? _first : _last->_owning_next();
+		new_owner = std::move(child);
+		_last = &child_ref;
+		_last->change();
+	}
+
+	void Node::_insert_after(Owner<Node> sibling)
+	{
+		next ?
+			next->insertBefore(std::move(sibling)) :
+			parent->append(std::move(sibling));
+	}
+
 	float Node::absLeft() const
 	{
 		float left = box.left();

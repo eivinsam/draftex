@@ -306,6 +306,7 @@ namespace tex
 	};
 	class Par : public Group
 	{
+		bool _needs_text_before(Node*) const final { return false; }
 	public:
 		void updateSize(Context& con, Mode mode, Font font, float width) final
 		{

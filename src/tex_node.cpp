@@ -40,11 +40,21 @@ namespace tex
 
 	namespace align = oui::align;
 
+	bool Space::_needs_text_before(Node * otherwise) const 
+	{ 
+		return otherwise != nullptr && 
+			otherwise->type() == Type::group && 
+			otherwise->data != "curly"; 
+	}
+
 	void Node::_insert_before(Owner<Node> sibling)
 	{
-		if (!is_any_of<Type::text, Type::space>(sibling->type()) && !text(next))
-
+		Expects(sibling != nullptr);
 		Expects(sibling->parent == nullptr);
+
+		if (sibling->_needs_text_before(prev) && !text(prev))
+			_insert_before(Text::make(""));
+
 		auto& sibling_ref = *sibling;
 		sibling->parent = parent;
 		sibling->prev = prev;
@@ -53,10 +63,18 @@ namespace tex
 		new_owner = std::move(sibling);
 		prev = &sibling_ref;
 		prev->change();
+
+		if (_needs_text_before(prev) && !text(*prev))
+			_insert_before(Text::make(""));
 	}
 	void Group::_append(Owner<Node> child)
 	{
+		Expects(child != nullptr);
 		Expects(child->parent == nullptr);
+
+		if (child->_needs_text_before(_last) && !text(_last))
+			_append(Text::make(""));
+
 		Node& child_ref = *child;
 		child->_set_parent(this);
 		child->_set_prev(_last);
@@ -142,7 +160,7 @@ namespace tex
 		if (offset > int_size(data))
 			offset = int_size(data);
 		const auto offset_size = narrow<size_t>(offset);
-		insertAfter(Text::make(string_view(data).substr(offset_size)));
+		insertAfter(Text::make(data.substr(offset_size)));
 		data.resize(offset_size);
 		return insertAfter(Space::make());
 
@@ -268,8 +286,11 @@ namespace tex
 	}
 	void Text::popArgument(Group & dst)
 	{
-		assert(!data.empty());
-
+		if (data.empty())
+		{
+			assert(next != nullptr);
+			return void(next->popArgument(dst));
+		}
 		const auto frontlen = narrow<size_t>(utf8len(data.front()));
 		if (data.size() == frontlen)
 		{
@@ -277,32 +298,30 @@ namespace tex
 			return;
 		}
 
-		dst.append(Text::make(view(data).substr(0, frontlen)));
+		dst.append(Text::make(data.substr(0, frontlen)));
 		data.erase(0, frontlen);
 	}
 
-	static string_view read_optional_text(string_view data)
+	static string read_optional_text(string_view data)
 	{
 		assert(!data.empty());
 		if (data.front() != '[')
 			return {};
 
 		if (const auto found = data.find_first_of(']', 1); found != data.npos)
-			return data.substr(0, found + 1);
+			return string(data.substr(0, found + 1));
 
 		throw IllFormed("could not find end of optional argument (only non-space text supported)");
 	}
 	static Owner<Node> read_optional(Node* next)
 	{
-		if (!next || !text(next))
+		if (!next || !text(next) || next->data.empty())
 			return {};
-
-		assert(!next->data.empty());
 
 		if (next->data.front() != '[')
 			return {};
 
-		const auto opt = read_optional_text(next->data);
+		auto opt = read_optional_text(next->data);
 
 		if (opt.empty())
 			return {};
@@ -310,8 +329,8 @@ namespace tex
 		if (opt.size() == next->data.size())
 			return next->detach();
 	
-		auto result = Text::make(opt);
-		next->data.erase(0, opt.size());
+		auto result = Text::make(move(opt));
+		next->data.erase(0, result->data.size());
 		return result;
 	}
 
@@ -337,6 +356,7 @@ namespace tex
 		if (data == "usepackage" || data == "documentclass")
 		{
 			result = Group::make(data);
+			result->append(Command::make(std::move(data)));
 			if (auto opt = read_optional(next))
 				result->append(move(opt));
 			tryPopArgument(next, *result);

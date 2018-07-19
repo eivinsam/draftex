@@ -78,6 +78,7 @@ namespace tex
 		void _set_parent(Group* p) { parent = p; }
 		void _set_prev(Node* p) { prev = p; }
 
+		virtual bool _needs_text_before(Node*) const { return true; }
 
 		virtual Text* _this_or_prev_text() noexcept { return prevText(); };
 		virtual Text* _this_or_next_text() noexcept { return nextText(); };
@@ -178,6 +179,14 @@ namespace tex
 	inline bool text(const Node* n) { return n && text(*n); }
 	inline bool nullOrSpace(const Node* n) { return !n || space(*n); }
 	inline bool nullOrText(const Node* n) { return !n || text(*n); }
+	template <class T>
+	inline bool space(const Owner<T>& n) { return n && space(*n); }
+	template <class T>
+	inline bool text(const Owner<T>& n) { return n && text(*n); }
+	template <class T>
+	inline bool nullOrSpace(const Owner<T>& n) { return !n || space(*n); }
+	template <class T>
+	inline bool nullOrText(const Owner<T>& n) { return !n || text(*n); }
 
 	inline void tryPopArgument(Node* next, Group& dst)
 	{
@@ -195,6 +204,8 @@ namespace tex
 
 		Text* _this_or_prev_text() noexcept final { return _last  ? _last ->_this_or_prev_text() : prevText(); }
 		Text* _this_or_next_text() noexcept final { return _first ? _first->_this_or_next_text() : nextText(); }
+
+		bool _needs_text_before(Node*) const override { return data != "curly"; }
 
 		void _append(Owner<Node> child);
 	public:
@@ -309,6 +320,7 @@ namespace tex
 
 	class Space : public Node
 	{
+		bool _needs_text_before(Node* otherwise) const final;
 	public:
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
@@ -325,6 +337,8 @@ namespace tex
 	{
 		Text* _this_or_prev_text() noexcept final { return this; };
 		Text* _this_or_next_text() noexcept final { return this; };
+
+		bool _needs_text_before(Node*) const final { return false; }
 	public:
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
@@ -341,7 +355,6 @@ namespace tex
 			result->data = std::move(text);
 			return result;
 		}
-		static auto make(std::string_view text) { return make(std::string(text)); }
 
 		void popArgument(Group& dst) final;
 		Node* getArgument() noexcept final { return this; }
@@ -351,7 +364,6 @@ namespace tex
 
 		void updateSize(Context& con, Mode mode, Font font, float width) final;
 	};
-
 
 	Owner<Group> tokenize(std::string_view& in, std::string data, Mode mode);
 	inline Owner<Group> tokenize(std::string_view in)

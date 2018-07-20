@@ -235,7 +235,6 @@ namespace tex
 		box.height(con.ptsize(font), align::center);
 	}
 
-
 	class Frac : public Group
 	{
 	public:
@@ -264,6 +263,13 @@ namespace tex
 
 			p->updateLayout({ (box.width() - p->box.width())*0.5f, -p->box.below });
 			q->updateLayout({ (box.width() - q->box.width())*0.5f, +q->box.above });
+		}
+
+		void serialize(std::ostream& out) const final
+		{
+			out << "\\frac";
+			for (auto&& e : *this)
+				e.serialize(out);
 		}
 	};
 	class VerticalGroup : public Group
@@ -302,6 +308,17 @@ namespace tex
 			}
 			box.above = 0;
 			box.below = height;
+		}
+		void serialize(std::ostream & out) const final
+		{
+			if (data == "document")
+			{
+				out << "\\begin{" << data << "}";
+				_serialize_children(out);
+				out << "\\end{" << data << "}";
+				return;
+			}
+			_serialize_children(out);
 		}
 	};
 	class Par : public Group

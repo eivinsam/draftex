@@ -172,6 +172,9 @@ namespace tex
 		virtual bool collect(Paragraph& out);
 		virtual void updateSize(Context& con, Mode mode, Font font, float width);
 		virtual void updateLayout(oui::Vector offset);
+
+		virtual void serialize(std::ostream& out) const = 0;
+		void serialize(std::ostream&& out) { serialize(out); }
 	};
 	inline bool space(const Node& n) { return n.type() == Node::Type::space; }
 	inline bool text(const Node& n) { return n.type() == Node::Type::text; }
@@ -208,6 +211,12 @@ namespace tex
 		bool _needs_text_before(Node*) const override { return data != "curly"; }
 
 		void _append(Owner<Node> child);
+	protected:
+		void _serialize_children(std::ostream& out) const
+		{
+			for (auto&& e : *this)
+				e.serialize(out);
+		}
 	public:
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
@@ -272,6 +281,9 @@ namespace tex
 		bool collect(Paragraph& out) override;
 		void updateSize(Context& con, Mode mode, Font font, float width) override;
 		void updateLayout(oui::Vector offset) override;
+
+		void serialize(std::ostream& out) const override;
+		void serialize(std::ostream&& out) { serialize(out); }
 	};
 	inline Text* Node::prevText() noexcept
 	{
@@ -316,6 +328,9 @@ namespace tex
 			else
 				return {};
 		}
+
+		void serialize(std::ostream& out) const override;
+		void serialize(std::ostream&& out) { serialize(out); }
 	};
 
 	class Space : public Node
@@ -331,6 +346,9 @@ namespace tex
 
 		bool collect(Paragraph& out) override;
 		void updateSize(Context& con, Mode mode, Font font, float width) final;
+
+		void serialize(std::ostream& out) const override;
+		void serialize(std::ostream&& out) { serialize(out); }
 	};
 
 	class Text : public Node
@@ -363,6 +381,9 @@ namespace tex
 		int insert(int offset, std::string_view text);
 
 		void updateSize(Context& con, Mode mode, Font font, float width) final;
+
+		void serialize(std::ostream& out) const override;
+		void serialize(std::ostream&& out) { serialize(out); }
 	};
 
 	Owner<Group> tokenize(std::string_view& in, std::string data, Mode mode);

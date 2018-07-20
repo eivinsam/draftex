@@ -10,3 +10,4 @@ obj
 *.gz
 /Debug
 /Release
+/test.out

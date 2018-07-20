@@ -425,6 +425,7 @@ int main()
 		caret.render(context);
 	}
 
+	tokens->serialize(std::ofstream("test.out"));
 
 	return 0;
 }

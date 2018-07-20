@@ -377,5 +377,36 @@ namespace tex
 		return raw_result;
 	}
 
+	void Group::serialize(std::ostream & out) const
+	{
+		if (data == "math")
+		{
+			out << '$';
+			_serialize_children(out);
+			out << '$';
+			return;
+		}
+		if (data == "curly")
+		{
+			out << '{';
+			_serialize_children(out);
+			out << '}';
+			return;
+		}
+
+		_serialize_children(out);
+	}
+	void Command::serialize(std::ostream & out) const
+	{
+		out << '\\' << data;
+	}
+	void Space::serialize(std::ostream & out) const
+	{
+		out << data;
+	}
+	void Text::serialize(std::ostream & out) const
+	{
+		out << data;
+	}
 
 }

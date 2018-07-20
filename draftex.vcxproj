@@ -118,6 +118,7 @@
   <ItemGroup>
     <ClCompile Include="src\draftex.cpp" />
     <ClCompile Include="src\tex_node.cpp" />
+    <ClCompile Include="src\tex_node_groups.cpp" />
     <ClCompile Include="tex_node_layout.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -132,9 +133,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\express.h" />
+    <ClInclude Include="include\find.h" />
     <ClInclude Include="include\ranged.h" />
     <ClInclude Include="include\tex.h" />
     <ClInclude Include="include\tex_node.h" />
+    <ClInclude Include="include\tex_paragraph.h" />
     <ClInclude Include="include\tex_util.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

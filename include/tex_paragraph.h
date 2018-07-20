@@ -16,7 +16,7 @@ namespace tex
 		void push_back(Node* node) { _nodes.push_back(node); }
 
 		// returns the resulting height
-		float updateLayout(oui::Vector pen, float width);
+		float updateLayout(oui::Vector pen, float indent, float width);
 
 
 		class iterator

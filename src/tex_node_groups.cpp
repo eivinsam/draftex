@@ -52,6 +52,12 @@ namespace tex
 	public:
 		void updateSize(Context& con, Mode mode, Font font, float width) final
 		{
+			if (data == "root")
+			{
+				con.section = 0;
+				con.subsection = 0;
+			}
+
 			if (data == "document")
 			{
 				font.type = FontType::roman;
@@ -98,10 +104,13 @@ namespace tex
 	};
 	class Par : public Group
 	{
+	protected:
 		bool _needs_text_before(Node*) const final { return false; }
+		float _parindent = 0;
 	public:
-		void updateSize(Context& con, Mode mode, Font font, float width) final
+		void updateSize(Context& con, Mode mode, Font font, float width) override
 		{
+			_parindent = 1.5f * con.ptsize(font);
 			box.width(width, align::min);
 			box.height(0, align::min);
 
@@ -117,6 +126,8 @@ namespace tex
 
 			Paragraph par;
 
+			float indent = _parindent;
+
 			for (auto it = begin(); it != end(); ++it)
 			{
 				par.clear();
@@ -125,16 +136,72 @@ namespace tex
 					++it;
 					while (it != end() && it->collect(par))
 						++it;
-					pen.y = par.updateLayout(pen, width);
+					pen.y = par.updateLayout(pen, indent, width);
+					indent = 0;
 					if (it == end())  break;
 				}
 				it->updateLayout(pen);
-				//it->box.tlc = l.place(align::topLeft(pen).size({ width, 0 }), it->box.size);
 				pen.y += it->box.height();
 			}
 			box.height(pen.y, align::min);
 		}
 	};
+
+	class Heading : public Par
+	{
+		Font _font;
+		std::string _pretitle;
+	public:
+		bool collect(Paragraph&) final { return false; }
+
+		void updateSize(Context& con, Mode mode, Font font, float width) final
+		{
+			static const std::unordered_map<string_view, Font> styles = 
+			{
+			{ "section", { FontType::bold, FontSize::Large } },
+			{ "subsection", { FontType::bold, FontSize::large } }
+			};
+
+			if (data == "section")
+			{
+				con.section += 1;
+				_pretitle = std::to_string(con.section) + ' ';
+			}
+			else if (data == "subsection")
+			{
+				con.subsection += 1;
+				_pretitle = std::to_string(con.section) + '.' + std::to_string(con.subsection) + ' ';
+			}
+
+			_font = font = find(styles, data, default_value=font);
+
+			const auto face = con.font(font);
+			const auto em = con.ptsize(font);
+
+			_parindent = face->offset(_pretitle, em);
+
+			box.above = 0;
+			box.below = em;
+			box.before = 0;
+			box.after = width;
+			for (auto&& sub : *this)
+				sub.updateSize(con, mode, font, width);
+		}
+
+		void render(Context& con, oui::Vector offset) const final
+		{
+			static constexpr auto color = mix(oui::colors::white, oui::colors::black, 0.6);
+			con.font(_font)->drawLine(box.min() + offset, _pretitle, con.ptsize(_font), color);
+			Par::render(con, offset);
+		}
+
+		void serialize(std::ostream& out) const final
+		{
+			out << '\\' << data;
+			_serialize_children(out);
+		}
+	};
+
 
 	template <class G>
 	Owner<Group> make_group(string name)
@@ -151,7 +218,9 @@ namespace tex
 		{ "frac", make_group<Frac> },
 		{ "par", make_group<Par> },
 		{ "root", make_group<VerticalGroup> },
-		{ "document", make_group<VerticalGroup> }
+		{ "document", make_group<VerticalGroup> },
+		{ "section", make_group<Heading> },
+		{ "subsection", make_group<Heading> }
 		};
 
 		return find(maker_lookup, name, default_value = &make_group<Group>)(move(name));

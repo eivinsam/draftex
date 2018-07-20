@@ -5,8 +5,6 @@
 
 namespace tex
 {
-
-
 	class Group;
 	class Command;
 	class Space;
@@ -172,6 +170,7 @@ namespace tex
 		virtual bool collect(Paragraph& out);
 		virtual void updateSize(Context& con, Mode mode, Font font, float width);
 		virtual void updateLayout(oui::Vector offset);
+		virtual void render(tex::Context& con, oui::Vector offset) const = 0;
 
 		virtual void serialize(std::ostream& out) const = 0;
 		void serialize(std::ostream&& out) { serialize(out); }
@@ -281,6 +280,7 @@ namespace tex
 		bool collect(Paragraph& out) override;
 		void updateSize(Context& con, Mode mode, Font font, float width) override;
 		void updateLayout(oui::Vector offset) override;
+		void render(tex::Context& con, oui::Vector offset) const override;
 
 		void serialize(std::ostream& out) const override;
 		void serialize(std::ostream&& out) { serialize(out); }
@@ -329,6 +329,8 @@ namespace tex
 				return {};
 		}
 
+		void render(tex::Context& con, oui::Vector offset) const final;
+
 		void serialize(std::ostream& out) const override;
 		void serialize(std::ostream&& out) { serialize(out); }
 	};
@@ -346,6 +348,7 @@ namespace tex
 
 		bool collect(Paragraph& out) override;
 		void updateSize(Context& con, Mode mode, Font font, float width) final;
+		void render(tex::Context&, oui::Vector) const final { } // does nothing
 
 		void serialize(std::ostream& out) const override;
 		void serialize(std::ostream&& out) { serialize(out); }
@@ -381,6 +384,7 @@ namespace tex
 		int insert(int offset, std::string_view text);
 
 		void updateSize(Context& con, Mode mode, Font font, float width) final;
+		void render(tex::Context& con, oui::Vector offset) const final;
 
 		void serialize(std::ostream& out) const override;
 		void serialize(std::ostream&& out) { serialize(out); }

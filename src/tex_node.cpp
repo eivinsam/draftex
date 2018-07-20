@@ -369,6 +369,12 @@ namespace tex
 			tryPopArgument(next, *result); result->back().expand();
 		}
 
+		if (data == "section" || data == "subsection")
+		{
+			result = Group::make(data);
+			tryPopArgument(next, *result);
+		}
+
 		if (!result)
 			return this;
 

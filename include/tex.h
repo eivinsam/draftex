@@ -25,7 +25,7 @@ namespace tex
 
 	enum class Mode : char { text, math };
 	enum class Flow : char { none, line, vertical };
-	enum class FontType : char { mono, sans, roman, italic };
+	enum class FontType : char { mono, sans, roman, italic, bold };
 
 	enum class FontSize : char 
 	{ 
@@ -86,14 +86,19 @@ namespace tex
 		oui::VectorFont sans;
 		oui::VectorFont roman;
 		oui::VectorFont italic;
+		oui::VectorFont bold;
 	public:
 		float keysize = 6;
+
+		short section = 0;
+		short subsection = 0;
 
 		Context(oui::Window& window) : _w(&window),
 			mono{ "fonts/LinLibertine_Mah.ttf" },
 			sans{ "fonts/LinBiolinum_Rah.ttf" },
 			roman{ "fonts/LinLibertine_Rah.ttf" },
-			italic{ "fonts/LinLibertine_RIah.ttf" } {}
+			italic{ "fonts/LinLibertine_RIah.ttf" },
+			bold{ "fonts/LinLibertine_RBah.ttf" } {}
 
 		void reset(oui::Window& window) noexcept
 		{
@@ -108,6 +113,7 @@ namespace tex
 			case FontType::sans: return &sans;
 			case FontType::roman: return &roman;
 			case FontType::italic: return &italic;
+			case FontType::bold: return &bold;
 			default:
 				throw std::logic_error("unknown tex::FontType");
 			}

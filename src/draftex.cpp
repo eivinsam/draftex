@@ -33,41 +33,6 @@ std::string readFile(const std::string& filename)
 static auto subview(std::string_view text, size_t off, size_t count) { return text.substr(off, count); }
 
 
-struct Renderer : public tex::Node::Visitor
-{
-	tex::Context& con;
-
-	oui::Vector offset;
-
-	Renderer(tex::Context& con, oui::Vector offset = { 0,0 }) noexcept : con(con), offset(offset) { }
-
-	void operator()(tex::Space&) noexcept override { }
-	void operator()(tex::Group& group) override
-	{
-		offset = offset + group.box.offset;
-		if (group.data == "math")
-		{
-			oui::fill(group.absBox(), oui::Color{ 0.1f, 0.2f, 1.0f, 0.1f });
-		}
-		if (group.data == "frac")
-		{
-			oui::fill(oui::align::centerLeft(oui::origo + offset).size({ group.box.width(), 1 }), oui::colors::black);
-		}
-		for (auto&& e : group)
-			e.visit(Renderer{ con, offset });
-	}
-	void operator()(tex::Command& cmd) override 
-	{
-		con.font(tex::FontType::sans)->drawLine(offset + cmd.box.min(), cmd.data, 
-			oui::Color{ .3f, .9f, .1f }, con.ptsize(tex::FontSize::normalsize));
-	}
-	void operator()(tex::Text& text) override 
-	{
-		con.font(text.font.type)->drawLine(offset + text.box.min(), text.data, 
-			oui::colors::black, con.ptsize(text.font.size));
-	}
-};
-
 inline auto is_above(const tex::Node& node)
 { 
 	return [&node](const tex::Node& other)
@@ -351,16 +316,14 @@ int main()
 
 	tex::Context context(window);
 
-	Caret caret;
+	Caret caret{ nullptr, 0 };
 	for (auto&& e : *tokens)
 		if (auto group = tex::as<tex::Group>(&e); group && group->data == "document")
 		{
-			for (auto&& de : tex::as<tex::Group>(group->front()))
-				if (auto text = tex::as<tex::Text>(&de))
-				{
-					caret.node = text;
-					break;
-				}
+			if (group->prev)
+				caret.node = group->prev->nextText();
+			else
+				caret.node = group->parent->nextText();
 			break;
 		}
 
@@ -420,7 +383,7 @@ int main()
 			if (p->data == "par")
 				oui::fill(p->absBox(), { 0, 0, 1, 0.1f });
 
-		tokens->visit(Renderer{ context });
+		tokens->render(context, {});
 
 		caret.render(context);
 	}

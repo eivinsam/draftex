@@ -115,12 +115,15 @@ namespace tex
 			pen.y += max_below;
 		}
 	};
-	float Paragraph::updateLayout(oui::Vector pen, float width)
+	float Paragraph::updateLayout(oui::Vector pen, float indent, float width)
 	{
 		LineBulider builder(pen, begin(), end());
 
 		while (!builder.done())
-			builder.buildLine(pen.x, width);
+		{
+			builder.buildLine(pen.x + indent, width - indent);
+			indent = 0;
+		}
 
 		return builder.height();
 	}
@@ -215,4 +218,29 @@ namespace tex
 		}
 	}
 
+
+	void Group::render(tex::Context& con, oui::Vector offset) const
+	{
+		offset = offset + box.offset;
+		if (data == "math")
+		{
+			oui::fill(absBox(), oui::Color{ 0.1f, 0.2f, 1.0f, 0.1f });
+		}
+		if (data == "frac")
+		{
+			oui::fill(oui::align::centerLeft(oui::origo + offset).size({ box.width(), 1 }), oui::colors::black);
+		}
+		for (auto&& e : *this)
+			e.render(con, offset);
+	}
+	void Command::render(tex::Context& con, oui::Vector offset) const
+	{
+		con.font(tex::FontType::sans)->drawLine(offset + box.min(), data,
+			oui::Color{ .3f, .9f, .1f }, con.ptsize(tex::FontSize::normalsize));
+	}
+	void Text::render(tex::Context& con, oui::Vector offset) const
+	{
+		con.font(font.type)->drawLine(offset + box.min(), data,
+			oui::colors::black, con.ptsize(font.size));
+	}
 }

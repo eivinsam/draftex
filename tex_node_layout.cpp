@@ -205,8 +205,6 @@ namespace tex
 		box.offset = offset;
 	}
 
-	using LayoutUpdater = void(*)(Group&, oui::Vector);
-
 	void Group::updateLayout(oui::Vector offset)
 	{
 		box.offset = offset;

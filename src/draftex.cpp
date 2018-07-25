@@ -3,6 +3,7 @@
 #include <string_view>
 #include <variant>
 #include <fstream>
+#include <sstream>
 #include <iterator>
 #include <algorithm>
 #include <stdexcept>
@@ -322,6 +323,26 @@ int main()
 	auto tokens = tex::tokenize(readFile("test.tex"));
 	tokens->expand();
 
+	const auto check_title = [&]
+	{
+		for (auto& re : *tokens)
+			if (re.data == "document")
+				if (auto doc = dynamic_cast<tex::Group*>(&re))
+					for (auto& de : *doc)
+						if (de.data == "title")
+							if (auto title = dynamic_cast<tex::Group*>(&de))
+							{
+								std::ostringstream os;
+								for (auto& te : *title)
+									te.serialize(os);
+								window.title("draftex " + os.str());
+								return;
+							}
+		window.title("draftex");
+	};
+
+	check_title();
+
 	tex::Context context(window);
 
 	Caret caret{ nullptr, 0 };
@@ -384,6 +405,7 @@ int main()
 				window.area().width());
 			tokens->updateLayout({ window.area().width()*0.5f, 0 });
 			tokens->commit();
+			check_title();
 		}
 
 		oui::fill(caret.node->absBox(), { 0.0f, 0.1f, 1, 0.2f });

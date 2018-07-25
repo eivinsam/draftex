@@ -382,4 +382,6 @@ namespace xpr
 	};
 	static constexpr Any any;
 
+	template <class P>
+	auto isnt(P&& p) { return [pred = std::forward<P>(p)](auto&& value) { return !pred(value); }; }
 }

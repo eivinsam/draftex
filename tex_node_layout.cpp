@@ -224,10 +224,6 @@ namespace tex
 		{
 			oui::fill(absBox(), oui::Color{ 0.1f, 0.2f, 1.0f, 0.1f });
 		}
-		if (data == "frac")
-		{
-			oui::fill(oui::align::centerLeft(oui::origo + offset).size({ box.width(), 1 }), oui::colors::black);
-		}
 		for (auto&& e : *this)
 			e.render(con, offset);
 	}

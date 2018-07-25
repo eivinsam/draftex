@@ -180,6 +180,8 @@ struct Caret
 			Text* prev_above = first_above;
 			for (auto&& above : first_above->allTextBefore())
 			{
+				if (is_above(*prev_above)(above))
+					break;
 				if (target_x >= above.absLeft())
 				{
 					node = (target_x - above.absRight() < prev_above->absLeft() - target_x) ? 
@@ -188,6 +190,8 @@ struct Caret
 				}
 				prev_above = &above;
 			}
+			node = prev_above;
+			return findPlace(con);
 		}
 	}
 	void down(tex::Context& con)
@@ -212,6 +216,8 @@ struct Caret
 			auto prev_below = first_below;
 			for (auto&& below : first_below->allTextAfter())
 			{
+				if (is_below(*prev_below)(below))
+					break;
 				if (target_x <= below.absRight())
 				{
 					node = (target_x - below.absLeft() > prev_below->absRight() - target_x) ?
@@ -220,6 +226,8 @@ struct Caret
 				}
 				prev_below = &below;
 			}
+			node = prev_below;
+			return findPlace(con);
 		}
 	}
 	void home()

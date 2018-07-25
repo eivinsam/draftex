@@ -25,8 +25,8 @@ namespace tex
 			q->updateSize(con, Mode::math, font, width);
 
 			box.width(std::max(p->box.width(), q->box.width()), align::min);
-			box.above = p->box.height();
-			box.below = q->box.height();
+			box.above = p->box.height() + con.ptsize(font)*0.05f;
+			box.below = q->box.height() + con.ptsize(font)*0.05f;
 		}
 
 		void updateLayout(oui::Vector offset) final
@@ -36,8 +36,8 @@ namespace tex
 			Node*const p = front().getArgument();
 			Node*const q = p->next->getArgument();
 
-			p->updateLayout({ (box.width() - p->box.width())*0.5f, -p->box.below });
-			q->updateLayout({ (box.width() - q->box.width())*0.5f, +q->box.above });
+			p->updateLayout({ (box.width() - p->box.width())*0.5f, -p->box.below - (box.above-p->box.height()) });
+			q->updateLayout({ (box.width() - q->box.width())*0.5f, +q->box.above + (box.below-p->box.height()) });
 		}
 
 		void serialize(std::ostream& out) const final
@@ -45,6 +45,11 @@ namespace tex
 			out << "\\frac";
 			for (auto&& e : *this)
 				e.serialize(out);
+		}
+		void render(tex::Context& con, oui::Vector offset) const final
+		{
+			Group::render(con, offset);
+			oui::fill(oui::align::centerLeft(oui::origo + offset + box.offset).size({ box.width(), 1 }), oui::colors::black);
 		}
 	};
 	class VerticalGroup : public Group

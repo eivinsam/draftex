@@ -300,7 +300,6 @@ namespace tex
 			nullptr;
 	}
 
-
 	class Command : public Node
 	{
 	public:

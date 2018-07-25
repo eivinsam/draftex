@@ -248,21 +248,47 @@ namespace tex
 		}
 	}
 
+
+
 	Owner<Group> tokenize(string_view& in, string data, Mode mode)
 	{
+		static constexpr std::string_view headings[] = 
+		{
+			"title",
+			"author",
+			"section",
+			"subsection"
+		};
 		auto result = Group::make(move(data));
 
 		if (result->data == "document")
 		{
-			auto par = Group::make("par");
+			Owner<Group> par;
 			while (!in.empty())
 				if (auto sub = tokenize_single(in, result->data, mode, OnEnd::match))
 				{
-					if (space(*sub) && count(sub->data, '\n') >= 2)
+					if (sub->type() == Node::Type::command)
 					{
-						result->append(move(par));
+						using namespace xpr;
+						if (any.of(headings).are(equal.to(sub->data)))
+						{
+							if (par) result->append(move(par));
+							if (in.front() != '{')
+								throw IllFormed("expected { after \\" + sub->data);
+							in.remove_prefix(1);
+							auto arg = tokenize(in, "curly", mode);
+							auto headg = Group::make(sub->data);
+							headg->append(move(arg));
+							result->append(move(headg));
+							continue;
+						}
+					}
+					else if (space(*sub) && count(sub->data, '\n') >= 2)
+					{
+						if (par) result->append(move(par));
 						par = Group::make("par");
 					}
+					if (!par) par = Group::make("par");
 					par->append(move(sub));
 				}
 				else break;

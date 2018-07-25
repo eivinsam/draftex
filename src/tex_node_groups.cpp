@@ -158,7 +158,9 @@ namespace tex
 		{
 			static const std::unordered_map<string_view, Font> styles = 
 			{
-			{ "section", { FontType::bold, FontSize::Large } },
+			{ "title",      { FontType::bold, FontSize::Huge } },
+			{ "author",     { FontType::bold, FontSize::LARGE } },
+			{ "section",    { FontType::bold, FontSize::Large } },
 			{ "subsection", { FontType::bold, FontSize::large } }
 			};
 
@@ -219,6 +221,8 @@ namespace tex
 		{ "par", make_group<Par> },
 		{ "root", make_group<VerticalGroup> },
 		{ "document", make_group<VerticalGroup> },
+		{ "title", make_group<Heading> },
+		{ "author", make_group<Heading> },
 		{ "section", make_group<Heading> },
 		{ "subsection", make_group<Heading> }
 		};

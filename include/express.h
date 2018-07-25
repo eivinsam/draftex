@@ -126,6 +126,15 @@ namespace xpr
 		{
 			return { {p, {first, last}}, {} };
 		}
+
+		template <class V>
+		constexpr bool contains(const V& value)
+		{
+			for (auto&& e : *this)
+				if (e == value)
+					return true;
+			return false;
+		}
 	};
 	template <class IT>
 	struct Range<IT, End>
@@ -144,10 +153,24 @@ namespace xpr
 		{
 			return { {p, {first, {}}}, {} };
 		}
+
+		template <class V>
+		constexpr bool contains(const V& value)
+		{
+			for (auto&& e : *this)
+				if (e == value)
+					return true;
+			return false;
+		}
 	};
 
 	template <class C>
-	using RangeOf = Range<decltype(std::begin(std::declval<C&>())), decltype(std::end(std::declval<C&>()))>;
+	using BeginType = decltype(std::begin(std::declval<C>()));
+	template <class C>
+	using EndType = decltype(std::end(std::declval<C>()));
+
+	template <class C>
+	using RangeType = Range<BeginType<C>, EndType<C>>;
 
 	template <class IT>
 	class From
@@ -189,9 +212,11 @@ namespace xpr
 		constexpr End end() const { return {}; }
 	};
 
-	template <class P, class T> 
+	template <class P, class T>
 	auto generator(P gen, T seed) -> Gen<P, remove_cvref_t<decltype(std::invoke(gen, seed))>>
-	{ return { std::move(gen), std::move(seed) }; }
+	{
+		return { std::move(gen), std::move(seed) };
+	}
 
 	template <class M>
 	struct Map
@@ -218,9 +243,9 @@ namespace xpr
 		};
 
 		template <class C>
-		constexpr auto of(C&& c) && 
-		{ 
-			return Range{ It{std::move(map), Range{ std::begin(c), std::end(c) } }, End{} }; 
+		constexpr auto of(C&& c) &&
+		{
+			return Range{ It{std::move(map), Range{ std::begin(c), std::end(c) } }, End{} };
 		}
 	};
 
@@ -238,7 +263,7 @@ namespace xpr
 			friend class Split;
 
 			template <class V>
-			decltype(auto) _check_done(V&& value) 
+			decltype(auto) _check_done(V&& value)
 			{
 				if (_super->_pred(value))
 					_super->_done = true;
@@ -250,7 +275,7 @@ namespace xpr
 
 			constexpr It & operator++() { ++_super->_range.first; return *this; }
 
-			constexpr decltype(auto) operator*() {  return _check_done(*_super->_range.first); }
+			constexpr decltype(auto) operator*() { return _check_done(*_super->_range.first); }
 
 			constexpr bool operator==(End) const { return _super->_done || _super->_range.empty(); }
 			constexpr bool operator!=(End) const { return !operator==({}); }
@@ -330,5 +355,31 @@ namespace xpr
 	};
 	static constexpr First first;
 
+
+
+	struct Any
+	{
+		template <class IT, class S>
+		struct Of
+		{
+			Range<IT, S> range;
+
+			template <class Pred>
+			constexpr bool are(Pred&& pred)
+			{
+				for (auto&& e : range)
+					if (pred(e))
+						return true;
+				return false;
+			}
+		};
+
+
+		template <class C>
+		constexpr Of<BeginType<C>, EndType<C>> of(C&& c) const
+		{ return { those.of(std::forward<C>(c)) }; }
+
+	};
+	static constexpr Any any;
 
 }

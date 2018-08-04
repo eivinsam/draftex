@@ -109,15 +109,44 @@ namespace tex
 	};
 	class Par : public Group
 	{
+		Font _font;
+		std::string _pretitle;
 	protected:
 		bool _needs_text_before(Node*) const final { return false; }
 		float _parindent = 0;
 	public:
+		bool collect(Paragraph&) final { return false; }
+
 		void updateSize(Context& con, Mode mode, Font font, float width) override
 		{
-			_parindent = 1.5f * con.ptsize(font);
-			box.width(width, align::min);
-			box.height(0, align::min);
+			static const std::unordered_map<string_view, Font> styles =
+			{
+			{ "title",      { FontType::bold, FontSize::Huge } },
+			{ "author",     { FontType::bold, FontSize::LARGE } },
+			{ "section",    { FontType::bold, FontSize::Large } },
+			{ "subsection", { FontType::bold, FontSize::large } }
+			};
+			_font = font = find(styles, data, default_value = font);
+
+			if (data == "section")
+			{
+				con.section += 1;
+				_pretitle = std::to_string(con.section) + ' ';
+			}
+			else if (data == "subsection")
+			{
+				con.subsection += 1;
+				_pretitle = std::to_string(con.section) + '.' + std::to_string(con.subsection) + ' ';
+			}
+
+			const auto em = con.ptsize(font);
+
+			_parindent = data == "par" ? 1.5f*em : con.font(font)->offset(_pretitle, em);
+
+			box.above = 0;
+			box.below = em;
+			box.before = 0;
+			box.after = width;
 
 			for (auto&& sub : *this)
 				sub.updateSize(con, mode, font, width);
@@ -150,61 +179,21 @@ namespace tex
 			}
 			box.height(pen.y, align::min);
 		}
-	};
-
-	class Heading : public Par
-	{
-		Font _font;
-		std::string _pretitle;
-	public:
-		bool collect(Paragraph&) final { return false; }
-
-		void updateSize(Context& con, Mode mode, Font font, float width) final
-		{
-			static const std::unordered_map<string_view, Font> styles = 
-			{
-			{ "title",      { FontType::bold, FontSize::Huge } },
-			{ "author",     { FontType::bold, FontSize::LARGE } },
-			{ "section",    { FontType::bold, FontSize::Large } },
-			{ "subsection", { FontType::bold, FontSize::large } }
-			};
-
-			if (data == "section")
-			{
-				con.section += 1;
-				_pretitle = std::to_string(con.section) + ' ';
-			}
-			else if (data == "subsection")
-			{
-				con.subsection += 1;
-				_pretitle = std::to_string(con.section) + '.' + std::to_string(con.subsection) + ' ';
-			}
-
-			_font = font = find(styles, data, default_value=font);
-
-			const auto face = con.font(font);
-			const auto em = con.ptsize(font);
-
-			_parindent = face->offset(_pretitle, em);
-
-			box.above = 0;
-			box.below = em;
-			box.before = 0;
-			box.after = width;
-			for (auto&& sub : *this)
-				sub.updateSize(con, mode, font, width);
-		}
-
 		void render(Context& con, oui::Vector offset) const final
 		{
-			static constexpr auto color = mix(oui::colors::white, oui::colors::black, 0.6);
-			con.font(_font)->drawLine(box.min() + offset, _pretitle, con.ptsize(_font), color);
-			Par::render(con, offset);
+			if (!_pretitle.empty())
+			{
+				using namespace oui::colors;
+				static constexpr auto color = mix(white, black, 0.6);
+				con.font(_font)->drawLine(box.min() + offset, _pretitle, con.ptsize(_font), color);
+			}
+			Group::render(con, offset);
 		}
-
 		void serialize(std::ostream& out) const final
 		{
-			out << '\\' << data;
+			if (data != "par")
+				out << '\\' << data;
+
 			_serialize_children(out);
 		}
 	};
@@ -226,10 +215,10 @@ namespace tex
 		{ "par", make_group<Par> },
 		{ "root", make_group<VerticalGroup> },
 		{ "document", make_group<VerticalGroup> },
-		{ "title", make_group<Heading> },
-		{ "author", make_group<Heading> },
-		{ "section", make_group<Heading> },
-		{ "subsection", make_group<Heading> }
+		{ "title", make_group<Par> },
+		{ "author", make_group<Par> },
+		{ "section", make_group<Par> },
+		{ "subsection", make_group<Par> }
 		};
 
 		return find(maker_lookup, name, default_value = &make_group<Group>)(move(name));

@@ -136,7 +136,7 @@ namespace tex
 	}
 	bool Group::collect(Paragraph& out)
 	{
-		if (data == "document" || data == "par")
+		if (data == "document")
 			return false;
 		if (data == "frac" || data == "math")
 		{

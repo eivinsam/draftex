@@ -9,6 +9,8 @@
 #include <stdexcept>
 #include <unordered_map>
 
+#include <oui_debug.h>
+
 #include "tex_node.h"
 
 using oui::utf8len;
@@ -316,14 +318,161 @@ struct Caret
 	}
 };
 
-int main()
+struct Draftex;
+
+using Action = void(Draftex::*)();
+
+struct Option
 {
-	oui::Window window{ { "draftex", 1280, 720, 8 } };
+	std::string_view name;
+	Action action = nullptr;
+	const Option* subs = nullptr;
+	short subc = 0;
+	oui::Key key;
 
-	auto tokens = tex::tokenize(readFile("test.tex"));
-	tokens->expand();
+	constexpr Option(std::string_view name, oui::Key key, Action action) :
+		name(name), action(action), key(key) { }
+	template <short N>
+	constexpr Option(std::string_view name, oui::Key key, const Option (&suboptions)[N]) :
+		name(name), subs(suboptions), subc(N), key(key) { }
+};
 
-	const auto check_title = [&]
+extern const Option main_menu[2];
+
+struct Draftex
+{
+	oui::Window window;
+	tex::Context context;
+
+	tex::Owner<tex::Group> tokens;
+
+	decltype(xpr::those.of(main_menu)) options = { nullptr, nullptr };
+	Caret caret{ nullptr, 0 };
+	volatile bool ignore_char = false;
+
+	Draftex() : window{ { "draftex", 1280, 720, 8 } }, context(window)
+	{
+		tokens = tex::tokenize(readFile("test.tex"));
+		tokens->expand();
+		check_title();
+
+		for (auto&& e : *tokens)
+			if (auto group = tex::as<tex::Group>(&e); group && group->data == "document")
+			{
+				if (group->prev)
+					caret.node = group->prev->nextText();
+				else
+					caret.node = group->parent->nextText();
+				break;
+			}
+
+		window.resize = [this](auto&&) { tokens->changed(); };
+		oui::input.keydown = [this](oui::Key key)
+		{
+			ignore_char = false;
+			using oui::Key;
+
+			for (auto&& opt : options)
+				if (opt.key == key)
+				{
+					if (opt.subs)
+					{
+						options = { opt.subs, opt.subs + opt.subc };
+						window.redraw();
+					}
+					else if (opt.action)
+					{
+						take_option();
+						(this->*opt.action)();
+					}
+					return;
+				}
+			
+			switch (key)
+			{
+			case Key::home:  caret.home(); break;
+			case Key::end:   caret.end();  break;
+			case Key::right: caret.next(); break;
+			case Key::left:  caret.prev(); break;
+			case Key::up:     caret.up(context); break;
+			case Key::down: caret.down(context); break;
+			case Key::backspace: caret.erasePrev(); break;
+			case Key::del:       caret.eraseNext(); break;
+			case Key::space:     caret.insertSpace(); break;
+			case Key::alt:       toggle_menu(); break;
+			default:
+				oui::debug::println("key " + std::to_string(static_cast<int>(key)));
+				return;
+			}
+			window.redraw();
+		};
+		oui::input.character = [this](int charcode)
+		{
+			if (charcode <= ' ')
+				return;
+			if (!options.empty())
+				return;
+			if (ignore_char)
+			{
+				ignore_char = false;
+				return;
+			}
+
+			caret.offset += caret.node->insert(caret.offset, oui::utf8(charcode));
+			caret.target_x = Caret::no_target;
+			window.redraw();
+			return;
+		};
+
+
+	}
+
+	void take_option()
+	{
+		options = { nullptr, nullptr };
+		window.redraw();
+		ignore_char = true;
+	}
+
+	void quit() { window.close(); }
+	void save()
+	{
+		take_option();
+		tokens->serialize(std::ofstream("test.out"));
+	}
+	void insert_math()
+	{
+		if (caret.offset >= int_size(caret.node->data))
+		{
+			caret.offset = 0;
+			caret.node = caret.node
+				->insertAfter(tex::Group::make("math"))
+				->append(tex::Text::make());
+			return;
+		}
+		if (caret.offset > 0)
+		{
+			caret.offset = 0;
+			caret.node = caret.node->insertAfter(tex::Text::make(caret.node->data.substr(caret.offset)));
+			caret.node->prev->data.resize(caret.offset);
+		}
+		caret.node = caret.node
+			->insertBefore(tex::Group::make("math"))
+			->append(tex::Text::make());
+	}
+
+	void toggle_menu()
+	{
+		window.redraw();
+		if (!options.empty())
+		{
+			options = { nullptr, nullptr };
+			return;
+		}
+		options = xpr::those.of(main_menu);
+	}
+
+	void check_title() 
 	{
 		for (auto& re : *tokens)
 			if (re.data == "document")
@@ -339,69 +488,17 @@ int main()
 								return;
 							}
 		window.title("draftex");
-	};
+	}
 
-	check_title();
-
-	tex::Context context(window);
-
-	Caret caret{ nullptr, 0 };
-	for (auto&& e : *tokens)
-		if (auto group = tex::as<tex::Group>(&e); group && group->data == "document")
-		{
-			if (group->prev)
-				caret.node = group->prev->nextText();
-			else
-				caret.node = group->parent->nextText();
-			break;
-		}
-
-
-	window.resize = [&](auto&&) { tokens->change(); };
-
-	oui::input.keydown = [&](auto key)
-	{
-		using oui::Key;
-		switch (key)
-		{
-		case Key::home:  caret.home(); break;
-		case Key::end:   caret.end();  break;
-		case Key::right: caret.next(); break;
-		case Key::left:  caret.prev(); break;
-		case Key::up:     caret.up(context); break;
-		case Key::down: caret.down(context); break;
-		case Key::backspace: caret.erasePrev(); break;
-		case Key::del:       caret.eraseNext(); break;
-		case Key::space:     caret.insertSpace(); break;
-		default: 
-			return;
-		}
-		window.redraw();
-	};
-	oui::input.character = [&](int charcode)
-	{
-		if (charcode < 0)
-			return;
-		if (charcode < ' ')
-			return;
-		if (charcode == ' ')
-			return;
-
-		caret.offset += caret.node->insert(caret.offset, oui::utf8(charcode));
-		caret.target_x = Caret::no_target;
-		window.redraw();
-		return;
-	};
-
-	while (window.update())
+	void render()
 	{
 		window.clear(oui::colors::white);
 		context.reset(window);
 		context.keysize = 9 * window.dpi() / 72.0f;
 		if (tokens->changed())
 		{
-			tokens->updateSize(context, 
-				tex::Mode::text, { tex::FontType::sans, tex::FontSize::normalsize }, 
+			tokens->updateSize(context,
+				tex::Mode::text, { tex::FontType::sans, tex::FontSize::normalsize },
 				window.area().width());
 			tokens->updateLayout({ window.area().width()*0.5f, 0 });
 			tokens->commit();
@@ -416,9 +513,48 @@ int main()
 		tokens->render(context, {});
 
 		caret.render(context);
-	}
 
-	tokens->serialize(std::ofstream("test.out"));
+		if (!options.empty())
+		{
+			oui::fill(window.area(), oui::Color{ 1,1,1,0.3f });
+			auto optfont = context.font(tex::FontType::sans);
+
+			const float h = 24;
+
+			oui::Point pen = { 0, 0 };
+			for (auto&& opt : options)
+			{
+				optfont->drawLine(pen, opt.name, oui::colors::black, h);
+				pen.y += h;
+			}
+		}
+	}
+};
+
+const Option file_menu[] = 
+{
+	{ "Save", oui::Key::s, &Draftex::save },
+	{ "Exit", oui::Key::x, &Draftex::quit }
+};
+
+const Option math_menu[] =
+{
+	{ "Insert", oui::Key::i, &Draftex::insert_math }
+};
+
+const Option main_menu[] =
+{
+	{ "File", oui::Key::f, file_menu },
+	{ "Math", oui::Key::m, math_menu }
+};
+
+int main()
+{
+	Draftex state;
+	while (state.window.update())
+		state.render();
+
+	//tokens->serialize(std::ofstream("test.out"));
 
 	return 0;
 }

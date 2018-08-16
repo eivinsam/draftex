@@ -7,6 +7,7 @@
 #include <iterator>
 #include <algorithm>
 #include <stdexcept>
+#include <utility>
 #include <unordered_map>
 
 #include <oui_debug.h>
@@ -337,16 +338,20 @@ struct Option
 		name(name), subs(suboptions), subc(N), key(key) { }
 };
 
-extern const Option main_menu[2];
+namespace menu
+{
+	extern const Option main[3];
+}
 
 struct Draftex
 {
+
 	oui::Window window;
 	tex::Context context;
 
 	tex::Owner<tex::Group> tokens;
 
-	decltype(xpr::those.of(main_menu)) options = { nullptr, nullptr };
+	decltype(xpr::those.of(menu::main)) options = { nullptr, nullptr };
 	Caret caret{ nullptr, 0 };
 	volatile bool ignore_char = false;
 
@@ -461,6 +466,26 @@ struct Draftex
 			->append(tex::Text::make());
 	}
 
+	void make_par(const char* new_type)
+	{
+		for (const tex::Node* n = caret.node; ; n = n->parent)
+			if (auto par = tex::as<tex::Par, tex::Group>(n->parent))
+			{
+				par->data = new_type;
+				par->change();
+				return;
+			}
+		//TODO: maybe warn if no para parent found?
+	}
+	template <char... Str>
+	void make_par()
+	{
+		// in release builds each instatiation of this template function 
+		// takes about 16 bytes plus sizeof(str)
+		static constexpr char str[] = { Str..., 0 };
+		make_par(str);
+	}
+
 	void toggle_menu()
 	{
 		window.redraw();
@@ -469,7 +494,7 @@ struct Draftex
 			options = { nullptr, nullptr };
 			return;
 		}
-		options = xpr::those.of(main_menu);
+		options = xpr::those.of(menu::main);
 	}
 
 	void check_title() 
@@ -531,22 +556,37 @@ struct Draftex
 	}
 };
 
-const Option file_menu[] = 
+namespace menu
 {
-	{ "Save", oui::Key::s, &Draftex::save },
-	{ "Exit", oui::Key::x, &Draftex::quit }
-};
+	using Key = oui::Key;
 
-const Option math_menu[] =
-{
-	{ "Insert", oui::Key::i, &Draftex::insert_math }
-};
+	const Option file[] =
+	{
+		{ "Save", Key::s, &Draftex::save },
+		{ "Exit", Key::x, &Draftex::quit }
+	};
 
-const Option main_menu[] =
-{
-	{ "File", oui::Key::f, file_menu },
-	{ "Math", oui::Key::m, math_menu }
-};
+	const Option par[] =
+	{
+		{ "Standard", Key::s, &Draftex::make_par<'p','a','r'> },
+		{ "3: Section", Key::n3, &Draftex::make_par<'s','e','c','t','i','o','n'> },
+		{ "4: Subsection", Key::n4, &Draftex::make_par<'s','u','b','s','e','c','t','i','o','n'> }
+	};
+
+	const Option math[] =
+	{
+		{ "Insert", Key::i, &Draftex::insert_math }
+	};
+
+	const Option main[] =
+	{
+		{ "File",      Key::f, file },
+		{ "Paragraph", Key::p, par },
+		{ "Math",      Key::m, math }
+	};
+
+}
+
 
 int main()
 {

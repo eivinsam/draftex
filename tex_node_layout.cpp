@@ -1,5 +1,6 @@
 #include <tex_node.h>
 #include <tex_paragraph.h>
+#include <find.h>
 
 using std::move;
 using std::string;
@@ -199,6 +200,41 @@ namespace tex
 			box.after += e.box.width();
 		}
 	}
+	void Par::updateSize(Context & con, Mode mode, Font font, float width)
+	{
+		static const std::unordered_map<string_view, Font> styles =
+		{
+			{ "title",{ FontType::bold, FontSize::Huge } },
+		{ "author",{ FontType::bold, FontSize::LARGE } },
+		{ "section",{ FontType::bold, FontSize::Large } },
+		{ "subsection",{ FontType::bold, FontSize::large } }
+		};
+		_font = font = find(styles, data, default_value = font);
+
+		if (data == "section")
+		{
+			con.section += 1;
+			_pretitle = std::to_string(con.section) + ' ';
+		}
+		else if (data == "subsection")
+		{
+			con.subsection += 1;
+			_pretitle = std::to_string(con.section) + '.' + std::to_string(con.subsection) + ' ';
+		}
+
+		const auto em = con.ptsize(font);
+
+		_parindent = data == "par" ? 1.5f*em : con.font(font)->offset(_pretitle, em);
+
+		box.above = 0;
+		box.below = em;
+		box.before = 0;
+		box.after = width;
+
+		for (auto&& sub : *this)
+			sub.updateSize(con, mode, font, width);
+	}
+
 
 	void Node::updateLayout(oui::Vector offset)
 	{
@@ -215,6 +251,34 @@ namespace tex
 			pen.x += e.box.width();
 		}
 	}
+	void Par::updateLayout(oui::Vector offset)
+	{
+		box.offset = offset;
+
+		const float width = box.width();
+		oui::Vector pen = { 0, 0 };
+
+		Paragraph par;
+
+		float indent = _parindent;
+
+		for (auto it = begin(); it != end(); ++it)
+		{
+			par.clear();
+			if (it->collect(par))
+			{
+				++it;
+				while (it != end() && it->collect(par))
+					++it;
+				pen.y = par.updateLayout(pen, indent, width);
+				indent = 0;
+				if (it == end())  break;
+			}
+			it->updateLayout(pen);
+			pen.y += it->box.height();
+		}
+		box.height(pen.y, align::min);
+	}
 
 
 	void Group::render(tex::Context& con, oui::Vector offset) const
@@ -227,6 +291,17 @@ namespace tex
 		for (auto&& e : *this)
 			e.render(con, offset);
 	}
+	void Par::render(Context & con, oui::Vector offset) const
+	{
+		if (!_pretitle.empty())
+		{
+			using namespace oui::colors;
+			static constexpr auto color = mix(white, black, 0.6);
+			con.font(_font)->drawLine(box.min() + offset, _pretitle, con.ptsize(_font), color);
+		}
+		Group::render(con, offset);
+	}
+
 	void Command::render(tex::Context& con, oui::Vector offset) const
 	{
 		con.font(tex::FontType::sans)->drawLine(offset + box.min(), data,

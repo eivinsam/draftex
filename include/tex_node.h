@@ -389,6 +389,29 @@ namespace tex
 		void serialize(std::ostream&& out) { serialize(out); }
 	};
 
+	class Par : public Group
+	{
+		Font _font;
+		std::string _pretitle;
+	protected:
+		bool _needs_text_before(Node*) const final { return false; }
+		float _parindent = 0;
+	public:
+		bool collect(Paragraph&) final { return false; }
+
+		void updateSize(Context& con, Mode mode, Font font, float width) override;
+		void updateLayout(oui::Vector offset) final;
+		void render(Context& con, oui::Vector offset) const final;
+		void serialize(std::ostream& out) const final
+		{
+			if (data != "par")
+				out << '\\' << data;
+
+			_serialize_children(out);
+		}
+	};
+
+
 	Owner<Group> tokenize(std::string_view& in, std::string data, Mode mode);
 	inline Owner<Group> tokenize(std::string_view in)
 	{

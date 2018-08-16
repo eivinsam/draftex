@@ -14,9 +14,9 @@
 
 #include "tex_node.h"
 
-using oui::utf8len;
-
 using tex::int_size;
+
+using oui::utf8len;
 
 #pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
 
@@ -64,7 +64,7 @@ struct Caret
 	enum class Move : char { backward, forward };
 
 
-	int maxOffset() const { Expects(node); return int_size(node->data); }
+	int maxOffset() const { Expects(node); return node->data.size(); }
 
 	float offsetX(tex::Context& con) const
 	{
@@ -84,7 +84,7 @@ struct Caret
 
 	int repairOffset(int off)
 	{
-		Expects(node && off < int_size(node->data));
+		Expects(node && off < node->data.size());
 		while (off > 0 && utf8len(node->data[off]) == 0)
 			--off;
 		return off;
@@ -107,9 +107,9 @@ struct Caret
 		prepare(Move::forward);
 		target_x = no_target;
 
-		if (offset < int_size(node->data))
+		if (offset < node->data.size())
 		{
-			offset += utf8len(gsl::at(node->data, offset));
+			offset += utf8len(node->data[offset]);
 			return;
 		}
 		if (auto next_text = node->nextText())
@@ -281,7 +281,7 @@ struct Caret
 			return;
 		}
 		node->change();
-		node->data.erase(offset, utf8len(gsl::at(node->data, offset)));
+		node->data.erase(offset, utf8len(node->data[offset]));
 		if (node->data.empty())
 		{
 			//handle_empty();
@@ -298,7 +298,7 @@ struct Caret
 				node->prev->remove();
 				if (text(node->prev))
 				{
-					offset = int_size(node->prev->data);
+					offset = node->prev->data.size();
 					node->data.insert(0, node->prev->data);
 					node->prev->remove();
 				}
@@ -406,7 +406,7 @@ struct Draftex
 			case Key::space:     caret.insertSpace(); break;
 			case Key::alt:       toggle_menu(); break;
 			default:
-				oui::debug::println("key " + std::to_string(static_cast<int>(key)));
+				oui::debug::println("key ", static_cast<int>(key));
 				return;
 			}
 			window.redraw();
@@ -447,7 +447,7 @@ struct Draftex
 	}
 	void insert_math()
 	{
-		if (caret.offset >= int_size(caret.node->data))
+		if (caret.offset >= caret.node->data.size())
 		{
 			caret.offset = 0;
 			caret.node = caret.node
@@ -588,8 +588,11 @@ namespace menu
 }
 
 
+
 int main()
 {
+	oui::debug::println("sizeof Node: ", sizeof(tex::Node));
+
 	Draftex state;
 	while (state.window.update())
 		state.render();

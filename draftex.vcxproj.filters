@@ -27,6 +27,9 @@
     <ClCompile Include="src\tex_node_groups.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\small_string.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="tex.natvis" />
@@ -51,6 +54,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\find.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\small_string.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

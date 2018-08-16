@@ -7,8 +7,9 @@ namespace tex
 	namespace align = oui::align;
 
 	using std::make_unique;
-	using std::string;
 	using std::string_view;
+
+	using string = SmallString;
 
 	class Frac : public Group
 	{
@@ -113,7 +114,7 @@ namespace tex
 	Owner<Group> make_group(string name)
 	{
 		auto result = make_unique<G>();
-		result->data = move(name);
+		result->data = std::move(name);
 		return result;
 	}
 	Owner<Group> Group::make(string name)
@@ -131,7 +132,7 @@ namespace tex
 		{ "subsection", make_group<Par> }
 		};
 
-		return find(maker_lookup, name, default_value = &make_group<Group>)(move(name));
+		return find(maker_lookup, name, default_value = &make_group<Group>)(std::move(name));
 	}
 
 }

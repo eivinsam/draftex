@@ -117,6 +117,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\draftex.cpp" />
+    <ClCompile Include="src\small_string.cpp" />
     <ClCompile Include="src\tex_node.cpp" />
     <ClCompile Include="src\tex_node_groups.cpp" />
     <ClCompile Include="tex_node_layout.cpp" />
@@ -135,6 +136,7 @@
     <ClInclude Include="include\express.h" />
     <ClInclude Include="include\find.h" />
     <ClInclude Include="include\ranged.h" />
+    <ClInclude Include="include\small_string.h" />
     <ClInclude Include="include\tex.h" />
     <ClInclude Include="include\tex_node.h" />
     <ClInclude Include="include\tex_paragraph.h" />

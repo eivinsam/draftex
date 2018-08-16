@@ -4,12 +4,13 @@
 #include <cassert>
 
 using std::move;
-using std::string;
 using std::string_view;
 using std::make_unique;
 
 using oui::utf8len;
 using oui::popCodepoint;
+
+using string = SmallString;
 
 inline string_view view(const string& s) noexcept { return string_view{ s }; }
 
@@ -157,8 +158,8 @@ namespace tex
 
 	Space * Text::insertSpace(int offset)
 	{
-		if (offset > int_size(data))
-			offset = int_size(data);
+		if (offset > data.size())
+			offset = data.size();
 		const auto offset_size = narrow<size_t>(offset);
 		insertAfter(Text::make(data.substr(offset_size)));
 		data.resize(offset_size);
@@ -171,7 +172,7 @@ namespace tex
 		change();
 		const auto uoffset = narrow<size_t>(offset);
 
-		data.insert(uoffset, text.data(), text.size());
+		data.insert(uoffset, text);
 		return int_size(text);
 	}
 
@@ -204,11 +205,11 @@ namespace tex
 				switch (on_end)
 				{
 				case OnEnd::pass: return Command::make("end " + end_of);
-				case OnEnd::fail: throw IllFormed("unexpected \\end{" + end_of + "}");
+				case OnEnd::fail: throw IllFormed(std::string("unexpected \\end{" + end_of + "}"));
 				case OnEnd::match:
 					if (end_of == env)
 						return nullptr;
-					throw IllFormed("\\begin{" + string(env) + "} mismatced with \\end{" + end_of + "}");
+					throw IllFormed(std::string("\\begin{" + string(env) + "} mismatced with \\end{" + end_of + "}"));
 				default:
 					throw std::logic_error("unknown OnEnd value");
 				}
@@ -274,7 +275,7 @@ namespace tex
 						{
 							if (par) result->append(move(par));
 							if (in.front() != '{')
-								throw IllFormed("expected { after \\" + sub->data);
+								throw IllFormed(std::string("expected { after \\" + sub->data));
 							in.remove_prefix(1);
 							auto arg = tokenize(in, "curly", mode);
 							auto headg = Group::make(sub->data);
@@ -317,7 +318,7 @@ namespace tex
 			assert(next != nullptr);
 			return void(next->popArgument(dst));
 		}
-		const auto frontlen = narrow<size_t>(utf8len(data.front()));
+		const auto frontlen = utf8len(data.front());
 		if (data.size() == frontlen)
 		{
 			dst.append(detach());

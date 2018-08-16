@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?> 
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 
+  <Type Name="SmallString">
+    <DisplayString>{(_small.size &lt; 15 ? _small.data : _large.data),na}</DisplayString>
+  </Type>
+  
   <Type Name="tex::Node">
     <DisplayString>{data}</DisplayString>
     <Expand>

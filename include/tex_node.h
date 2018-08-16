@@ -2,6 +2,7 @@
 
 #include "tex.h"
 #include "express.h"
+#include <small_string.h>
 
 namespace tex
 {
@@ -72,6 +73,7 @@ namespace tex
 
 		bool _changed = true;
 	protected:
+
 		Owner<Node>& _owning_next() { return next.owning(); }
 		void _set_parent(Group* p) { parent = p; }
 		void _set_prev(Node* p) { prev = p; }
@@ -84,6 +86,8 @@ namespace tex
 		void _insert_before(Owner<Node> sibling);
 		void _insert_after(Owner<Node> sibling);
 	public:
+		using string = SmallString;
+
 		details::Property<Group*, Node> parent;
 		details::Property<Owner<Node>, Node> next;
 		details::Property<Node*, Node> prev;
@@ -92,7 +96,7 @@ namespace tex
 
 		enum class Type : char { space, text, group, command, comment };
 
-		std::string data;
+		string data;
 
 		Box box;
 
@@ -159,7 +163,7 @@ namespace tex
 
 		virtual Type type() const = 0;
 
-		virtual std::optional<std::string> asEnd() const { return {}; }
+		virtual std::optional<string> asEnd() const { return {}; }
 
 		Text* prevText() noexcept;
 		Text* nextText() noexcept;
@@ -226,7 +230,7 @@ namespace tex
 
 		Type type() const noexcept final { return Type::group; }
 
-		static Owner<Group> make(std::string name);
+		static Owner<Group> make(string name);
 
 		Node* expand() final;
 		void popArgument(Group& dst) final { dst.append(detach()); }
@@ -309,7 +313,7 @@ namespace tex
 		Type type() const noexcept final { return Type::command; }
 
 		static auto make() { return std::make_unique<Command>(); }
-		static auto make(std::string data)
+		static auto make(string data)
 		{
 			auto result = make();
 			result->data = std::move(data);
@@ -320,7 +324,7 @@ namespace tex
 		void popArgument(Group& dst) final { dst.append(detach()); }
 		Node* getArgument() noexcept final { return this; }
 
-		std::optional<std::string> asEnd() const final
+		std::optional<string> asEnd() const final
 		{
 			if (data.size() > 4 && std::string_view(data).substr(0,4) == "end ")
 				return data.substr(4);
@@ -369,7 +373,7 @@ namespace tex
 		Type type() const noexcept final { return Type::text; }
 
 		static auto make() { return std::make_unique<Text>(); }
-		static auto make(std::string text)
+		static auto make(string text)
 		{
 			auto result = make();
 			result->data = std::move(text);
@@ -392,7 +396,7 @@ namespace tex
 	class Par : public Group
 	{
 		Font _font;
-		std::string _pretitle;
+		string _pretitle;
 	protected:
 		bool _needs_text_before(Node*) const final { return false; }
 		float _parindent = 0;
@@ -412,7 +416,7 @@ namespace tex
 	};
 
 
-	Owner<Group> tokenize(std::string_view& in, std::string data, Mode mode);
+	Owner<Group> tokenize(std::string_view& in, Node::string data, Mode mode);
 	inline Owner<Group> tokenize(std::string_view in)
 	{
 		return tokenize(in, "root", Mode::text);

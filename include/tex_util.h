@@ -39,7 +39,6 @@ namespace tex
 			T value;
 
 		public:
-			constexpr operator T() const { return value; }
 		};
 		template <class T, class Friend>
 		class Property<T*, Friend>
@@ -56,8 +55,7 @@ namespace tex
 			constexpr Property(T* value) : value(value) { }
 			constexpr Property& operator=(T* new_value) { value = new_value; return *this; }
 		public:
-			constexpr operator T*() const { return value; }
-			constexpr operator const T*() const { return value; }
+			constexpr       T* operator()() const { return value; }
 			explicit constexpr operator bool() const { return static_cast<bool>(value); }
 
 			constexpr T* operator->() const { return value; }
@@ -83,8 +81,7 @@ namespace tex
 
 			constexpr Owner<T>& owning() { return value; }
 		public:
-			constexpr operator T*() const { return value.get(); }
-			constexpr operator const T*() const { return value.get(); }
+			constexpr T* operator()() const { return value.get(); }
 			explicit constexpr operator bool() const { return static_cast<bool>(value); }
 
 			constexpr T* operator->() const { return value.get(); }

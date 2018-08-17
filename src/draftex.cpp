@@ -92,7 +92,7 @@ struct Caret
 
 	void prepare(Move move)
 	{
-		if (node->data.empty() && space(node->prev) && space(node->next))
+		if (node->data.empty() && space(node->prev()) && space(node->next()))
 		{
 			move == Move::forward ?
 				erasePrev() :
@@ -272,7 +272,7 @@ struct Caret
 			{
 				Expects(not text(*node->next));
 				node->next->remove();
-				if (text(node->next))
+				if (text(node->next()))
 				{
 					node->data.append(node->next->data);
 					node->next->remove();
@@ -296,7 +296,7 @@ struct Caret
 			{
 				Expects(not text(*node->prev));
 				node->prev->remove();
-				if (text(node->prev))
+				if (text(*node->prev))
 				{
 					offset = node->prev->data.size();
 					node->data.insert(0, node->prev->data);
@@ -311,7 +311,7 @@ struct Caret
 
 	void insertSpace()
 	{
-		if (offset == 0 && nullOrSpace(node->prev))
+		if (offset == 0 && nullOrSpace(node->prev()))
 			return;
 		const auto space = node->insertSpace(offset);
 		node = space->nextText();
@@ -468,8 +468,8 @@ struct Draftex
 
 	void make_par(const char* new_type)
 	{
-		for (const tex::Node* n = caret.node; ; n = n->parent)
-			if (auto par = tex::as<tex::Par, tex::Group>(n->parent))
+		for (const tex::Node* n = caret.node; ; n = n->parent())
+			if (auto par = tex::as<tex::Par, tex::Group>(n->parent()))
 			{
 				par->data = new_type;
 				par->change();
@@ -531,7 +531,7 @@ struct Draftex
 		}
 
 		oui::fill(caret.node->absBox(), { 0.0f, 0.1f, 1, 0.2f });
-		for (tex::Group* p = caret.node->parent; p != nullptr; p = p->parent)
+		for (auto p = caret.node->parent(); p != nullptr; p = p->parent())
 			if (p->data == "par")
 				oui::fill(p->absBox(), { 0, 0, 1, 0.1f });
 

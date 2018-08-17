@@ -264,7 +264,7 @@ namespace tex
 			using reference = ValueType & ;
 			using pointer = ValueType * ;
 
-			constexpr Iterator& operator++() { _it = _it->next; return *this; }
+			constexpr Iterator& operator++() { _it = _it->next(); return *this; }
 
 			constexpr reference operator*() const { return *_it; }
 			constexpr pointer  operator->() const { return _it; }

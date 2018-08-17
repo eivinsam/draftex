@@ -53,7 +53,7 @@ namespace tex
 		Expects(sibling != nullptr);
 		Expects(sibling->parent == nullptr);
 
-		if (sibling->_needs_text_before(prev) && !text(prev))
+		if (sibling->_needs_text_before(prev()) && !text(*prev))
 			_insert_before(Text::make(""));
 
 		auto& sibling_ref = *sibling;
@@ -65,7 +65,7 @@ namespace tex
 		prev = &sibling_ref;
 		prev->change();
 
-		if (_needs_text_before(prev) && !text(*prev))
+		if (_needs_text_before(prev()) && !text(*prev))
 			_insert_before(Text::make(""));
 	}
 	void Group::_append(Owner<Node> child)
@@ -95,14 +95,14 @@ namespace tex
 	float Node::absLeft() const
 	{
 		float left = box.left();
-		for (const Group* p = parent; p != nullptr; p = p->parent)
+		for (const Group* p = parent(); p != nullptr; p = p->parent())
 			left += p->box.offset.x;
 		return left;
 	}
 	float Node::absTop() const
 	{
 		float top = box.top();
-		for (const Group* p = parent; p != nullptr; p = p->parent)
+		for (const Group* p = parent(); p != nullptr; p = p->parent())
 			top += p->box.offset.y;
 		return top;
 	}
@@ -110,7 +110,7 @@ namespace tex
 	{
 		oui::Rectangle result;
 		result.min = box.min();
-		for (const Group* p = parent; p != nullptr; p = p->parent)
+		for (const Group* p = parent(); p != nullptr; p = p->parent())
 			result.min += p->box.offset;
 		result.max = result.min + oui::Vector{ box.width(), box.height() };
 		return result;
@@ -118,7 +118,7 @@ namespace tex
 
 	void Node::change() noexcept
 	{
-		for (Node* n = this; n != nullptr; n = n->parent)
+		for (Node* n = this; n != nullptr; n = n->parent())
 			n->_changed = true;
 	}
 	void Group::commit() noexcept
@@ -141,7 +141,7 @@ namespace tex
 		if (next)
 			next->prev = prev;
 		else
-			parent->_last = prev;
+			parent->_last = prev();
 
 		if (prev)
 		{
@@ -307,7 +307,7 @@ namespace tex
 
 	void Node::popArgument(Group & dst)
 	{
-		Node* const n = next;
+		const auto n = next();
 		dst.append(detach());
 		tryPopArgument(n, dst);
 	}
@@ -363,7 +363,7 @@ namespace tex
 
 	Node* Group::expand()
 	{
-		for (auto child = _first.get(); child != nullptr; child = child->next)
+		for (auto child = _first.get(); child != nullptr; child = child->next())
 			child = child->expand();
 
 		return this;
@@ -374,32 +374,32 @@ namespace tex
 		if (data == "newcommand")
 		{
 			result = Group::make(data);
-			tryPopArgument(next, *result);
-			if (auto opt = read_optional(next))
+			tryPopArgument(next(), *result);
+			if (auto opt = read_optional(next()))
 				result->append(move(opt));
-			tryPopArgument(next, *result);
+			tryPopArgument(next(), *result);
 		}
 
 		if (data == "usepackage" || data == "documentclass")
 		{
 			result = Group::make(data);
 			result->append(Command::make(std::move(data)));
-			if (auto opt = read_optional(next))
+			if (auto opt = read_optional(next()))
 				result->append(move(opt));
-			tryPopArgument(next, *result);
+			tryPopArgument(next(), *result);
 		}
 
 		if (data == "frac")
 		{
 			result = Group::make(data);
-			tryPopArgument(next, *result); result->back().expand();
-			tryPopArgument(next, *result); result->back().expand();
+			tryPopArgument(next(), *result); result->back().expand();
+			tryPopArgument(next(), *result); result->back().expand();
 		}
 
 		if (data == "section" || data == "subsection")
 		{
 			result = Group::make(data);
-			tryPopArgument(next, *result);
+			tryPopArgument(next(), *result);
 		}
 
 		if (!result)

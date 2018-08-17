@@ -21,7 +21,7 @@ class SmallString
 			unsigned char size;
 			char data[_buffer_size];
 
-			explicit operator bool() const { return size < _buffer_size; }
+			explicit constexpr operator bool() const { return size < _buffer_size; }
 		} _small;
 
 		struct
@@ -30,7 +30,7 @@ class SmallString
 			int size;
 			char* data;
 
-			explicit operator bool() const { return cap >= _buffer_size; }
+			explicit constexpr operator bool() const { return cap >= _buffer_size; }
 		} _large;
 	};
 
@@ -63,7 +63,7 @@ class SmallString
 		else
 			_large.size = new_size;
 	}
-
+	void _reserve_unchecked(const int min_capacity);
 public:
 	using value_type = char;
 	using size_type = int;
@@ -125,7 +125,13 @@ public:
 		return *this;
 	}
 
-	void reserve(const int min_capacity);
+	void reserve(const int min_capacity)
+	{
+		if (min_capacity < _buffer_size || 
+			min_capacity < _expand_cap(_large.cap))
+			return;
+		_reserve_unchecked(min_capacity);
+	}
 	void resize(const int new_size, const char fill = 0);
 
 	void append(view text) { insert(size(), text); }

@@ -14,14 +14,8 @@ SmallString::SmallString(view text)
 	*end() = 0;
 }
 
-void SmallString::reserve(const int min_capacity)
+void SmallString::_reserve_unchecked(const int min_capacity)
 {
-	if (min_capacity < _buffer_size)
-		return;
-	const int current_capacity = _expand_cap(_large.cap);
-	if (current_capacity >= min_capacity)
-		return;
-
 	const auto old = view(*this);
 	const auto new_cap = _calc_cap(min_capacity);
 	const auto new_data = new char[_expand_cap(new_cap)];

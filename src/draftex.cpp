@@ -64,11 +64,11 @@ struct Caret
 	enum class Move : char { backward, forward };
 
 
-	int maxOffset() const { Expects(node); return node->data.size(); }
+	int maxOffset() const { Expects(node); return node->text.size(); }
 
 	float offsetX(tex::Context& con) const
 	{
-		return con.font(node->font)->offset(subview(node->data, 0, offset), con.ptsize(node->font));
+		return con.font(node->font)->offset(subview(node->text, 0, offset), con.ptsize(node->font));
 	}
 
 	void render(tex::Context& con)
@@ -84,15 +84,15 @@ struct Caret
 
 	int repairOffset(int off)
 	{
-		Expects(node && off < node->data.size());
-		while (off > 0 && utf8len(node->data[off]) == 0)
+		Expects(node && off < node->text.size());
+		while (off > 0 && utf8len(node->text[off]) == 0)
 			--off;
 		return off;
 	}
 
 	void prepare(Move move)
 	{
-		if (node->data.empty() && space(node->prev()) && space(node->next()))
+		if (node->text.empty() && space(node->prev()) && space(node->next()))
 		{
 			move == Move::forward ?
 				erasePrev() :
@@ -107,9 +107,9 @@ struct Caret
 		prepare(Move::forward);
 		target_x = no_target;
 
-		if (offset < node->data.size())
+		if (offset < node->text.size())
 		{
-			offset += utf8len(node->data[offset]);
+			offset += utf8len(node->text[offset]);
 			return;
 		}
 		if (auto next_text = node->nextText())
@@ -135,7 +135,7 @@ struct Caret
 		if (auto prev_text = node->prevText())
 		{
 			node = prev_text;
-			offset = node->data.size();
+			offset = node->text.size();
 
 			return;
 		}
@@ -145,12 +145,12 @@ struct Caret
 	void findPlace(tex::Context& con)
 	{
 		const auto font = con.font(node->font);
-		const auto textdata = std::string_view(node->data);
+		const auto textdata = std::string_view(node->text);
 		auto prev_x = node->absLeft();
 
 		for (int i = 0, len = 1; i < int_size(textdata); i += len)
 		{
-			len = utf8len(node->data[i]);
+			len = utf8len(node->text[i]);
 			const auto x = prev_x + font->offset(textdata.substr(i, len), con.ptsize(node->font));
 			if (x >= target_x)
 			{
@@ -272,17 +272,17 @@ struct Caret
 			{
 				Expects(not text(*node->next));
 				node->next->remove();
-				if (text(node->next()))
+				if (auto tnext = tex::as<tex::Text>(node->next()))
 				{
-					node->data.append(node->next->data);
+					node->text.append(tnext->text);
 					node->next->remove();
 				}
 			}
 			return;
 		}
 		node->change();
-		node->data.erase(offset, utf8len(node->data[offset]));
-		if (node->data.empty())
+		node->text.erase(offset, utf8len(node->text[offset]));
+		if (node->text.empty())
 		{
 			//handle_empty();
 		}
@@ -296,10 +296,10 @@ struct Caret
 			{
 				Expects(not text(*node->prev));
 				node->prev->remove();
-				if (text(*node->prev))
+				if (auto tprev = tex::as<tex::Text>(node->prev()))
 				{
-					offset = node->prev->data.size();
-					node->data.insert(0, node->prev->data);
+					offset = tprev->text.size();
+					node->text.insert(0, tprev->text);
 					node->prev->remove();
 				}
 			}
@@ -362,7 +362,7 @@ struct Draftex
 		check_title();
 
 		for (auto&& e : *tokens)
-			if (auto group = tex::as<tex::Group>(&e); group && group->data == "document")
+			if (auto group = tex::as<tex::Group>(&e); group && group->terminatedBy("document"))
 			{
 				if (group->prev)
 					caret.node = group->prev->nextText();
@@ -447,7 +447,7 @@ struct Draftex
 	}
 	void insert_math()
 	{
-		if (caret.offset >= caret.node->data.size())
+		if (caret.offset >= caret.node->text.size())
 		{
 			caret.offset = 0;
 			caret.node = caret.node
@@ -457,33 +457,30 @@ struct Draftex
 		}
 		if (caret.offset > 0)
 		{
+			auto prev_node = caret.node;
+			caret.node = caret.node->insertAfter(tex::Text::make(caret.node->text.substr(caret.offset)));
+			prev_node->text.resize(caret.offset);
 			caret.offset = 0;
-			caret.node = caret.node->insertAfter(tex::Text::make(caret.node->data.substr(caret.offset)));
-			caret.node->prev->data.resize(caret.offset);
 		}
 		caret.node = caret.node
 			->insertBefore(tex::Group::make("math"))
 			->append(tex::Text::make());
 	}
 
-	void make_par(const char* new_type)
+	void change_par(tex::Par::Type new_type)
 	{
 		for (const tex::Node* n = caret.node; ; n = n->parent())
-			if (auto par = tex::as<tex::Par, tex::Group>(n->parent()))
+			if (auto par = tex::as<tex::Par>(n->parent()))
 			{
-				par->data = new_type;
-				par->change();
+				par->type(new_type);
 				return;
 			}
 		//TODO: maybe warn if no para parent found?
 	}
-	template <char... Str>
-	void make_par()
+	template <tex::Par::Type NewType>
+	void change_par()
 	{
-		// in release builds each instatiation of this template function 
-		// takes about 16 bytes plus sizeof(str)
-		static constexpr char str[] = { Str..., 0 };
-		make_par(str);
+		change_par(NewType);
 	}
 
 	void toggle_menu()
@@ -500,18 +497,17 @@ struct Draftex
 	void check_title() 
 	{
 		for (auto& re : *tokens)
-			if (re.data == "document")
+			if (auto g = tex::as<tex::Group>(&re); g && g->terminatedBy("document"))
 				if (auto doc = dynamic_cast<tex::Group*>(&re))
 					for (auto& de : *doc)
-						if (de.data == "title")
-							if (auto title = dynamic_cast<tex::Group*>(&de))
-							{
-								std::ostringstream os;
-								for (auto& te : *title)
-									te.serialize(os);
-								window.title("draftex " + os.str());
-								return;
-							}
+						if (auto p = tex::as<tex::Par>(&de); p && p->type() == tex::Par::Type::title)
+						{
+							std::ostringstream os;
+							for (auto& te : *p)
+								te.serialize(os);
+							window.title("draftex " + os.str());
+							return;
+						}
 		window.title("draftex");
 	}
 
@@ -530,9 +526,13 @@ struct Draftex
 			check_title();
 		}
 
-		oui::fill(caret.node->absBox(), { 0.0f, 0.1f, 1, 0.2f });
+		auto caret_box = caret.node->absBox();
+
+		oui::shift({ 0, window.area().height()*0.5f - caret_box.center().y });
+
+		oui::fill(caret_box, { 0.0f, 0.1f, 1, 0.2f });
 		for (auto p = caret.node->parent(); p != nullptr; p = p->parent())
-			if (p->data == "par")
+			if (tex::as<tex::Par>(p))
 				oui::fill(p->absBox(), { 0, 0, 1, 0.1f });
 
 		tokens->render(context, {});
@@ -566,11 +566,13 @@ namespace menu
 		{ "Exit", Key::x, &Draftex::quit }
 	};
 
+	using Par = tex::Par::Type;
+
 	const Option par[] =
 	{
-		{ "Standard", Key::s, &Draftex::make_par<'p','a','r'> },
-		{ "3: Section", Key::n3, &Draftex::make_par<'s','e','c','t','i','o','n'> },
-		{ "4: Subsection", Key::n4, &Draftex::make_par<'s','u','b','s','e','c','t','i','o','n'> }
+		{ "Standard",      Key::s,  &Draftex::change_par<Par::simple> },
+		{ "3: Section",    Key::n3, &Draftex::change_par<Par::section> },
+		{ "4: Subsection", Key::n4, &Draftex::change_par<Par::subsection> }
 	};
 
 	const Option math[] =

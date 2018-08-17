@@ -137,29 +137,22 @@ namespace tex
 	}
 	bool Group::collect(Paragraph& out)
 	{
-		if (data == "document")
-			return false;
-		if (data == "frac" || data == "math")
-		{
-			out.push_back(this);
-			return true;
-		}
 		for (auto&& e : *this)
 			e.collect(out);
 		return true;
 	}
 	bool Space::collect(Paragraph& out)
 	{
-		if (count(data, '\n') >= 2)
+		if (count(space, '\n') >= 2)
 			return false;
 		out.push_back(this);
 		return true;
 	}
 
-	void Node::updateSize(Context& con, Mode, Font font, float /*width*/)
+	void Command::updateSize(Context& con, Mode, Font font, float /*width*/)
 	{
 		const auto F = con.font(font);
-		box.width(F->offset(data, con.ptsize(font)), align::min);
+		box.width(F->offset(cmd, con.ptsize(font)), align::min);
 		box.height(con.ptsize(font), align::center);
 	}
 	void Text::updateSize(Context& con, Mode new_mode, Font new_font, float /*width*/)
@@ -167,12 +160,12 @@ namespace tex
 		mode = new_mode;
 		font = new_font;
 		const auto F = con.font(font);
-		box.width(F->offset(data, con.ptsize(font)), align::min);
+		box.width(F->offset(text, con.ptsize(font)), align::min);
 		box.height(con.ptsize(font), align::center);
 	}
 	void Space::updateSize(Context& con, Mode mode, Font font, float /*width*/)
 	{
-		if (count(data, '\n') >= 2)
+		if (count(space, '\n') >= 2)
 		{
 			Expects(mode != Mode::math);
 			box.width(0, align::min);
@@ -186,11 +179,6 @@ namespace tex
 
 	void Group::updateSize(Context& con, Mode mode, Font font, float width)
 	{
-		if (data == "math")
-		{
-			mode = Mode::math;
-			font.type = FontType::italic;
-		}
 		box.before = box.after = 0;
 		for (auto&& e : *this)
 		{
@@ -202,21 +190,22 @@ namespace tex
 	}
 	void Par::updateSize(Context & con, Mode mode, Font font, float width)
 	{
-		static const std::unordered_map<string_view, Font> styles =
+		static const Font styles[] = 
 		{
-			{ "title",{ FontType::bold, FontSize::Huge } },
-		{ "author",{ FontType::bold, FontSize::LARGE } },
-		{ "section",{ FontType::bold, FontSize::Large } },
-		{ "subsection",{ FontType::bold, FontSize::large } }
+			{ FontType::roman, FontSize::normalsize }, // simple
+			{ FontType::roman, FontSize::normalsize }, // title
+			{ FontType::bold, FontSize::Huge }, // author
+			{ FontType::bold, FontSize::Large }, // section
+			{ FontType::bold, FontSize::large } // subsection
 		};
-		_font = font = find(styles, data, default_value = font);
+		_font = font = gsl::at(styles, _code(_type));
 
-		if (data == "section")
+		if (_type == Type::section)
 		{
 			con.section += 1;
 			_pretitle = std::to_string(con.section) + ' ';
 		}
-		else if (data == "subsection")
+		else if (_type == Type::subsection)
 		{
 			con.subsection += 1;
 			_pretitle = std::to_string(con.section) + '.' + std::to_string(con.subsection) + ' ';
@@ -224,7 +213,7 @@ namespace tex
 
 		const auto em = con.ptsize(font);
 
-		_parindent = data == "par" ? 1.5f*em : con.font(font)->offset(_pretitle, em);
+		_parindent = (_type == Type::simple) ? 1.5f*em : con.font(font)->offset(_pretitle, em);
 
 		box.above = 0;
 		box.below = em;
@@ -284,10 +273,7 @@ namespace tex
 	void Group::render(tex::Context& con, oui::Vector offset) const
 	{
 		offset = offset + box.offset;
-		if (data == "math")
-		{
-			oui::fill(absBox(), oui::Color{ 0.1f, 0.2f, 1.0f, 0.1f });
-		}
+
 		for (auto&& e : *this)
 			e.render(con, offset);
 	}
@@ -304,12 +290,12 @@ namespace tex
 
 	void Command::render(tex::Context& con, oui::Vector offset) const
 	{
-		con.font(tex::FontType::sans)->drawLine(offset + box.min(), data,
+		con.font(tex::FontType::sans)->drawLine(offset + box.min(), cmd,
 			oui::Color{ .3f, .9f, .1f }, con.ptsize(tex::FontSize::normalsize));
 	}
 	void Text::render(tex::Context& con, oui::Vector offset) const
 	{
-		con.font(font.type)->drawLine(offset + box.min(), data,
+		con.font(font.type)->drawLine(offset + box.min(), text,
 			oui::colors::black, con.ptsize(font.size));
 	}
 }

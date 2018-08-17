@@ -1,18 +1,11 @@
-#include <tex_node.h>
+#include "tex_node_internal.h"
 #include <algorithm>
 #include <numeric>
-#include <cassert>
 
 using std::move;
-using std::string_view;
-using std::make_unique;
 
 using oui::utf8len;
 using oui::popCodepoint;
-
-using string = SmallString;
-
-inline string_view view(const string& s) noexcept { return string_view{ s }; }
 
 namespace tex
 {
@@ -41,11 +34,11 @@ namespace tex
 
 	namespace align = oui::align;
 
-	bool Space::_needs_text_before(Node * otherwise) const 
-	{ 
-		return otherwise != nullptr && 
-			otherwise->type() == Type::group && 
-			otherwise->data != "curly"; 
+	bool Space::_needs_text_before(Node * otherwise) const
+	{
+		return otherwise != nullptr &&
+			otherwise->type() == Type::group &&
+			typeid(*otherwise) != typeid(Group);
 	}
 
 	void Node::_insert_before(Owner<Node> sibling)
@@ -132,7 +125,7 @@ namespace tex
 	{
 		if (!parent)
 			throw std::logic_error("trying to detach loose child");
-		
+
 		// do removing
 		change();
 		auto result = move(this == parent->_first.get() ?
@@ -158,30 +151,29 @@ namespace tex
 
 	Space * Text::insertSpace(int offset)
 	{
-		if (offset > data.size())
-			offset = data.size();
+		if (offset > text.size())
+			offset = text.size();
 		const auto offset_size = narrow<size_t>(offset);
-		insertAfter(Text::make(data.substr(offset_size)));
-		data.resize(offset_size);
+		insertAfter(Text::make(text.substr(offset_size)));
+		text.resize(offset_size);
 		return insertAfter(Space::make());
 
 	}
 
-	int Text::insert(int offset, std::string_view text)
+	int Text::insert(int offset, std::string_view new_text)
 	{
 		change();
 		const auto uoffset = narrow<size_t>(offset);
 
-		data.insert(uoffset, text);
-		return int_size(text);
+		text.insert(uoffset, new_text);
+		return int_size(new_text);
 	}
 
 
 
 
-	enum class OnEnd : char { pass, match, fail };
 
-	Owner<Node> tokenize_single(string_view& in, string_view env, Mode mode, OnEnd on_end)
+	Owner<Node> tokenize_single(string_view& in, Group& parent, Mode mode, OnEnd on_end)
 	{
 		switch (in.front())
 		{
@@ -207,9 +199,9 @@ namespace tex
 				case OnEnd::pass: return Command::make("end " + end_of);
 				case OnEnd::fail: throw IllFormed(std::string("unexpected \\end{" + end_of + "}"));
 				case OnEnd::match:
-					if (end_of == env)
+					if (parent.terminatedBy(end_of))
 						return nullptr;
-					throw IllFormed(std::string("\\begin{" + string(env) + "} mismatced with \\end{" + end_of + "}"));
+					throw IllFormed(std::string("unexpected \\end{" + end_of + "}"));
 				default:
 					throw std::logic_error("unknown OnEnd value");
 				}
@@ -223,10 +215,12 @@ namespace tex
 			return tokenize(in, "curly", mode);
 		case '}':
 			in.remove_prefix(1);
-			return nullptr;
+			if (parent.terminatedBy("}"))
+				return nullptr;
+			throw IllFormed("unexpected }");
 		case '$':
 			in.remove_prefix(1);
-			if (env == "math")
+			if (parent.terminatedBy("$"))
 				return nullptr;
 			else if (mode == Mode::math)
 				throw IllFormed("improperly balanced group or environment in math mode");
@@ -236,74 +230,28 @@ namespace tex
 			{
 				auto result = Space::make();
 				while (!in.empty() && in.front() >= 0 && in.front() <= ' ')
-					result->data.push_back(pop_front(in));
+					result->space.push_back(pop_front(in));
 				return result;
 			}
 			else
 			{
 				auto result = Text::make();
 				while (!in.empty() && isregular(in.front()))
-					result->data.push_back(pop_front(in));
+					result->text.push_back(pop_front(in));
 				return result;
 			}
 		}
 	}
 
-
-
-	Owner<Group> tokenize(string_view& in, string data, Mode mode)
+	void Group::tokenize(string_view & in, Mode mode)
 	{
-		static constexpr std::string_view headings[] = 
-		{
-			"title",
-			"author",
-			"section",
-			"subsection"
-		};
-		auto result = Group::make(move(data));
-
-		if (result->data == "document")
-		{
-			Owner<Group> par;
-			while (!in.empty())
-				if (auto sub = tokenize_single(in, result->data, mode, OnEnd::match))
-				{
-					if (sub->type() == Node::Type::command)
-					{
-						using namespace xpr;
-						if (any.of(headings).are(equal.to(sub->data)))
-						{
-							if (par) result->append(move(par));
-							if (in.front() != '{')
-								throw IllFormed(std::string("expected { after \\" + sub->data));
-							in.remove_prefix(1);
-							auto arg = tokenize(in, "curly", mode);
-							auto headg = Group::make(sub->data);
-							headg->append(move(arg));
-							result->append(move(headg));
-							continue;
-						}
-					}
-					else if (space(*sub) && count(sub->data, '\n') >= 2)
-					{
-						if (par) result->append(move(par));
-						par = Group::make("par");
-					}
-					if (!par) par = Group::make("par");
-					par->append(move(sub));
-				}
-				else break;
-			result->append(move(par));
-			return result;
-		}
-
 		while (!in.empty())
-			if (auto sub = tokenize_single(in, result->data, mode, OnEnd::fail))
-				result->append(move(sub));
+			if (auto sub = tokenize_single(in, *this, mode, OnEnd::fail))
+				append(move(sub));
 			else break;
-				
-		return result;
 	}
+
+
 
 	void Node::popArgument(Group & dst)
 	{
@@ -313,25 +261,25 @@ namespace tex
 	}
 	void Text::popArgument(Group & dst)
 	{
-		if (data.empty())
+		if (text.empty())
 		{
-			assert(next != nullptr);
+			Expects(next != nullptr);
 			return void(next->popArgument(dst));
 		}
-		const auto frontlen = utf8len(data.front());
-		if (data.size() == frontlen)
+		const auto frontlen = utf8len(text.front());
+		if (text.size() == frontlen)
 		{
 			dst.append(detach());
 			return;
 		}
 
-		dst.append(Text::make(data.substr(0, frontlen)));
-		data.erase(0, frontlen);
+		dst.append(Text::make(text.substr(0, frontlen)));
+		text.erase(0, frontlen);
 	}
 
 	static string read_optional_text(string_view data)
 	{
-		assert(!data.empty());
+		Expects(!data.empty());
 		if (data.front() != '[')
 			return {};
 
@@ -342,22 +290,23 @@ namespace tex
 	}
 	static Owner<Node> read_optional(Node* next)
 	{
-		if (!next || !text(next) || next->data.empty())
+		auto text = as<Text>(next);
+		if (!text || text->text.empty())
 			return {};
 
-		if (next->data.front() != '[')
+		if (text->text.front() != '[')
 			return {};
 
-		auto opt = read_optional_text(next->data);
+		auto opt = read_optional_text(text->text);
 
 		if (opt.empty())
 			return {};
 
-		if (opt.size() == next->data.size())
+		if (opt.size() == text->text.size())
 			return next->detach();
-	
+
 		auto result = Text::make(move(opt));
-		next->data.erase(0, result->data.size());
+		text->text.erase(0, result->text.size());
 		return result;
 	}
 
@@ -368,42 +317,66 @@ namespace tex
 
 		return this;
 	}
+
+	using CommandExpander = Owner<Group>(*)(Command*);
+
+	// pops mandatory, optional and then mandatory argument, no expansion
+	Owner<Group> expand_aoa(Command* src)
+	{
+		Owner<Group> result = Group::make(src->cmd);
+		tryPopArgument(src->next(), *result);
+		if (auto opt = read_optional(src->next()))
+			result->append(move(opt));
+		tryPopArgument(src->next(), *result);
+		return result;
+	}
+	// pops command plus and optional and a mandatory argument, no expansion
+	Owner<Group> expand_coa(Command* src)
+	{
+		auto result = Group::make(src->cmd);
+		result->append(Command::make(std::move(src->cmd)));
+		if (auto opt = read_optional(src->next()))
+			result->append(move(opt));
+		tryPopArgument(src->next(), *result);
+		return result;
+	}
+
+	// pops one argument and expands it
+	Owner<Group> expand_A(Command* src)
+	{
+		auto result = Group::make(src->cmd);
+		tryPopArgument(src->next(), *result); result->back().expand();
+		return result;
+	}
+	// pops two arguments, expanding both
+	Owner<Group> expand_AA(Command* src)
+	{
+		auto result = Group::make(src->cmd);
+		tryPopArgument(src->next(), *result); result->back().expand();
+		tryPopArgument(src->next(), *result); result->back().expand();
+		return result;
+	}
+
+
 	Node * Command::expand()
 	{
-		Owner<Group> result;
-		if (data == "newcommand")
+		static const std::unordered_map<std::string_view, CommandExpander> cases =
 		{
-			result = Group::make(data);
-			tryPopArgument(next(), *result);
-			if (auto opt = read_optional(next()))
-				result->append(move(opt));
-			tryPopArgument(next(), *result);
-		}
+			{ "newcommand", &expand_aoa },
+			{ "usepackage", &expand_coa },
+			{ "documentclass", &expand_coa },
+			{ "frac", &expand_AA },
+			{ "title", &expand_A },
+			{ "author", &expand_A },
+			{ "section", &expand_A },
+			{ "subsection", &expand_A }
+		};
 
-		if (data == "usepackage" || data == "documentclass")
-		{
-			result = Group::make(data);
-			result->append(Command::make(std::move(data)));
-			if (auto opt = read_optional(next()))
-				result->append(move(opt));
-			tryPopArgument(next(), *result);
-		}
-
-		if (data == "frac")
-		{
-			result = Group::make(data);
-			tryPopArgument(next(), *result); result->back().expand();
-			tryPopArgument(next(), *result); result->back().expand();
-		}
-
-		if (data == "section" || data == "subsection")
-		{
-			result = Group::make(data);
-			tryPopArgument(next(), *result);
-		}
-
-		if (!result)
+		auto cmd_case = cases.find(cmd);
+		if (cmd_case == cases.end())
 			return this;
+
+		auto result = cmd_case->second(this);
 
 		const auto raw_result = result.get();
 		const auto forget_self = replace(move(result));
@@ -412,35 +385,23 @@ namespace tex
 
 	void Group::serialize(std::ostream & out) const
 	{
-		if (data == "math")
+		for (auto&& e : *this)
+			e.serialize(out);
+	}
+
+	Par::Par(string token)
+	{
+		static const std::unordered_map<std::string_view, Type> type_lookup = 
 		{
-			out << '$';
-			_serialize_children(out);
-			out << '$';
-			return;
-		}
-		if (data == "curly")
-		{
-			out << '{';
-			_serialize_children(out);
-			out << '}';
-			return;
-		}
-
-		_serialize_children(out);
+		{ "par", Type::simple },
+		{ "title", Type::title },
+		{ "author", Type::author },
+		{ "section", Type::section },
+		{ "subsection", Type::subsection }
+		};
+		auto type = type_lookup.find(token);
+		if (type == type_lookup.end())
+			throw IllFormed("unknown par type");
+		_type = type->second;
 	}
-	void Command::serialize(std::ostream & out) const
-	{
-		out << '\\' << data;
-	}
-	void Space::serialize(std::ostream & out) const
-	{
-		out << data;
-	}
-	void Text::serialize(std::ostream & out) const
-	{
-		out << data;
-	}
-
-
 }

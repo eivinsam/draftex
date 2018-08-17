@@ -96,8 +96,6 @@ namespace tex
 
 		enum class Type : char { space, text, group, command, comment };
 
-		string data;
-
 		Box box;
 
 		float absLeft() const;
@@ -172,7 +170,7 @@ namespace tex
 		auto allTextAfter()  { return xpr::generator(&Node::nextText, this); }
 
 		virtual bool collect(Paragraph& out);
-		virtual void updateSize(Context& con, Mode mode, Font font, float width);
+		virtual void updateSize(Context& con, Mode mode, Font font, float width) = 0;
 		virtual void updateLayout(oui::Vector offset);
 		virtual void render(tex::Context& con, oui::Vector offset) const = 0;
 
@@ -211,15 +209,9 @@ namespace tex
 		Text* _this_or_prev_text() noexcept final { return _last  ? _last ->_this_or_prev_text() : prevText(); }
 		Text* _this_or_next_text() noexcept final { return _first ? _first->_this_or_next_text() : nextText(); }
 
-		bool _needs_text_before(Node*) const override { return data != "curly"; }
+		bool _needs_text_before(Node*) const override { return false; }
 
 		void _append(Owner<Node> child);
-	protected:
-		void _serialize_children(std::ostream& out) const
-		{
-			for (auto&& e : *this)
-				e.serialize(out);
-		}
 	public:
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
@@ -231,6 +223,9 @@ namespace tex
 		Type type() const noexcept final { return Type::group; }
 
 		static Owner<Group> make(string name);
+
+		virtual void tokenize(std::string_view& in, Mode mode);
+		virtual bool terminatedBy(std::string_view token) const = 0;
 
 		Node* expand() final;
 		void popArgument(Group& dst) final { dst.append(detach()); }
@@ -307,6 +302,8 @@ namespace tex
 	class Command : public Node
 	{
 	public:
+		string cmd;
+
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
 
@@ -316,7 +313,7 @@ namespace tex
 		static auto make(string data)
 		{
 			auto result = make();
-			result->data = std::move(data);
+			result->cmd = std::move(data);
 			return result;
 		}
 
@@ -326,15 +323,17 @@ namespace tex
 
 		std::optional<string> asEnd() const final
 		{
-			if (data.size() > 4 && std::string_view(data).substr(0,4) == "end ")
-				return data.substr(4);
+			if (cmd.size() > 4 && std::string_view(cmd).substr(0,4) == "end ")
+				return cmd.substr(4);
 			else
 				return {};
 		}
 
+		void updateSize(Context& con, Mode, Font font, float width) final;
+
 		void render(tex::Context& con, oui::Vector offset) const final;
 
-		void serialize(std::ostream& out) const override;
+		void serialize(std::ostream& out) const override { out << '\\' << cmd; }
 		void serialize(std::ostream&& out) { serialize(out); }
 	};
 
@@ -342,6 +341,8 @@ namespace tex
 	{
 		bool _needs_text_before(Node* otherwise) const final;
 	public:
+		string space;
+
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
 
@@ -353,7 +354,7 @@ namespace tex
 		void updateSize(Context& con, Mode mode, Font font, float width) final;
 		void render(tex::Context&, oui::Vector) const final { } // does nothing
 
-		void serialize(std::ostream& out) const override;
+		void serialize(std::ostream& out) const override { out << space; }
 		void serialize(std::ostream&& out) { serialize(out); }
 	};
 
@@ -367,6 +368,8 @@ namespace tex
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
 
+		string text;
+
 		Font font = { FontType::mono, FontSize::normalsize };
 		Mode mode = Mode::text;
 
@@ -376,7 +379,7 @@ namespace tex
 		static auto make(string text)
 		{
 			auto result = make();
-			result->data = std::move(text);
+			result->text = std::move(text);
 			return result;
 		}
 
@@ -389,18 +392,31 @@ namespace tex
 		void updateSize(Context& con, Mode mode, Font font, float width) final;
 		void render(tex::Context& con, oui::Vector offset) const final;
 
-		void serialize(std::ostream& out) const override;
+		void serialize(std::ostream& out) const override { out << text; }
 		void serialize(std::ostream&& out) { serialize(out); }
 	};
 
 	class Par : public Group
 	{
+	public:
+		enum class Type : unsigned char { simple, title, author, section, subsection };
+	private:
+		static constexpr auto _code(Type t) { return static_cast<unsigned char>(t); }
+
+		Type _type;
 		Font _font;
 		string _pretitle;
 	protected:
 		bool _needs_text_before(Node*) const final { return false; }
 		float _parindent = 0;
 	public:
+		Par(string token);
+
+		bool terminatedBy(std::string_view) const final { return false; }
+
+		void type(Type t) { _type = t; change(); }
+		Type type() { return _type; }
+
 		bool collect(Paragraph&) final { return false; }
 
 		void updateSize(Context& con, Mode mode, Font font, float width) override;
@@ -408,17 +424,25 @@ namespace tex
 		void render(Context& con, oui::Vector offset) const final;
 		void serialize(std::ostream& out) const final
 		{
-			if (data != "par")
-				out << '\\' << data;
+			static const char* cmd_name[] =
+			{
+				"",
+				"\\title",
+				"\\author",
+				"\\section",
+				"\\subsection"
+			};
+			out << gsl::at(cmd_name, _code(_type));
 
-			_serialize_children(out);
+			Group::serialize(out);
 		}
 	};
 
 
-	Owner<Group> tokenize(std::string_view& in, Node::string data, Mode mode);
 	inline Owner<Group> tokenize(std::string_view in)
 	{
-		return tokenize(in, "root", Mode::text);
+		auto result = Group::make("root");
+		result->tokenize(in, Mode::text);
+		return result;
 	}
 }

@@ -1,19 +1,88 @@
-#include <tex_node.h>
+#include "tex_node_internal.h"
 #include <tex_paragraph.h>
-#include <find.h>
 
 namespace tex
 {
 	namespace align = oui::align;
 
-	using std::make_unique;
-	using std::string_view;
-
-	using string = SmallString;
-
-	class Frac : public Group
+	class Curly : public Group
 	{
 	public:
+		Curly(string) { }
+
+		bool terminatedBy(string_view token) const final { return token == "}"; }
+
+		void serialize(std::ostream& out) const final
+		{
+			out << '{';
+			Group::serialize(out);
+			out << '}';
+		}
+	};
+
+	class Math : public Group
+	{
+	public:
+		Math(string) { }
+
+		bool terminatedBy(string_view token) const final { return token == "$"; }
+
+		bool collect(Paragraph& out) final
+		{
+			out.push_back(this);
+			return true;
+		}
+
+		void updateSize(Context& con, Mode mode, Font font, float width) final
+		{
+			mode = Mode::math;
+			font.type = FontType::italic;
+
+			Group::updateSize(con, mode, font, width);
+		}
+
+		void render(tex::Context& con, oui::Vector offset) const
+		{
+			oui::fill(absBox(), oui::Color{ 0.1f, 0.2f, 1.0f, 0.1f });
+			
+			Group::render(con, offset);
+		}
+
+		void serialize(std::ostream& out) const final
+		{
+			out << '$';
+			Group::serialize(out);
+			out << '$';
+		}
+	};
+
+	class CommandGroup : public Group
+	{
+		string _cmd;
+	public:
+		CommandGroup(string cmd) : _cmd(std::move(cmd)) { }
+
+		bool terminatedBy(string_view) const final { return false; }
+
+		void serialize(std::ostream& out) const final
+		{
+			out << '\\' << _cmd;
+			for (auto&& e : *this)
+				e.serialize(out);
+		}
+	};
+
+	class Frac : public CommandGroup
+	{
+	public:
+		using CommandGroup::CommandGroup;
+
+		bool collect(Paragraph& out) final
+		{
+			out.push_back(this);
+			return true;
+		}
+
 		void updateSize(Context& con, Mode mode, Font font, float width) final
 		{
 			Expects(mode == Mode::math);
@@ -41,12 +110,6 @@ namespace tex
 			q->updateLayout({ (box.width() - q->box.width())*0.5f, +q->box.above + (box.below-p->box.height()) });
 		}
 
-		void serialize(std::ostream& out) const final
-		{
-			out << "\\frac";
-			for (auto&& e : *this)
-				e.serialize(out);
-		}
 		void render(tex::Context& con, oui::Vector offset) const final
 		{
 			Group::render(con, offset);
@@ -56,25 +119,12 @@ namespace tex
 	class VerticalGroup : public Group
 	{
 	public:
-		void updateSize(Context& con, Mode mode, Font font, float width) final
-		{
-			if (data == "root")
-			{
-				con.section = 0;
-				con.subsection = 0;
-			}
+		VerticalGroup(string) { }
 
-			if (data == "document")
-			{
-				font.type = FontType::roman;
-				box.width(std::min(width, con.ptsize(font) * 24.0f), align::center);
-				box.above = box.below = 0;
-			}
-			else
-			{
-				box.width(width, align::center);
-				box.above = box.below = 0;
-			}
+		void updateSize(Context& con, Mode mode, Font font, float width) override
+		{
+			box.width(width, align::center);
+			box.above = box.below = 0;
 
 			for (auto&& sub : *this)
 			{
@@ -96,16 +146,68 @@ namespace tex
 			box.above = 0;
 			box.below = height;
 		}
-		void serialize(std::ostream & out) const final
+	};
+
+	class Root : public VerticalGroup
+	{
+	public:
+		using VerticalGroup::VerticalGroup;
+
+		bool terminatedBy(string_view) const final { return false; }
+
+		void updateSize(Context& con, Mode mode, Font font, float width) final
 		{
-			if (data == "document")
+			con.section = 0;
+			con.subsection = 0;
+
+			VerticalGroup::updateSize(con, mode, font, width);
+		}
+	};
+
+	class Document : public VerticalGroup
+	{
+	public:
+		using VerticalGroup::VerticalGroup;
+
+		void tokenize(string_view & in, Mode mode) final
+		{
+			Owner<Group> par;
+			while (!in.empty())
+				if (auto sub = tokenize_single(in, *this, mode, OnEnd::match))
+				{
+					if (auto sp = as<Space>(sub.get()); sp && count(sp->space, '\n') >= 2)
+					{
+						if (par) append(move(par));
+						par = Group::make("par");
+					}
+					if (!par) par = Group::make("par");
+					par->append(move(sub));
+				}
+				else break;
+			append(move(par));
+		}
+		bool terminatedBy(string_view token) const final { return token == "document"; }
+
+		bool collect(Paragraph&) final { return false; }
+
+		void updateSize(Context& con, Mode mode, Font font, float width) override
+		{
+			font.type = FontType::roman;
+			box.width(std::min(width, con.ptsize(font) * 24.0f), align::center);
+			box.above = box.below = 0;
+
+			for (auto&& sub : *this)
 			{
-				out << "\\begin{" << data << "}";
-				_serialize_children(out);
-				out << "\\end{" << data << "}";
-				return;
+				sub.updateSize(con, mode, font, box.width());
+				box.below += sub.box.height();
 			}
-			_serialize_children(out);
+		}
+
+		void serialize(std::ostream& out) const final
+		{
+			out << "\\begin{document}";
+			Group::serialize(out);
+			out << "\\end{document}";
 		}
 	};
 
@@ -113,26 +215,24 @@ namespace tex
 	template <class G>
 	Owner<Group> make_group(string name)
 	{
-		auto result = make_unique<G>();
-		result->data = std::move(name);
-		return result;
+		return make_unique<G>(std::move(name));
 	}
 	Owner<Group> Group::make(string name)
 	{
 		static const std::unordered_map<string_view, Owner<Group>(*)(string)>
 			maker_lookup =
 		{
+		{ "math", make_group<Math> },
 		{ "frac", make_group<Frac> },
 		{ "par", make_group<Par> },
-		{ "root", make_group<VerticalGroup> },
-		{ "document", make_group<VerticalGroup> },
+		{ "root", make_group<Root> },
+		{ "document", make_group<Document> },
 		{ "title", make_group<Par> },
 		{ "author", make_group<Par> },
 		{ "section", make_group<Par> },
 		{ "subsection", make_group<Par> }
 		};
 
-		return find(maker_lookup, name, default_value = &make_group<Group>)(std::move(name));
+		return find(maker_lookup, name, default_value = &make_group<Curly>)(std::move(name));
 	}
-
 }

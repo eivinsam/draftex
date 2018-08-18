@@ -2,6 +2,7 @@
 
 #include <tex_node.h>
 #include <find.h>
+#include "frozen_with_string_view.h"
 
 namespace tex
 {

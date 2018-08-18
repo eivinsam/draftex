@@ -400,6 +400,18 @@ namespace tex
 	{
 	public:
 		enum class Type : unsigned char { simple, title, author, section, subsection };
+		static friend std::string_view name(Type t)
+		{
+			static const char* cmd_name[] =
+			{
+				"",
+				"\\title",
+				"\\author",
+				"\\section",
+				"\\subsection"
+			};
+			return gsl::at(cmd_name, static_cast<std::underlying_type_t<Par::Type>>(t));
+		}
 	private:
 		static constexpr auto _code(Type t) { return static_cast<unsigned char>(t); }
 
@@ -414,8 +426,8 @@ namespace tex
 
 		bool terminatedBy(std::string_view) const final { return false; }
 
-		void type(Type t) { _type = t; change(); }
-		Type type() { return _type; }
+		void partype(Type t) { _type = t; change(); }
+		Type partype() { return _type; }
 
 		bool collect(Paragraph&) final { return false; }
 
@@ -424,15 +436,7 @@ namespace tex
 		void render(Context& con, oui::Vector offset) const final;
 		void serialize(std::ostream& out) const final
 		{
-			static const char* cmd_name[] =
-			{
-				"",
-				"\\title",
-				"\\author",
-				"\\section",
-				"\\subsection"
-			};
-			out << gsl::at(cmd_name, _code(_type));
+			out << name(_type);
 
 			Group::serialize(out);
 		}

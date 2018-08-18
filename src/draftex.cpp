@@ -371,7 +371,7 @@ struct Draftex
 				break;
 			}
 
-		window.resize = [this](auto&&) { tokens->changed(); };
+		window.resize = [this](auto&&) { tokens->change(); };
 		oui::input.keydown = [this](oui::Key key)
 		{
 			ignore_char = false;
@@ -472,7 +472,7 @@ struct Draftex
 		for (const tex::Node* n = caret.node; ; n = n->parent())
 			if (auto par = tex::as<tex::Par>(n->parent()))
 			{
-				par->type(new_type);
+				par->partype(new_type);
 				return;
 			}
 		//TODO: maybe warn if no para parent found?
@@ -500,7 +500,7 @@ struct Draftex
 			if (auto g = tex::as<tex::Group>(&re); g && g->terminatedBy("document"))
 				if (auto doc = dynamic_cast<tex::Group*>(&re))
 					for (auto& de : *doc)
-						if (auto p = tex::as<tex::Par>(&de); p && p->type() == tex::Par::Type::title)
+						if (auto p = tex::as<tex::Par>(&de); p && p->partype() == tex::Par::Type::title)
 						{
 							std::ostringstream os;
 							for (auto& te : *p)

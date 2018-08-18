@@ -2,10 +2,12 @@
 #include <algorithm>
 #include <numeric>
 
+
 using std::move;
 
 using oui::utf8len;
 using oui::popCodepoint;
+
 
 namespace tex
 {
@@ -360,7 +362,7 @@ namespace tex
 
 	Node * Command::expand()
 	{
-		static const std::unordered_map<std::string_view, CommandExpander> cases =
+		static constexpr frozen::unordered_map<string_view, CommandExpander, 8> cases =
 		{
 			{ "newcommand", &expand_aoa },
 			{ "usepackage", &expand_coa },
@@ -391,7 +393,7 @@ namespace tex
 
 	Par::Par(string token)
 	{
-		static const std::unordered_map<std::string_view, Type> type_lookup = 
+		static constexpr frozen::unordered_map<string_view, Type, 5> type_lookup = 
 		{
 		{ "par", Type::simple },
 		{ "title", Type::title },

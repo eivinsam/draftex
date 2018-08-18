@@ -171,6 +171,14 @@ namespace tex
 
 		void tokenize(string_view & in, Mode mode) final
 		{
+			static constexpr frozen::unordered_set<std::string_view, 4> headings =
+			{
+				"title",
+				"author",
+				"section",
+				"subsection"
+			};
+
 			Owner<Group> par;
 			while (!in.empty())
 				if (auto sub = tokenize_single(in, *this, mode, OnEnd::match))
@@ -180,6 +188,20 @@ namespace tex
 						if (par) append(move(par));
 						par = Group::make("par");
 					}
+					else if (auto cmd = as<Command>(sub.get()); cmd && headings.count(cmd->cmd))
+					{
+						if (par) append(move(par));
+						if (in.front() != '{')
+							throw IllFormed(std::string("expected { after \\" + cmd->cmd));
+						in.remove_prefix(1);
+						auto arg = Group::make("curly");
+						arg->tokenize(in, mode);
+						auto headg = Group::make(cmd->cmd);
+						headg->append(move(arg));
+						append(move(headg));
+						continue;
+					}
+
 					if (!par) par = Group::make("par");
 					par->append(move(sub));
 				}

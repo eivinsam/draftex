@@ -193,8 +193,8 @@ namespace tex
 		static const Font styles[] = 
 		{
 			{ FontType::roman, FontSize::normalsize }, // simple
-			{ FontType::roman, FontSize::normalsize }, // title
-			{ FontType::bold, FontSize::Huge }, // author
+			{ FontType::roman, FontSize::Huge }, // title
+			{ FontType::bold, FontSize::LARGE }, // author
 			{ FontType::bold, FontSize::Large }, // section
 			{ FontType::bold, FontSize::large } // subsection
 		};

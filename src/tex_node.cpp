@@ -158,9 +158,7 @@ namespace tex
 	int Text::insert(int offset, std::string_view new_text)
 	{
 		change();
-		const auto uoffset = narrow<size_t>(offset);
-
-		text.insert(uoffset, new_text);
+		text.insert(offset, new_text);
 		return int_size(new_text);
 	}
 

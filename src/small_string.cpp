@@ -46,23 +46,26 @@ void SmallString::insert(int offset, view text)
 	const auto text_size = gsl::narrow_cast<int>(text.size());
 	const auto new_size = size() + text_size;
 	Expects(new_size >= 0);
+	Expects(offset >= 0 && offset <= size());
 	reserve(new_size);
 	if (offset < size())
 	{
 		const auto old_end = end();
 		const auto new_end = old_end + text_size;
-		for (int i = 0; i < text_size; ++i)
-			new_end[i] = old_end[i];
+		const auto N = size() - offset;
+
+		for (int i = 1; i <= N; ++i)
+			new_end[-i] = old_end[-i];
 	}
 	if (_small)
 	{
-		memcpy(_small.data + _small.size, text.data(), text.size());
+		memcpy(_small.data + offset, text.data(), text.size());
 		_small.size = static_cast<unsigned char>(new_size);
 		_small.data[_small.size] = 0;
 	}
 	else
 	{
-		memcpy(_large.data + _large.size, text.data(), text.size());
+		memcpy(_large.data + offset, text.data(), text.size());
 		_large.size = new_size;
 		_large.data[_large.size] = 0;
 	}
@@ -76,8 +79,12 @@ void SmallString::erase(int index, int count)
 	if (count < 0 || index + count > size())
 		count = size() - index;
 
-	for (auto dst = data() + index, src = dst + count, src_end = end(); src < src_end; ++dst, ++src)
-		dst = src;
+	const auto dst = data() + index;
+	const auto src = dst + count;
+	const auto N = size() - (index + count);
+
+	for (int i = 0; i <= N; ++i)
+		dst[i] = src[i];
 	if (_small)
 		_small.size -= static_cast<unsigned char>(count);
 	else

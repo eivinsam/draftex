@@ -5,22 +5,52 @@
     <DisplayString>{(_small.size &lt; 15 ? _small.data : _large.data),na}</DisplayString>
   </Type>
   
-  <Type Name="tex::Node">
-    <DisplayString>{data}</DisplayString>
+  <Type Name="tex::Text">
+    <DisplayString>{text}</DisplayString>
     <Expand>
       <Item Name="box">box</Item>
     </Expand>
   </Type>
+  <Type Name="tex::Space">
+    <DisplayString>[space]</DisplayString>
+  </Type>
+  <Type Name="tex::Command">
+    <DisplayString>\{cmd,sb}</DisplayString>
+  </Type>
 
   <Type Name="tex::Group">
-    <DisplayString>{data}</DisplayString>
+    <DisplayString>{__vfptr,na}</DisplayString>
     <Expand>
       <Item Name="box">box</Item>
       <LinkedListItems>
         <HeadPointer>_first._Mypair._Myval2</HeadPointer>
         <NextPointer>next.value._Mypair._Myval2</NextPointer>
-        <ValueNode>this</ValueNode>
+        <ValueNode>this,na</ValueNode>
       </LinkedListItems>
+    </Expand>
+  </Type>
+  <Type Name="tex::Root">
+    <DisplayString>[root]</DisplayString>
+    <Expand>
+      <ExpandedItem>(tex::Group*)this,nd</ExpandedItem>
+    </Expand>
+  </Type>
+  <Type Name="tex::Document">
+    <DisplayString>[document]</DisplayString>
+    <Expand>
+      <ExpandedItem>(tex::Group*)this,nd</ExpandedItem>
+    </Expand>
+  </Type>
+  <Type Name="tex::Par">
+    <DisplayString>[{_type} paragraph]</DisplayString>
+    <Expand>
+      <ExpandedItem>(tex::Group*)this,nd</ExpandedItem>
+    </Expand>
+  </Type>
+  <Type Name="tex::Curly">
+    <DisplayString>[curly]</DisplayString>
+    <Expand>
+      <ExpandedItem>(tex::Group*)this,nd</ExpandedItem>
     </Expand>
   </Type>
   

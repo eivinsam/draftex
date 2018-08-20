@@ -10,6 +10,7 @@ namespace tex
 	public:
 		Curly(string) { }
 
+		void enforceRules() final { _enforce_child_rules(); }
 		bool terminatedBy(string_view token) const final { return token == "}"; }
 
 		void serialize(std::ostream& out) const final
@@ -169,6 +170,8 @@ namespace tex
 	public:
 		using VerticalGroup::VerticalGroup;
 
+		void enforceRules() final { _enforce_child_rules(); }
+
 		void tokenize(string_view & in, Mode mode) final
 		{
 			static constexpr frozen::unordered_set<std::string_view, 4> headings =
@@ -198,7 +201,10 @@ namespace tex
 						arg->tokenize(in, mode);
 						auto headg = Group::make(cmd->cmd);
 						headg->append(move(arg));
+						if (isspace(in.front()))
+							headg->append(tokenize_single(in, *this, mode, OnEnd::match));
 						append(move(headg));
+
 						continue;
 					}
 

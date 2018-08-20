@@ -36,20 +36,13 @@ namespace tex
 
 	namespace align = oui::align;
 
-	bool Space::_needs_text_before(Node * otherwise) const
-	{
-		return otherwise != nullptr &&
-			otherwise->type() == Type::group &&
-			typeid(*otherwise) != typeid(Group);
-	}
-
 	void Node::_insert_before(Owner<Node> sibling)
 	{
 		Expects(sibling != nullptr);
 		Expects(sibling->parent == nullptr);
 
-		if (sibling->_needs_text_before(prev()) && !text(*prev))
-			_insert_before(Text::make(""));
+		//if (!text(prev()) && sibling->_needs_text_before(prev()))
+		//	_insert_before(Text::make(""));
 
 		auto& sibling_ref = *sibling;
 		sibling->parent = parent;
@@ -60,16 +53,16 @@ namespace tex
 		prev = &sibling_ref;
 		prev->change();
 
-		if (_needs_text_before(prev()) && !text(*prev))
-			_insert_before(Text::make(""));
+		//if (!text(*prev) && _needs_text_before(prev()))
+		//	_insert_before(Text::make(""));
 	}
 	void Group::_append(Owner<Node> child)
 	{
 		Expects(child != nullptr);
 		Expects(child->parent == nullptr);
 
-		if (child->_needs_text_before(_last) && !text(_last))
-			_append(Text::make(""));
+		//if (!text(_last) && child->_needs_text_before(_last))
+		//	_append(Text::make(""));
 
 		Node& child_ref = *child;
 		child->_set_parent(this);
@@ -318,6 +311,18 @@ namespace tex
 			child = child->expand();
 
 		return this;
+	}
+
+	void Group::enforceRules()
+	{
+		if (parent)
+		{
+			if (!text(prev()))
+				insertBefore(Text::make());
+			if (!text(next()))
+				insertAfter(Text::make());
+		}
+		_enforce_child_rules();
 	}
 
 	using CommandExpander = Owner<Group>(*)(Command*);

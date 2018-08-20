@@ -78,8 +78,6 @@ namespace tex
 		void _set_parent(Group* p) { parent = p; }
 		void _set_prev(Node* p) { prev = p; }
 
-		virtual bool _needs_text_before(Node*) const { return true; }
-
 		virtual Text* _this_or_prev_text() noexcept { return prevText(); };
 		virtual Text* _this_or_next_text() noexcept { return nextText(); };
 
@@ -144,6 +142,7 @@ namespace tex
 		virtual void popArgument(Group& dst);
 		virtual Node* getArgument() { return next->getArgument(); }
 
+		virtual void enforceRules() { };
 
 		void visit(Visitor&& v) { visit(v); }
 		virtual void visit(Visitor&) = 0;
@@ -209,9 +208,9 @@ namespace tex
 		Text* _this_or_prev_text() noexcept final { return _last  ? _last ->_this_or_prev_text() : prevText(); }
 		Text* _this_or_next_text() noexcept final { return _first ? _first->_this_or_next_text() : nextText(); }
 
-		bool _needs_text_before(Node*) const override { return false; }
-
 		void _append(Owner<Node> child);
+	protected:
+		void _enforce_child_rules() { for (auto&& e : *this) e.enforceRules(); }
 	public:
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
@@ -230,6 +229,8 @@ namespace tex
 		Node* expand() final;
 		void popArgument(Group& dst) final { dst.append(detach()); }
 		Node* getArgument() noexcept final { return this; }
+
+		void enforceRules() override;
 
 		template <class T>
 		T* append(Owner<T> child) noexcept
@@ -339,7 +340,6 @@ namespace tex
 
 	class Space : public Node
 	{
-		bool _needs_text_before(Node* otherwise) const final;
 	public:
 		string space;
 
@@ -363,7 +363,6 @@ namespace tex
 		Text* _this_or_prev_text() noexcept final { return this; };
 		Text* _this_or_next_text() noexcept final { return this; };
 
-		bool _needs_text_before(Node*) const final { return false; }
 	public:
 		using Node::visit;
 		void visit(Visitor& v) override { v(*this); }
@@ -419,10 +418,11 @@ namespace tex
 		Font _font;
 		string _pretitle;
 	protected:
-		bool _needs_text_before(Node*) const final { return false; }
 		float _parindent = 0;
 	public:
 		Par(string token);
+
+		void enforceRules() final { _enforce_child_rules(); }
 
 		bool terminatedBy(std::string_view) const final { return false; }
 

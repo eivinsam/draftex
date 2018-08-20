@@ -359,6 +359,7 @@ struct Draftex
 	{
 		tokens = tex::tokenize(readFile("test.tex"));
 		tokens->expand();
+		tokens->enforceRules();
 		check_title();
 
 		for (auto&& e : *tokens)
@@ -518,6 +519,7 @@ struct Draftex
 		context.keysize = 9 * window.dpi() / 72.0f;
 		if (tokens->changed())
 		{
+			tokens->enforceRules();
 			tokens->updateSize(context,
 				tex::Mode::text, { tex::FontType::sans, tex::FontSize::normalsize },
 				window.area().width());

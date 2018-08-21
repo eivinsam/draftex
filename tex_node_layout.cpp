@@ -48,7 +48,10 @@ namespace tex
 
 			collectLine();
 
-			position(it == rest.end() ? Align::left : Align::justified);
+			auto jt = it;
+			while (jt != rest.end() && space(*jt))
+				++jt;
+			position(jt == rest.end() ? Align::left : Align::justified);
 
 			rest.first = it;
 		}

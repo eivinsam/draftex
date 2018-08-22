@@ -240,6 +240,14 @@ namespace tex
 			return raw;
 		}
 
+		bool contains(Node* n) const
+		{
+			for (; n != nullptr; n = n->parent())
+				if (n == this)
+					return true;
+			return false;
+		}
+
 		bool empty() const noexcept { return !_first; }
 
 		      Node& front()       { return *_first; }
@@ -426,7 +434,7 @@ namespace tex
 
 		bool terminatedBy(std::string_view) const final { return false; }
 
-		void partype(Type t) { _type = t; change(); }
+		void partype(Type t);
 		Type partype() { return _type; }
 
 		bool collect(Paragraph&) final { return false; }

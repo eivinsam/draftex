@@ -191,6 +191,38 @@ namespace tex
 			box.after += e.box.width();
 		}
 	}
+	void Par::partype(Type t) 
+	{ 
+		if (_type == t)
+			return;
+		Expects(!empty());
+
+		auto terminator = as<Space>(&back());
+		if (!terminator)
+			terminator = append(Space::make());
+
+		if (_type == Type::simple)
+		{
+			terminator->space = "\n";
+
+			const auto new_curl = front().insertBefore(Group::make("curly"));
+			while (new_curl->next() != terminator)
+				new_curl->append(new_curl->next->detach());
+		}
+		else if (t == Type::simple)
+		{
+			terminator->space = "\n\n";
+
+			const auto curly = as<Group>(&front());
+			while (!curly->empty())
+				curly->insertAfter(curly->back().detach());
+			curly->remove();
+		}
+
+		_type = t; 
+
+		change(); 
+	}
 	void Par::updateSize(Context & con, Mode mode, Font font, float width)
 	{
 		static const Font styles[] = 

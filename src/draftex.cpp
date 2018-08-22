@@ -92,11 +92,35 @@ struct Caret
 
 	void prepare(Move move)
 	{
-		if (node->text.empty() && space(node->prev()) && space(node->next()))
+		if (node->text.empty())
 		{
-			move == Move::forward ?
-				erasePrev() :
-				eraseNext();
+			if (space(node->prev()) && space(node->next()))
+			{
+				move == Move::forward ?
+					erasePrev() :
+					eraseNext();
+			}
+			if (!node->prev() && !node->next() && typeid(*node->parent) == typeid(tex::Par))
+			{
+				const auto to_remove = node->parent();
+				if (move == Move::forward)
+				{
+					if (const auto candidate = node->prevText())
+						node = candidate;
+					else
+						return;
+					offset = node->text.size();
+				}
+				else
+				{
+					if (const auto candidate = node->nextText())
+						node = candidate;
+					else
+						return;
+					offset = 0;
+				}
+				to_remove->remove();
+			}
 		}
 	}
 
@@ -317,6 +341,35 @@ struct Caret
 		node = space->nextText();
 		offset = 0;
 	}
+
+	void breakParagraph()
+	{
+		Expects(node);
+		if (typeid(*node->parent) != typeid(tex::Par))
+			return;
+		if (offset == 0 && !node->parent->contains(node->prevText()))
+			return;
+
+		auto new_par = node->parent->insertAfter(tex::Group::make("par"));
+		auto old_node = node;
+
+		if (offset <= 0)
+		{
+			old_node = node->insertBefore(tex::Text::make());
+			new_par->append(node->detach());
+		}
+		else if (offset >= node->text.size())
+			node = new_par->append(tex::Text::make());
+		else
+		{
+			node = new_par->append(tex::Text::make(node->text.substr(offset)));
+			old_node->text.resize(offset);
+		}
+		while (old_node->next())
+			new_par->append(old_node->next->detach());
+
+		offset = 0;
+	}
 };
 
 struct Draftex;
@@ -328,14 +381,15 @@ struct Option
 	std::string_view name;
 	Action action = nullptr;
 	const Option* subs = nullptr;
-	short subc = 0;
+	char subc = 0;
+	char highlight;
 	oui::Key key;
 
-	constexpr Option(std::string_view name, oui::Key key, Action action) :
-		name(name), action(action), key(key) { }
-	template <short N>
-	constexpr Option(std::string_view name, oui::Key key, const Option (&suboptions)[N]) :
-		name(name), subs(suboptions), subc(N), key(key) { }
+	constexpr Option(std::string_view name, char highlight, oui::Key key, Action action) :
+		name(name), action(action), highlight(highlight), key(key) { }
+	template <char N>
+	constexpr Option(std::string_view name, char highlight, oui::Key key, const Option (&suboptions)[N]) :
+		name(name), subs(suboptions), subc(N), highlight(highlight), key(key) { }
 };
 
 namespace menu
@@ -373,8 +427,9 @@ struct Draftex
 			}
 
 		window.resize = [this](auto&&) { tokens->change(); };
-		oui::input.keydown = [this](oui::Key key)
+		oui::input.keydown = [this](oui::Key key, auto prev_state)
 		{
+			const bool is_repeat = prev_state == oui::PrevKeyState::down;
 			ignore_char = false;
 			using oui::Key;
 
@@ -394,6 +449,7 @@ struct Draftex
 					return;
 				}
 			
+
 			switch (key)
 			{
 			case Key::home:  caret.home(); break;
@@ -405,7 +461,11 @@ struct Draftex
 			case Key::backspace: caret.erasePrev(); break;
 			case Key::del:       caret.eraseNext(); break;
 			case Key::space:     caret.insertSpace(); break;
-			case Key::alt:       toggle_menu(); break;
+			case Key::enter:     caret.breakParagraph(); break;
+			case Key::alt: case Key::f10:
+				if (!is_repeat) 
+					toggle_menu();
+				break;
 			default:
 				oui::debug::println("key ", static_cast<int>(key));
 				return;
@@ -528,9 +588,10 @@ struct Draftex
 			check_title();
 		}
 
-		auto caret_box = caret.node->absBox();
-
-		oui::shift({ 0, window.area().height()*0.5f - caret_box.center().y });
+		const auto caret_box = caret.node->absBox();
+		const auto shift = oui::Vector{ 0, window.area().height()*0.5f - caret_box.center().y };
+	
+		oui::shift(shift);
 
 		oui::fill(caret_box, { 0.0f, 0.1f, 1, 0.2f });
 		for (auto p = caret.node->parent(); p != nullptr; p = p->parent())
@@ -540,6 +601,8 @@ struct Draftex
 		tokens->render(context, {});
 
 		caret.render(context);
+
+		oui::shift(-shift);
 
 		if (!options.empty())
 		{
@@ -552,6 +615,13 @@ struct Draftex
 			for (auto&& opt : options)
 			{
 				optfont->drawLine(pen, opt.name, oui::colors::black, h);
+				oui::Point underline_tlc
+				{
+					pen.x + optfont->offset(opt.name.substr(0, opt.highlight), h),
+					pen.y + h * 0.85f
+				};
+				oui::fill(oui::align::topLeft(underline_tlc)
+					.size({ optfont->offset(opt.name.substr(opt.highlight, 1), h), h*0.0625f }), oui::colors::black);
 				pen.y += h;
 			}
 		}
@@ -564,29 +634,29 @@ namespace menu
 
 	const Option file[] =
 	{
-		{ "Save", Key::s, &Draftex::save },
-		{ "Exit", Key::x, &Draftex::quit }
+		{ "Save", 0, Key::s, &Draftex::save },
+		{ "Exit", 1, Key::x, &Draftex::quit }
 	};
 
 	using Par = tex::Par::Type;
 
 	const Option par[] =
 	{
-		{ "Standard",      Key::s,  &Draftex::change_par<Par::simple> },
-		{ "3: Section",    Key::n3, &Draftex::change_par<Par::section> },
-		{ "4: Subsection", Key::n4, &Draftex::change_par<Par::subsection> }
+		{ "Standard",      0, Key::s,  &Draftex::change_par<Par::simple> },
+		{ "3: Section",    0, Key::n3, &Draftex::change_par<Par::section> },
+		{ "4: Subsection", 0, Key::n4, &Draftex::change_par<Par::subsection> }
 	};
 
 	const Option math[] =
 	{
-		{ "Insert", Key::i, &Draftex::insert_math }
+		{ "Insert", 0, Key::i, &Draftex::insert_math }
 	};
 
 	const Option main[] =
 	{
-		{ "File",      Key::f, file },
-		{ "Paragraph", Key::p, par },
-		{ "Math",      Key::m, math }
+		{ "File",      0, Key::f, file },
+		{ "Paragraph", 0, Key::p, par },
+		{ "Math",      0, Key::m, math }
 	};
 
 }

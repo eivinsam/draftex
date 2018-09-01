@@ -76,10 +76,13 @@ struct Caret
 		if (!con.window().focus())
 			return;
 
-		oui::Point pos = node->absBox().min;
-		pos.x += offsetX(con) - 1;
+		auto box = node->absBox();
+	
 
-		oui::fill(oui::align::topLeft(pos).size({ 2.0f, node->box.height() }), oui::colors::black);
+		box.min.x += offsetX(con) - 1;
+		box.max.x = box.min.x + 2;
+
+		oui::fill(box, oui::colors::black);
 	}
 
 	int repairOffset(int off)
@@ -394,7 +397,7 @@ struct Option
 
 namespace menu
 {
-	extern const Option main[3];
+	extern const Option main[4];
 }
 
 struct Draftex
@@ -506,13 +509,14 @@ struct Draftex
 		take_option();
 		tokens->serialize(std::ofstream("test.out"));
 	}
-	void insert_math()
+	void insert_group(std::string_view group_type)
 	{
+		auto result = tex::Group::make(group_type);
 		if (caret.offset >= caret.node->text.size())
 		{
 			caret.offset = 0;
 			caret.node = caret.node
-				->insertAfter(tex::Group::make("math"))
+				->insertAfter(move(result))
 				->append(tex::Text::make());
 			return;
 		}
@@ -524,8 +528,17 @@ struct Draftex
 			caret.offset = 0;
 		}
 		caret.node = caret.node
-			->insertBefore(tex::Group::make("math"))
+			->insertBefore(move(result))
 			->append(tex::Text::make());
+	}
+
+	void insert_math()
+	{
+		insert_group("math");
+	}
+	void insert_comment()
+	{
+		insert_group("%");
 	}
 
 	void change_par(tex::Par::Type new_type)
@@ -580,10 +593,10 @@ struct Draftex
 		if (tokens->changed())
 		{
 			tokens->enforceRules();
-			tokens->updateSize(context,
+			auto& tbox = tokens->updateSize(context,
 				tex::Mode::text, { tex::FontType::sans, tex::FontSize::normalsize },
 				window.area().width());
-			tokens->updateLayout({ window.area().width()*0.5f, 0 });
+			tokens->layoutOffset({ window.area().width()*tbox.before/tbox.width(), 0 });
 			tokens->commit();
 			check_title();
 		}
@@ -642,9 +655,11 @@ namespace menu
 
 	const Option par[] =
 	{
-		{ "Standard",      0, Key::s,  &Draftex::change_par<Par::simple> },
-		{ "3: Section",    0, Key::n3, &Draftex::change_par<Par::section> },
-		{ "4: Subsection", 0, Key::n4, &Draftex::change_par<Par::subsection> }
+	{ "Standard", 0, Key::s, &Draftex::change_par<Par::simple> },
+	{ "Title",    0, Key::t, &Draftex::change_par<Par::title> },
+	{ "Author",   0, Key::a, &Draftex::change_par<Par::author> },
+	{ "Heading 2 - Section",    8, Key::n2, &Draftex::change_par<Par::section> },
+	{ "Heading 3 - Subsection", 8, Key::n3, &Draftex::change_par<Par::subsection> }
 	};
 
 	const Option math[] =
@@ -656,7 +671,8 @@ namespace menu
 	{
 		{ "File",      0, Key::f, file },
 		{ "Paragraph", 0, Key::p, par },
-		{ "Math",      0, Key::m, math }
+		{ "Math",      0, Key::m, math },
+		{ "Comment",   0, Key::c, &Draftex::insert_comment }
 	};
 
 }

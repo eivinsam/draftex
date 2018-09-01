@@ -16,7 +16,7 @@ namespace tex
 		void push_back(Node* node) { _nodes.push_back(node); }
 
 		// returns the resulting height
-		float updateLayout(oui::Vector pen, float indent, float width);
+		float updateLayout(Vector pen, float indent, float width);
 
 
 		class iterator
@@ -39,4 +39,6 @@ namespace tex
 		iterator begin() { return { _nodes.begin() }; }
 		iterator end() { return { _nodes.end() }; }
 	};
+
+	float layoutParagraph(Group* p, float indent, float width);
 }

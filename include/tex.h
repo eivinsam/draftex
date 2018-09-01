@@ -10,6 +10,10 @@
 
 namespace tex
 {
+	using oui::Vector;
+	using oui::Point;
+	using oui::Rectangle;
+
 	template <class C>
 	constexpr int int_size(C&& c) { return narrow<int>(std::size(c)); }
 
@@ -79,6 +83,8 @@ namespace tex
 		constexpr void height(float h, oui::Align a) { above = h * a.c; below = h - above; }
 	};
 
+	class Float;
+
 	class Context
 	{
 		oui::Window* _w;
@@ -88,10 +94,16 @@ namespace tex
 		oui::VectorFont italic;
 		oui::VectorFont bold;
 	public:
+		std::vector<Float*> floats;
+
 		float keysize = 6;
 
 		short section = 0;
 		short subsection = 0;
+
+		float float_width;
+		//Vector float_margin;
+		//Vector float_pen;
 
 		Context(oui::Window& window) : _w(&window),
 			mono{ "fonts/LinLibertine_Mah.ttf" },

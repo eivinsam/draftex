@@ -10,14 +10,112 @@ namespace tex
 	public:
 		Curly(string) { }
 
+		bool collect(Paragraph& out)
+		{
+			for (auto&& e : *this)
+				out.push_back(&e);
+			return true;
+		}
+
 		void enforceRules() final { _enforce_child_rules(); }
 		bool terminatedBy(string_view token) const final { return token == "}"; }
+
+		Box& updateSize(Context& con, Mode mode, Font font, float width) final
+		{
+			_box.before = _box.after = 0;
+			_box.above = _box.below = 0;
+
+			for (auto&& sub : *this)
+			{
+				auto& sbox = sub.updateSize(con, mode, font, width);
+
+				if (_box.above < sbox.above)
+					_box.above = sbox.above;
+				if (_box.below < sbox.below)
+					_box.below = sbox.below;
+
+				sbox.offset = { _box.after, 0 };
+				_box.after += sbox.width();
+			}
+
+			return _box;
+		}
 
 		void serialize(std::ostream& out) const final
 		{
 			out << '{';
 			Group::serialize(out);
 			out << '}';
+		}
+	};
+
+	class Float : public Group
+	{
+		Box _float_box;
+	public:
+
+
+		void floatOffset(Vector offset) { _float_box.offset = offset; }
+
+		const Box& contentBox() const override { return _float_box; }
+
+		Box& updateSize(Context& con, Mode mode, Font font, float width) override
+		{
+			con.floats.push_back(this);
+
+			font.size = shift(font.size, -2);
+
+			const auto em = con.ptsize(font);
+			_box.above = _box.below = em * 0.5f;
+			_box.before = 0;
+			_box.after = em * 0.125f;
+
+			for (auto&& sub : *this)
+				sub.updateSize(con, mode, font, width);
+
+			_float_box.width(con.float_width, align::min);
+			_float_box.height(layoutParagraph(this, 0, _float_box.width()), align::min);
+
+			return _box;
+		}
+
+		void render(tex::Context& con, oui::Vector offset) const final
+		{
+			constexpr auto color = oui::Color{ 1, 0.8, 0.1 };
+			constexpr auto padding = Vector{ 2, 2 };
+			const Rectangle lbox =
+			{
+				offset + _box.min(),
+				offset + _box.max()
+			};
+			const Rectangle cbox =
+			{
+				offset + _float_box.min() - padding,
+				offset + _float_box.max() + padding
+			};
+
+			const auto bend = Point{ cbox.min.x - 10, lbox.max.y };
+
+			oui::fill(lbox, color);
+			oui::fill(cbox, color);
+			oui::line(lbox.max, bend, color, 2);
+			oui::line(bend, Point{ cbox.min.x, std::clamp(bend.y, cbox.min.y, cbox.max.y) }, color, 2);
+
+			Group::render(con, offset + (_float_box.offset - _box.offset));
+		}
+	};
+
+	class Comment : public Float
+	{
+	public:
+		Comment(string) { }
+
+		bool terminatedBy(string_view) const final { return false; }
+
+		void serialize(std::ostream& out) const final
+		{
+			out << '%';
+			Group::serialize(out);
 		}
 	};
 
@@ -28,18 +126,13 @@ namespace tex
 
 		bool terminatedBy(string_view token) const final { return token == "$"; }
 
-		bool collect(Paragraph& out) final
-		{
-			out.push_back(this);
-			return true;
-		}
-
-		void updateSize(Context& con, Mode mode, Font font, float width) final
+		Box& updateSize(Context& con, Mode mode, Font font, float width) final
 		{
 			mode = Mode::math;
 			font.type = FontType::italic;
 
 			Group::updateSize(con, mode, font, width);
+			return _box;
 		}
 
 		void render(tex::Context& con, oui::Vector offset) const
@@ -78,13 +171,7 @@ namespace tex
 	public:
 		using CommandGroup::CommandGroup;
 
-		bool collect(Paragraph& out) final
-		{
-			out.push_back(this);
-			return true;
-		}
-
-		void updateSize(Context& con, Mode mode, Font font, float width) final
+		Box& updateSize(Context& con, Mode mode, Font font, float width) final
 		{
 			Expects(mode == Mode::math);
 			const auto p = front().getArgument();
@@ -92,60 +179,57 @@ namespace tex
 
 			font.size = shift(font.size, -2);
 
-			p->updateSize(con, Mode::math, font, width);
-			q->updateSize(con, Mode::math, font, width);
+			auto& pbox = p->updateSize(con, Mode::math, font, width);
+			auto& qbox = q->updateSize(con, Mode::math, font, width);
 
-			box.width(std::max(p->box.width(), q->box.width()), align::min);
-			box.above = p->box.height() + con.ptsize(font)*0.05f;
-			box.below = q->box.height() + con.ptsize(font)*0.05f;
-		}
+			_box.width(std::max(pbox.width(), qbox.width()), align::min);
+			_box.above = pbox.height() + con.ptsize(font)*0.05f;
+			_box.below = qbox.height() + con.ptsize(font)*0.05f;
 
-		void updateLayout(oui::Vector offset) final
-		{
-			box.offset = offset;
+			pbox.offset = { (_box.width() - pbox.width())*0.5f, -pbox.below - (_box.above - pbox.height()) };
+			qbox.offset = { (_box.width() - qbox.width())*0.5f, +qbox.above + (_box.below - pbox.height()) };
 
-			Node*const p = front().getArgument();
-			Node*const q = p->next->getArgument();
-
-			p->updateLayout({ (box.width() - p->box.width())*0.5f, -p->box.below - (box.above-p->box.height()) });
-			q->updateLayout({ (box.width() - q->box.width())*0.5f, +q->box.above + (box.below-p->box.height()) });
+			return _box;
 		}
 
 		void render(tex::Context& con, oui::Vector offset) const final
 		{
 			Group::render(con, offset);
-			oui::fill(oui::align::centerLeft(oui::origo + offset + box.offset).size({ box.width(), 1 }), oui::colors::black);
+			oui::fill(oui::align::centerLeft(oui::origo + offset + _box.offset).size({ _box.width(), 1 }), 
+				oui::colors::black);
 		}
 	};
 	class VerticalGroup : public Group
 	{
-	public:
-		VerticalGroup(string) { }
-
-		void updateSize(Context& con, Mode mode, Font font, float width) override
+	protected:
+		Box& _vertical_layout(Context& con, Mode mode, Font font)
 		{
-			box.width(width, align::center);
-			box.above = box.below = 0;
-
-			for (auto&& sub : *this)
-			{
-				sub.updateSize(con, mode, font, box.width());
-				box.below += sub.box.height();
-			}
-		}
-		void updateLayout(oui::Vector offset) final
-		{
-			box.offset = offset;
-
 			float height = 0;
 			for (auto&& sub : *this)
 			{
-				const auto sub_align = sub.box.before / sub.box.width();
-				sub.updateLayout({ (sub_align - 0.5f)*box.width(), height + sub.box.above });
-				height += sub.box.height();
+				auto& sbox = sub.updateSize(con, mode, font, _box.width());
+				_box.below += sbox.height();
+
+				const auto sub_align = sbox.before / sbox.width();
+				sbox.offset = { (sub_align - 0.5f)*_box.width(), height + sbox.above };
+				height += sbox.height();
 			}
-			box.above = 0;
-			box.below = height;
+			_box.above = 0;
+			_box.below = height;
+
+			return _box;
+		}
+	public:
+		VerticalGroup(string) { }
+
+		Flow flow() const noexcept final { return Flow::vertical; }
+
+		Box& updateSize(Context& con, Mode mode, Font font, float width) override
+		{
+			_box.width(width, align::center);
+			_box.above = _box.below = 0;
+
+			return _vertical_layout(con, mode, font);
 		}
 	};
 
@@ -156,12 +240,73 @@ namespace tex
 
 		bool terminatedBy(string_view) const final { return false; }
 
-		void updateSize(Context& con, Mode mode, Font font, float width) final
+		Box& updateSize(Context& con, Mode mode, Font font, float width) final
 		{
+			con.floats.clear();
 			con.section = 0;
 			con.subsection = 0;
 
-			VerticalGroup::updateSize(con, mode, font, width);
+
+			const auto em = con.ptsize(font);
+			con.float_width = std::min(width*0.3f, em * 12);
+			const auto main_width = width - (con.float_width + em);
+
+
+			_box.before = 0;
+			_box.after = width;
+			_box.above = _box.below = 0;
+
+
+			float height = 0;
+			float line_height = 0;
+			float line_offset = em;
+			for (auto&& sub : *this)
+			{
+				auto& sbox = sub.updateSize(con, mode, font, main_width-em);
+				if (sub.flow() == Flow::vertical)
+				{
+					height += line_height;
+					line_height = 0;
+					line_offset = em;
+					const auto sub_align = sbox.before / sbox.width();
+					sbox.offset = { (main_width-em)*sub_align + 0.5f*em, height + sbox.above };
+					height += sbox.height();
+				}
+				else
+				{
+					sbox.offset = { line_offset + sbox.before, height + sbox.above };
+					line_offset += sbox.width();
+					line_height = std::max(line_height, sbox.height());
+				}
+			}
+			height += line_height;
+			_box.above = 0;
+			_box.below = height;
+
+			// pass 2: place floats
+			Vector pen = { width - (con.float_width + 0.5f*em) , 0 };
+			for (auto&& sub : con.floats)
+			{
+				auto& lbox = sub->layoutBox();
+				auto loff = lbox.offset;
+				for (auto p = sub->parent(); p && p != this; p = p->parent())
+					loff += p->layoutBox().offset;
+
+				loff.y -= lbox.above;
+
+				if (pen.y < loff.y)
+					pen.y = loff.y;
+
+				loff.y += lbox.above;
+				loff += -lbox.offset;
+
+				sub->floatOffset(pen - loff);
+
+				pen.y += sub->contentBox().height() + em;
+			}
+			con.floats.clear();
+
+			return _box;
 		}
 	};
 
@@ -218,17 +363,13 @@ namespace tex
 
 		bool collect(Paragraph&) final { return false; }
 
-		void updateSize(Context& con, Mode mode, Font font, float width) override
+		Box& updateSize(Context& con, Mode mode, Font font, float width) override
 		{
 			font.type = FontType::roman;
-			box.width(std::min(width, con.ptsize(font) * 24.0f), align::center);
-			box.above = box.below = 0;
+			_box.width(std::min(width, con.ptsize(font) * 24.0f), align::center);
+			_box.above = _box.below = 0;
 
-			for (auto&& sub : *this)
-			{
-				sub.updateSize(con, mode, font, box.width());
-				box.below += sub.box.height();
-			}
+			return _vertical_layout(con, mode, font);
 		}
 
 		void serialize(std::ostream& out) const final
@@ -247,9 +388,10 @@ namespace tex
 	}
 	Owner<Group> Group::make(string name)
 	{
-		static const std::unordered_map<string_view, Owner<Group>(*)(string)>
+		static constexpr frozen::unordered_map<string_view, Owner<Group>(*)(string), 10>
 			maker_lookup =
 		{
+		{ "%", make_group<Comment> },
 		{ "math", make_group<Math> },
 		{ "frac", make_group<Frac> },
 		{ "par", make_group<Par> },

@@ -11,62 +11,8 @@ namespace tex
 	class Space;
 	class Text;
 
-
-	namespace details
-	{
-		template <class V>
-		struct ResultType
-		{
-			template <class N>
-			using result_with = decltype(std::declval<V>()(std::declval<N&>()));
-			using type = result_with<Group>;
-			static_assert(
-				std::is_same_v<type, result_with<Command>> &&
-				std::is_same_v<type, result_with<Space>> &&
-				std::is_same_v<type, result_with<Text>>,
-				"result must be the same for all node types");
-		};
-
-		struct Visitor
-		{
-			virtual ~Visitor() = default;
-			virtual void operator()(Group& group) = 0;
-			virtual void operator()(Command& cmd) = 0;
-			virtual void operator()(Space& space) = 0;
-			virtual void operator()(Text& text) = 0;
-		};
-
-		template <class V, class Result = typename ResultType<V>::type>
-		struct GenericVisitor : Visitor
-		{
-			V& v;
-
-			Result result;
-
-			constexpr GenericVisitor(V& v) : v(v) { }
-
-			void operator()(Group&   n) final { result = v(n); }
-			void operator()(Command& n) final { result = v(n); }
-			void operator()(Space&   n) final { result = v(n); }
-			void operator()(Text&    n) final { result = v(n); }
-		};
-		template <class V>
-		struct GenericVisitor<V, void> : Visitor
-		{
-			V& v;
-
-			constexpr GenericVisitor(V& v) : v(v) { }
-
-			void operator()(Group&   n) final { v(n); }
-			void operator()(Command& n) final { v(n); }
-			void operator()(Space&   n) final { v(n); }
-			void operator()(Text&    n) final { v(n); }
-		};
-	}
-
-	enum class Offset : int {};
-
 	class Paragraph;
+
 	class Node
 	{
 		friend class Group;
@@ -83,6 +29,8 @@ namespace tex
 
 		void _insert_before(Owner<Node> sibling);
 		void _insert_after(Owner<Node> sibling);
+
+		Box _box;
 	public:
 		using string = SmallString;
 
@@ -90,17 +38,24 @@ namespace tex
 		details::Property<Owner<Node>, Node> next;
 		details::Property<Node*, Node> prev;
 
-		using Visitor = details::Visitor;
+		enum class Type : char { space, text, group, command };
 
-		enum class Type : char { space, text, group, command, comment };
 
-		Box box;
+		void layoutOffset(Vector offset) { _box.offset = offset; }
+		const Box& layoutBox()  const { return _box; }
+		virtual const Box& contentBox() const { return _box; }
 
-		float absLeft() const;
-		float absRight() const { return absLeft() + box.width(); }
-		float absTop() const;
-		float absBottom() const { return absTop() + box.height(); }
-		oui::Rectangle absBox() const;
+		Vector absOffset() const;
+		float absLeft()   const { return absOffset().x - contentBox().before; }
+		float absRight()  const { return absOffset().x + contentBox().after; }
+		float absTop()    const { return absOffset().y - contentBox().above; }
+		float absBottom() const { return absOffset().y + contentBox().below; }
+		Rectangle absBox() const
+		{
+			auto& cbox = contentBox();
+			const auto off = absOffset();
+			return { Point(-cbox.before, -cbox.above) + off, Point(cbox.after, cbox.below) + off };
+		}
 
 		Node() = default;
 		virtual ~Node() = default;
@@ -144,21 +99,9 @@ namespace tex
 
 		virtual void enforceRules() { };
 
-		void visit(Visitor&& v) { visit(v); }
-		virtual void visit(Visitor&) = 0;
 
-		template <class V, class Result = 
-			std::enable_if_t<!std::is_base_of_v<Visitor, V>, typename details::ResultType<V>::type>>
-		Result visit(V&& v)
-		{
-			details::GenericVisitor<V> vrt{ v };
-			visit(static_cast<Visitor&>(vrt));
-			if constexpr (!std::is_same_v<void, Result>)
-				return vrt.result;
-		}
-
-
-		virtual Type type() const = 0;
+		virtual Type type() const noexcept = 0;
+		virtual Flow flow() const noexcept = 0;
 
 		virtual std::optional<string> asEnd() const { return {}; }
 
@@ -169,9 +112,8 @@ namespace tex
 		auto allTextAfter()  { return xpr::generator(&Node::nextText, this); }
 
 		virtual bool collect(Paragraph& out);
-		virtual void updateSize(Context& con, Mode mode, Font font, float width) = 0;
-		virtual void updateLayout(oui::Vector offset);
-		virtual void render(tex::Context& con, oui::Vector offset) const = 0;
+		virtual Box& updateSize(Context& con, Mode mode, Font font, float width) = 0;
+		virtual void render(Context& con, Vector offset) const = 0;
 
 		virtual void serialize(std::ostream& out) const = 0;
 		void serialize(std::ostream&& out) { serialize(out); }
@@ -212,14 +154,13 @@ namespace tex
 	protected:
 		void _enforce_child_rules() { for (auto&& e : *this) e.enforceRules(); }
 	public:
-		using Node::visit;
-		void visit(Visitor& v) override { v(*this); }
-
 		Group() = default;
 
 		void commit() noexcept final;
 
 		Type type() const noexcept final { return Type::group; }
+		Flow flow() const noexcept override { return Flow::line; }
+
 
 		static Owner<Group> make(string name);
 
@@ -286,9 +227,8 @@ namespace tex
 		constexpr const_iterator end() const { return { nullptr }; }
 
 		bool collect(Paragraph& out) override;
-		void updateSize(Context& con, Mode mode, Font font, float width) override;
-		void updateLayout(oui::Vector offset) override;
-		void render(tex::Context& con, oui::Vector offset) const override;
+		Box& updateSize(Context& con, Mode mode, Font font, float width) override;
+		void render(Context& con, Vector offset) const override;
 
 		void serialize(std::ostream& out) const override;
 		void serialize(std::ostream&& out) { serialize(out); }
@@ -307,16 +247,21 @@ namespace tex
 			parent ? parent->nextText() :
 			nullptr;
 	}
+	inline Vector Node::absOffset() const 
+	{ 
+		Vector result = contentBox().offset;
+		for (const Group* n = parent(); n; n = n->parent())
+			result += n->contentBox().offset;
+		return result;
+	}
 
 	class Command : public Node
 	{
 	public:
 		string cmd;
 
-		using Node::visit;
-		void visit(Visitor& v) override { v(*this); }
-
 		Type type() const noexcept final { return Type::command; }
+		Flow flow() const noexcept final { return Flow::line; }
 
 		static auto make() { return std::make_unique<Command>(); }
 		static auto make(string data)
@@ -338,9 +283,9 @@ namespace tex
 				return {};
 		}
 
-		void updateSize(Context& con, Mode, Font font, float width) final;
+		Box& updateSize(Context& con, Mode, Font font, float width) final;
 
-		void render(tex::Context& con, oui::Vector offset) const final;
+		void render(tex::Context& con, Vector offset) const final;
 
 		void serialize(std::ostream& out) const override { out << '\\' << cmd; }
 		void serialize(std::ostream&& out) { serialize(out); }
@@ -351,16 +296,14 @@ namespace tex
 	public:
 		string space;
 
-		using Node::visit;
-		void visit(Visitor& v) override { v(*this); }
-
 		Type type() const noexcept final { return Type::space; }
+		Flow flow() const noexcept final { return count(space, '\n') < 2 ? Flow::line : Flow::vertical; }
 
 		static auto make() { return std::make_unique<Space>(); }
 
 		bool collect(Paragraph& out) override;
-		void updateSize(Context& con, Mode mode, Font font, float width) final;
-		void render(tex::Context&, oui::Vector) const final { } // does nothing
+		Box& updateSize(Context& con, Mode mode, Font font, float width) final;
+		void render(tex::Context&, Vector) const final { } // does nothing
 
 		void serialize(std::ostream& out) const override { out << space; }
 		void serialize(std::ostream&& out) { serialize(out); }
@@ -372,15 +315,13 @@ namespace tex
 		Text* _this_or_next_text() noexcept final { return this; };
 
 	public:
-		using Node::visit;
-		void visit(Visitor& v) override { v(*this); }
-
 		string text;
 
 		Font font = { FontType::mono, FontSize::normalsize };
 		Mode mode = Mode::text;
 
 		Type type() const noexcept final { return Type::text; }
+		Flow flow() const noexcept final { return Flow::line; }
 
 		static auto make() { return std::make_unique<Text>(); }
 		static auto make(string text)
@@ -396,7 +337,7 @@ namespace tex
 		Space* insertSpace(int offset);
 		int insert(int offset, std::string_view text);
 
-		void updateSize(Context& con, Mode mode, Font font, float width) final;
+		Box& updateSize(Context& con, Mode mode, Font font, float width) final;
 		void render(tex::Context& con, oui::Vector offset) const final;
 
 		void serialize(std::ostream& out) const override { out << text; }
@@ -439,9 +380,8 @@ namespace tex
 
 		bool collect(Paragraph&) final { return false; }
 
-		void updateSize(Context& con, Mode mode, Font font, float width) override;
-		void updateLayout(oui::Vector offset) final;
-		void render(Context& con, oui::Vector offset) const final;
+		Box& updateSize(Context& con, Mode mode, Font font, float width) override;
+		void render(Context& con, Vector offset) const final;
 		void serialize(std::ostream& out) const final
 		{
 			out << name(_type);

@@ -21,13 +21,13 @@ namespace tex
 		float max_above;
 		float max_below;
 		float width_left;
-		oui::Vector pen;
+		Vector pen;
 		xpr::Range<iterator, iterator> rest;
 		iterator it;
 
 		enum class Align { left, justified };
 	public:
-		LineBulider(oui::Vector pen, iterator par_begin, iterator par_end) :
+		LineBulider(Vector pen, iterator par_begin, iterator par_end) :
 			pen(pen), rest(par_begin, par_end) { }
 
 		bool done() const { return rest.empty(); }
@@ -75,12 +75,13 @@ namespace tex
 		{
 			for (it = rest.begin(); it != rest.end(); ++it)
 			{
-				const auto box_width = it->box.width();
+				auto& lbox = it->layoutBox();
+				const auto box_width = lbox.width();
 				if (width_left < box_width && it != rest.begin())
 					break;
 				space_count += space(*it) ? 1 : 0;
-				max_above = std::max(max_above, it->box.above);
-				max_below = std::max(max_below, it->box.below);
+				max_above = std::max(max_above, lbox.above);
+				max_below = std::max(max_below, lbox.below);
 				width_left -= box_width;
 			}
 			unwindEndSpace();
@@ -95,7 +96,7 @@ namespace tex
 			for (; space(*it); --it)
 			{
 				Expects(it != rest.begin());
-				width_left += it->box.width();
+				width_left += it->layoutBox().width();
 				space_count -= 1;
 			}
 			++it;
@@ -105,8 +106,8 @@ namespace tex
 			pen.y += max_above;
 			for (auto&& e : currentLine())
 			{
-				e.updateLayout(pen);
-				pen.x += e.box.width();
+				e.layoutOffset(pen);
+				pen.x += e.layoutBox().width();
 
 				if (alignment == Align::justified && space(e))
 				{
@@ -119,19 +120,43 @@ namespace tex
 			pen.y += max_below;
 		}
 	};
-	float Paragraph::updateLayout(oui::Vector pen, float indent, float width)
+	float Paragraph::updateLayout(Vector pen, float indent, float width)
 	{
 		LineBulider builder(pen, begin(), end());
 
+		if (builder.done())
+			return 0;
+
+		builder.buildLine(pen.x + indent, width - indent);
 		while (!builder.done())
-		{
-			builder.buildLine(pen.x + indent, width - indent);
-			indent = 0;
-		}
+			builder.buildLine(pen.x, width);
 
 		return builder.height();
 	}
 
+	float layoutParagraph(Group* p, float indent, float width)
+	{
+		Paragraph par;
+
+		Vector pen = { 0, 0 };
+
+		for (auto it = p->begin(); it != p->end(); ++it)
+		{
+			par.clear();
+			if (it->collect(par))
+			{
+				++it;
+				while (it != p->end() && it->collect(par))
+					++it;
+				pen.y = par.updateLayout(pen, indent, width);
+				indent = 0;
+				if (it == p->end())  break;
+			}
+			it->layoutOffset(pen);
+			pen.y += it->layoutBox().height();
+		}
+		return pen.y;
+	}
 
 	bool Node::collect(Paragraph& out)
 	{
@@ -140,8 +165,7 @@ namespace tex
 	}
 	bool Group::collect(Paragraph& out)
 	{
-		for (auto&& e : *this)
-			e.collect(out);
+		out.push_back(this);
 		return true;
 	}
 	bool Space::collect(Paragraph& out)
@@ -152,44 +176,48 @@ namespace tex
 		return true;
 	}
 
-	void Command::updateSize(Context& con, Mode, Font font, float /*width*/)
+	Box& Command::updateSize(Context& con, Mode, Font font, float /*width*/)
 	{
 		const auto F = con.font(font);
-		box.width(F->offset(cmd, con.ptsize(font)), align::min);
-		box.height(con.ptsize(font), align::center);
+		_box.width(F->offset(cmd, con.ptsize(font)), align::min);
+		_box.height(con.ptsize(font), align::center);
+		return _box;
 	}
-	void Text::updateSize(Context& con, Mode new_mode, Font new_font, float /*width*/)
+	Box& Text::updateSize(Context& con, Mode new_mode, Font new_font, float /*width*/)
 	{
 		mode = new_mode;
 		font = new_font;
 		const auto F = con.font(font);
-		box.width(F->offset(text, con.ptsize(font)), align::min);
-		box.height(con.ptsize(font), align::center);
+		_box.width(F->offset(text, con.ptsize(font)), align::min);
+		_box.height(con.ptsize(font), align::center);
+		return _box;
 	}
-	void Space::updateSize(Context& con, Mode mode, Font font, float /*width*/)
+	Box& Space::updateSize(Context& con, Mode mode, Font font, float /*width*/)
 	{
 		if (count(space, '\n') >= 2)
 		{
 			Expects(mode != Mode::math);
-			box.width(0, align::min);
-			box.height(0, align::min);
-			return;
+			_box.width(0, align::min);
+			_box.height(0, align::min);
+			return _box;
 		}
-		box.width(con.ptsize(font)*(mode == Mode::math ? 0 : 0.25f), align::min);
-		box.height(con.ptsize(font), align::center);
+		_box.width(con.ptsize(font)*(mode == Mode::math ? 0 : 0.25f), align::min);
+		_box.height(con.ptsize(font), align::center);
+		return _box;
 	}
 
 
-	void Group::updateSize(Context& con, Mode mode, Font font, float width)
+	Box& Group::updateSize(Context& con, Mode mode, Font font, float width)
 	{
-		box.before = box.after = 0;
+		_box.before = _box.after = 0;
 		for (auto&& e : *this)
 		{
-			e.updateSize(con, mode, font, width);
-			box.above = std::max(box.above, e.box.above);
-			box.below = std::max(box.below, e.box.below);
-			box.after += e.box.width();
+			auto& ebox = e.updateSize(con, mode, font, width);;
+			_box.above = std::max(_box.above, ebox.above);
+			_box.below = std::max(_box.below, ebox.below);
+			_box.after += ebox.width();
 		}
+		return _box;
 	}
 	void Par::partype(Type t) 
 	{ 
@@ -223,7 +251,7 @@ namespace tex
 
 		change(); 
 	}
-	void Par::updateSize(Context & con, Mode mode, Font font, float width)
+	Box& Par::updateSize(Context & con, Mode mode, Font font, float width)
 	{
 		static const Font styles[] = 
 		{
@@ -245,92 +273,62 @@ namespace tex
 			con.subsection += 1;
 			_pretitle = std::to_string(con.section) + '.' + std::to_string(con.subsection) + ' ';
 		}
+		else
+			_pretitle = "";
 
 		const auto em = con.ptsize(font);
 
-		_parindent = (_type == Type::simple) ? 1.5f*em : con.font(font)->offset(_pretitle, em);
+		_parindent = 0;
+		if (_type == Type::simple)
+		{
+			if (auto pp = as<Par>(prev()); pp && pp->_type == Type::simple)
+				_parindent = 1.5f*em;
+		}
+		else 
+			_parindent = con.font(font)->offset(_pretitle, em);
 
-		box.above = 0;
-		box.below = em;
-		box.before = 0;
-		box.after = width;
+		_box.above = 0;
+		_box.below = em;
+		_box.before = 0;
+		_box.after = width;
 
 		for (auto&& sub : *this)
 			sub.updateSize(con, mode, font, width);
+
+		_box.height(layoutParagraph(this, _parindent, _box.width()), align::min);
+
+		return _box;
 	}
 
 
-	void Node::updateLayout(oui::Vector offset)
+	void Group::render(tex::Context& con, Vector offset) const
 	{
-		box.offset = offset;
-	}
-
-	void Group::updateLayout(oui::Vector offset)
-	{
-		box.offset = offset;
-		oui::Vector pen = { 0, 0 };
-		for (auto&& e : *this)
-		{
-			e.updateLayout(pen);
-			pen.x += e.box.width();
-		}
-	}
-	void Par::updateLayout(oui::Vector offset)
-	{
-		box.offset = offset;
-
-		const float width = box.width();
-		oui::Vector pen = { 0, 0 };
-
-		Paragraph par;
-
-		float indent = _parindent;
-
-		for (auto it = begin(); it != end(); ++it)
-		{
-			par.clear();
-			if (it->collect(par))
-			{
-				++it;
-				while (it != end() && it->collect(par))
-					++it;
-				pen.y = par.updateLayout(pen, indent, width);
-				indent = 0;
-				if (it == end())  break;
-			}
-			it->updateLayout(pen);
-			pen.y += it->box.height();
-		}
-		box.height(pen.y, align::min);
-	}
-
-
-	void Group::render(tex::Context& con, oui::Vector offset) const
-	{
-		offset = offset + box.offset;
+		offset = offset + _box.offset;
 
 		for (auto&& e : *this)
 			e.render(con, offset);
 	}
-	void Par::render(Context & con, oui::Vector offset) const
+	void Par::render(Context & con, Vector offset) const
 	{
 		if (!_pretitle.empty())
 		{
 			using namespace oui::colors;
 			static constexpr auto color = mix(white, black, 0.6);
-			con.font(_font)->drawLine(box.min() + offset, _pretitle, con.ptsize(_font), color);
+			con.font(_font)->drawLine(_box.min() + offset, _pretitle, con.ptsize(_font), color);
 		}
+
 		Group::render(con, offset);
+
 	}
 
-	void Command::render(tex::Context& con, oui::Vector offset) const
+	void Command::render(Context& con, Vector offset) const
 	{
-		con.font(tex::FontType::sans)->drawLine(offset + box.min(), cmd,
+		con.font(tex::FontType::sans)->drawLine(offset + _box.min(), cmd,
 			oui::Color{ .3f, .9f, .1f }, con.ptsize(tex::FontSize::normalsize));
 	}
 	void Text::render(tex::Context& con, oui::Vector offset) const
 	{
-		con.font(font.type)->drawLine(offset + box.min(), text,
+		con.font(font.type)->drawLine(offset + _box.min(), text,
 			oui::colors::black, con.ptsize(font.size));
 	}
 }

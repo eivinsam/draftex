@@ -80,30 +80,6 @@ namespace tex
 			parent->append(std::move(sibling));
 	}
 
-	float Node::absLeft() const
-	{
-		float left = box.left();
-		for (const Group* p = parent(); p != nullptr; p = p->parent())
-			left += p->box.offset.x;
-		return left;
-	}
-	float Node::absTop() const
-	{
-		float top = box.top();
-		for (const Group* p = parent(); p != nullptr; p = p->parent())
-			top += p->box.offset.y;
-		return top;
-	}
-	oui::Rectangle Node::absBox() const
-	{
-		oui::Rectangle result;
-		result.min = box.min();
-		for (const Group* p = parent(); p != nullptr; p = p->parent())
-			result.min += p->box.offset;
-		result.max = result.min + oui::Vector{ box.width(), box.height() };
-		return result;
-	}
-
 	void Node::change() noexcept
 	{
 		for (Node* n = this; n != nullptr; n = n->parent())
@@ -202,7 +178,23 @@ namespace tex
 			return Command::make(move(cmd));
 		}
 		case '%':
-			throw IllFormed("comments not supported");
+		{
+			auto result = Group::make("%");
+			auto next_newline = in.find_first_of("\r\n");
+			if (next_newline >= in.size())
+				result->tokenize(in, mode);
+			else
+			{
+				const auto ender = in[next_newline];
+ 				const auto after_ender = in.size() > (next_newline + 1) ? in[next_newline + 1] : 0;
+				if ((after_ender == '\n' || after_ender == '\r') && after_ender != ender)
+					next_newline += 1;
+				auto rest_of_line = in.substr(1, next_newline);
+				result->tokenize(rest_of_line, mode);
+				in.remove_prefix(next_newline + 1);
+			}
+			return result;
+		}
 		case '{':
 			in.remove_prefix(1);
 			return tokenize(in, "curly", mode);
@@ -365,11 +357,11 @@ namespace tex
 
 	Node * Command::expand()
 	{
-		static constexpr frozen::unordered_map<string_view, CommandExpander, 8> cases =
+		static constexpr frozen::unordered_map<string_view, CommandExpander, 5> cases =
 		{
-			{ "newcommand", &expand_aoa },
-			{ "usepackage", &expand_coa },
-			{ "documentclass", &expand_coa },
+			//{ "newcommand", &expand_aoa },
+			//{ "usepackage", &expand_coa },
+			//{ "documentclass", &expand_coa },
 			{ "frac", &expand_AA },
 			{ "title", &expand_A },
 			{ "author", &expand_A },

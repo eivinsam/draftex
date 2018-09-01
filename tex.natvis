@@ -8,7 +8,7 @@
   <Type Name="tex::Text">
     <DisplayString>{text}</DisplayString>
     <Expand>
-      <Item Name="box">box</Item>
+      <Item Name="box">_box</Item>
     </Expand>
   </Type>
   <Type Name="tex::Space">
@@ -21,7 +21,7 @@
   <Type Name="tex::Group">
     <DisplayString>{__vfptr,na}</DisplayString>
     <Expand>
-      <Item Name="box">box</Item>
+      <Item Name="box">_box</Item>
       <LinkedListItems>
         <HeadPointer>_first._Mypair._Myval2</HeadPointer>
         <NextPointer>next.value._Mypair._Myval2</NextPointer>

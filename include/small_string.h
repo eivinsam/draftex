@@ -36,7 +36,8 @@ class SmallString
 
 	static constexpr int _expand_cap(unsigned char cap)
 	{
-		Expects(cap > _buffer_size);
+		if (cap < _buffer_size)
+			return _buffer_size;
 		cap -= _cap_offset;
 		return (2 | (cap & 1)) << (cap >> 1);
 	}
@@ -183,17 +184,5 @@ public:
 	friend bool operator!=(view lhs, const SmallString& rhs) { return lhs != view(rhs); }
 };
 
-struct static_tests
-{
-	static_assert(sizeof(SmallString) == 16);
-
-	static_assert(SmallString::_expand_cap(SmallString::_buffer_size + 1) == 24);
-	static_assert(SmallString::_expand_cap(SmallString::_buffer_size + 2) == 32);
-	static_assert(SmallString::_expand_cap(SmallString::_buffer_size + 3) == 48);
-	static_assert(SmallString::_expand_cap(SmallString::_buffer_size + 48) == (1 << 28));
-	static_assert(SmallString::_expand_cap(SmallString::_buffer_size + 53) == (3 << 29));
-
-	static_assert(SmallString::_calc_cap(SmallString::_expand_cap(27) - 1) == 27);
-};
 
 inline std::ostream& operator<<(std::ostream& out, const SmallString& text) { return out << std::string_view(text); }

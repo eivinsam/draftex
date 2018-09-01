@@ -90,3 +90,17 @@ void SmallString::erase(int index, int count)
 	else
 		_large.size -= count;
 }
+
+struct static_tests
+{
+	static_assert(sizeof(SmallString) == 16);
+
+	static constexpr auto foo = SmallString::_calc_cap(15);
+	static_assert(SmallString::_expand_cap(SmallString::_buffer_size + 1) == 24);
+	static_assert(SmallString::_expand_cap(SmallString::_buffer_size + 2) == 32);
+	static_assert(SmallString::_expand_cap(SmallString::_buffer_size + 3) == 48);
+	static_assert(SmallString::_expand_cap(SmallString::_buffer_size + 48) == (1 << 28));
+	static_assert(SmallString::_expand_cap(SmallString::_buffer_size + 53) == (3 << 29));
+
+	static_assert(SmallString::_calc_cap(SmallString::_expand_cap(27) - 1) == 27);
+};

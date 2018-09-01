@@ -108,14 +108,27 @@ namespace tex
 	class Comment : public Float
 	{
 	public:
+		string terminator;
+
 		Comment(string) { }
 
 		bool terminatedBy(string_view) const final { return false; }
+
+		void enforceRules() final 
+		{ 
+			while (auto space = as<Space>(empty() ? nullptr : &back()))
+			{
+				terminator.insert(0, space->space);
+				back().remove();
+			}
+			Float::enforceRules();
+		}
 
 		void serialize(std::ostream& out) const final
 		{
 			out << '%';
 			Group::serialize(out);
+			out << terminator;
 		}
 	};
 

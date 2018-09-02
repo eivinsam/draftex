@@ -24,8 +24,11 @@ namespace tex
 		void _set_parent(Group* p) { parent = p; }
 		void _set_prev(Node* p) { prev = p; }
 
-		virtual Text* _this_or_prev_text() noexcept { return prevText(); };
-		virtual Text* _this_or_next_text() noexcept { return nextText(); };
+		virtual Text* _this_or_prev_text() noexcept { return prevText(); }
+		virtual Text* _this_or_next_text() noexcept { return nextText(); }
+
+		virtual Text* _this_or_next_stop() noexcept { return nextStop(); }
+		virtual Text* _this_or_prev_stop() noexcept { return prevStop(); }
 
 		void _insert_before(Owner<Node> sibling);
 		void _insert_after(Owner<Node> sibling);
@@ -108,6 +111,9 @@ namespace tex
 		Text* prevText() noexcept;
 		Text* nextText() noexcept;
 
+		Text* prevStop() noexcept;
+		Text* nextStop() noexcept;
+
 		auto allTextBefore() { return xpr::generator(&Node::prevText, this); }
 		auto allTextAfter()  { return xpr::generator(&Node::nextText, this); }
 
@@ -147,8 +153,15 @@ namespace tex
 		Node* _last = nullptr;
 
 
-		Text* _this_or_prev_text() noexcept final { return _last  ? _last ->_this_or_prev_text() : prevText(); }
-		Text* _this_or_next_text() noexcept final { return _first ? _first->_this_or_next_text() : nextText(); }
+		Text* _this_or_prev_text() noexcept override { return _last  ? _last ->_this_or_prev_text() : prevText(); }
+		Text* _this_or_next_text() noexcept override { return _first ? _first->_this_or_next_text() : nextText(); }
+		virtual Text* _exit_this_or_next_text() noexcept { return nextText(); }
+		virtual Text* _exit_this_or_prev_text() noexcept { return prevText(); }
+
+		Text* _this_or_prev_stop() noexcept override { return _last  ? _last ->_this_or_prev_stop() : prevStop(); }
+		Text* _this_or_next_stop() noexcept override { return _first ? _first->_this_or_next_stop() : nextStop(); }
+		virtual Text* _exit_this_or_next_stop() noexcept { return nextStop(); }
+		virtual Text* _exit_this_or_prev_stop() noexcept { return prevStop(); }
 
 		void _append(Owner<Node> child);
 	protected:
@@ -237,17 +250,31 @@ namespace tex
 	{
 		return
 			prev ? prev->_this_or_prev_text() :
-			parent ? parent->prevText() :
+			parent ? parent->_exit_this_or_next_text() :
 			nullptr;
 	}
 	inline Text* Node::nextText() noexcept
 	{
 		return
 			next ? next->_this_or_next_text() :
-			parent ? parent->nextText() :
+			parent ? parent->_exit_this_or_next_text() :
 			nullptr;
 	}
-	inline Vector Node::absOffset() const 
+	inline Text* Node::prevStop() noexcept
+	{
+		return
+			prev ? prev->_this_or_prev_stop() :
+			parent ? parent->_exit_this_or_prev_stop() :
+			nullptr;
+	}
+	inline Text* Node::nextStop() noexcept
+	{
+		return
+			next ? next->_this_or_next_stop() :
+			parent ? parent->_exit_this_or_next_stop() :
+			nullptr;
+	}
+	inline Vector Node::absOffset() const
 	{ 
 		Vector result = contentBox().offset;
 		for (const Group* n = parent(); n; n = n->parent())

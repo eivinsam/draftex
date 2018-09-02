@@ -52,6 +52,29 @@ namespace tex
 	class Float : public Group
 	{
 		Box _float_box;
+	protected:
+		Text* _exit_this_or_next_text() noexcept override { return nullptr; }
+		Text* _exit_this_or_prev_text() noexcept override { return nullptr; }
+
+		Text* _this_or_prev_text() noexcept override { return prevText(); };
+		Text* _this_or_next_text() noexcept override { return nextText(); };
+		Text* _exit_this_or_next_stop() noexcept override { return nextText(); }
+		Text* _exit_this_or_prev_stop() noexcept override { return prevText(); }
+
+		Text* _this_or_prev_stop() noexcept override 
+		{ 
+			Expects(!empty()); 
+			auto text = as<Text>(&back());
+			Ensures(text);
+			return text;
+		};
+		Text* _this_or_next_stop() noexcept override 
+		{ 
+			Expects(!empty()); 
+			auto text = as<Text>(&front());
+			Ensures(text);
+			return text;
+		};
 	public:
 
 

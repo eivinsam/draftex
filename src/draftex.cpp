@@ -373,6 +373,23 @@ struct Caret
 
 		offset = 0;
 	}
+
+	void nextStop()
+	{
+		if (auto new_node = node->nextStop())
+		{
+			node = new_node;
+			offset = 0;
+		}
+	}
+	void prevStop()
+	{
+		if (auto new_node = node->prevStop())
+		{
+			node = new_node;
+			offset = node->text.size();
+		}
+	}
 };
 
 struct Draftex;
@@ -405,6 +422,7 @@ struct Draftex
 
 	oui::Window window;
 	tex::Context context;
+	bool shift_down = false;
 
 	tex::Owner<tex::Group> tokens;
 
@@ -455,6 +473,7 @@ struct Draftex
 
 			switch (key)
 			{
+			case Key::shift: shift_down = true; break;
 			case Key::home:  caret.home(); break;
 			case Key::end:   caret.end();  break;
 			case Key::right: caret.next(); break;
@@ -465,6 +484,11 @@ struct Draftex
 			case Key::del:       caret.eraseNext(); break;
 			case Key::space:     caret.insertSpace(); break;
 			case Key::enter:     caret.breakParagraph(); break;
+			case Key::tab:
+				shift_down ? 
+					caret.prevStop() : 
+					caret.nextStop();
+				break;
 			case Key::alt: case Key::f10:
 				if (!is_repeat) 
 					toggle_menu();
@@ -474,6 +498,11 @@ struct Draftex
 				return;
 			}
 			window.redraw();
+		};
+		oui::input.keyup = [this](oui::Key key)
+		{
+			if (key == oui::Key::shift)
+				shift_down = false;
 		};
 		oui::input.character = [this](int charcode)
 		{

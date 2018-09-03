@@ -160,7 +160,7 @@ namespace tex
 		auto lb = std::lower_bound(_entries.begin(), _entries.end(), name, 
 			[](const Entry& e, const string_view& name) { return e.name < name;  });
 		if (lb != _entries.end() & lb->name == name)
-			std::addressof(*lb);
+			return std::addressof(*lb);
 		else
 			return nullptr;
 	}

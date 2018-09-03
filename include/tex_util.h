@@ -23,11 +23,23 @@ namespace tex
 		return dynamic_cast<std::conditional_t<std::is_const_v<From>, const To&, To&>>(from);
 	}
 
-	template <auto... Values, class T>
-	constexpr bool is_any_of(const T& value)
+	template <auto... Values>
+	struct is_any_of_t
 	{
-		return ((value == Values) || ...);
-	}
+		template <class T>
+		constexpr bool operator()(const T& value) const
+		{
+			return ((value == Values) || ...);
+		}
+	};
+	template <auto... Values>
+	constexpr is_any_of_t<Values...> is_any_of = {};
+
+	//template <auto... Values, class T>
+	//constexpr bool is_any_of(const T& value)
+	//{
+	//	return ((value == Values) || ...);
+	//}
 
 
 	namespace details

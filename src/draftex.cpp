@@ -13,6 +13,7 @@
 #include <oui_debug.h>
 
 #include "tex_node.h"
+#include "file_mapping.h"
 
 using tex::int_size;
 
@@ -419,7 +420,6 @@ namespace menu
 
 struct Draftex
 {
-
 	oui::Window window;
 	tex::Context context;
 	bool shift_down = false;
@@ -432,7 +432,7 @@ struct Draftex
 
 	Draftex() : window{ { "draftex", 1280, 720, 8 } }, context(window)
 	{
-		tokens = tex::tokenize(readFile("test.tex"));
+		tokens = tex::tokenize(FileMapping("test.tex").data);
 		tokens->expand();
 		tokens->enforceRules();
 		check_title();
@@ -706,10 +706,13 @@ namespace menu
 
 }
 
+#include "tex_bib.h"
 
 
 int main()
 {
+	auto bib = tex::Bib(FileMapping("test.bib").data);
+
 	oui::debug::println("sizeof Node: ", sizeof(tex::Node));
 
 	Draftex state;

@@ -119,7 +119,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\draftex.cpp" />
+    <ClCompile Include="src\file_mapping.cpp" />
     <ClCompile Include="src\small_string.cpp" />
+    <ClCompile Include="src\tex_bib.cpp" />
     <ClCompile Include="src\tex_node.cpp" />
     <ClCompile Include="src\tex_node_groups.cpp" />
     <ClCompile Include="tex_node_layout.cpp" />
@@ -144,6 +146,8 @@
     <ClInclude Include="include\tex_paragraph.h" />
     <ClInclude Include="include\tex_util.h" />
     <ClInclude Include="src\frozen_with_string_view.h" />
+    <ClInclude Include="src\file_mapping.h" />
+    <ClInclude Include="src\tex_bib.h" />
     <ClInclude Include="src\tex_node_internal.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

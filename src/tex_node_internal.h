@@ -7,9 +7,6 @@
 namespace tex
 {
 	using std::make_unique;
-	using std::string_view;
-
-	using string = SmallString;
 
 	inline string_view view(const string& s) noexcept { return string_view{ s }; }
 

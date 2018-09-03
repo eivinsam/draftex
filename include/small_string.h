@@ -65,6 +65,12 @@ class SmallString
 			_large.size = new_size;
 	}
 	void _reserve_unchecked(const int min_capacity);
+
+	template <class T, class R>
+	using if_str = std::enable_if_t<std::is_convertible_v<T, view>, R>;
+
+	template <class T>
+	static constexpr view fwd(T&& value) { return { std::forward<T>(value) }; }
 public:
 	using value_type = char;
 	using size_type = int;
@@ -177,11 +183,29 @@ public:
 		return copy;
 	}
 
-	bool operator==(view other) const { return view(*this) == other; }
-	bool operator!=(view other) const { return view(*this) != other; }
 
-	friend bool operator==(view lhs, const SmallString& rhs) { return lhs == view(rhs); }
-	friend bool operator!=(view lhs, const SmallString& rhs) { return lhs != view(rhs); }
+	template <class S, class T> friend if_str<S, if_str<T, bool>> operator==(S&& a, T&& b) { return fwd<S>(a) == fwd<T>(b); }
+	template <class S, class T> friend if_str<S, if_str<T, bool>> operator!=(S&& a, T&& b) { return fwd<S>(a) != fwd<T>(b); }
+	template <class S, class T> friend if_str<S, if_str<T, bool>> operator< (S&& a, T&& b) { return fwd<S>(a) <  fwd<T>(b); }
+	template <class S, class T> friend if_str<S, if_str<T, bool>> operator<=(S&& a, T&& b) { return fwd<S>(a) <= fwd<T>(b); }
+	template <class S, class T> friend if_str<S, if_str<T, bool>> operator>=(S&& a, T&& b) { return fwd<S>(a) >= fwd<T>(b); }
+	template <class S, class T> friend if_str<S, if_str<T, bool>> operator> (S&& a, T&& b) { return fwd<S>(a)  > fwd<T>(b); }
+
+	//bool operator==(const SmallString& other) const { return view(*this) == view(other); }
+	//bool operator!=(const SmallString& other) const { return view(*this) != view(other); }
+	//
+	//bool operator< (const SmallString& other) const { return view(*this) <  view(other); }
+	//bool operator<=(const SmallString& other) const { return view(*this) <= view(other); }
+	//bool operator>=(const SmallString& other) const { return view(*this) >= view(other); }
+	//bool operator> (const SmallString& other) const { return view(*this)  > view(other); }
+
+	//friend bool operator==(view lhs, const SmallString& rhs) { return lhs == view(rhs); }
+	//friend bool operator!=(view lhs, const SmallString& rhs) { return lhs != view(rhs); }
+	//
+	//friend bool operator< (view lhs, const SmallString& rhs) { return lhs <  view(rhs); }
+	//friend bool operator<=(view lhs, const SmallString& rhs) { return lhs <= view(rhs); }
+	//friend bool operator>=(view lhs, const SmallString& rhs) { return lhs >= view(rhs); }
+	//friend bool operator> (view lhs, const SmallString& rhs) { return lhs  > view(rhs); }
 };
 
 

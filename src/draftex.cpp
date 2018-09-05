@@ -707,10 +707,13 @@ namespace menu
 }
 
 #include "tex_bib.h"
-
+#include "refcounted.h"
 
 int main()
 {
+	auto foo = refcounted::make<refcounted>();
+	auto bar = refcounted::claim(foo.get());
+
 	auto bib = tex::Bib(FileMapping("test.bib").data);
 
 	oui::debug::println("sizeof Node: ", sizeof(tex::Node));

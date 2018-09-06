@@ -19,7 +19,7 @@ namespace tex
 		bool _changed = true;
 	protected:
 
-		Owner<Node>& _owning_next() { return next.owning(); }
+		Owner<Node>& _owning_next() { return next.value; }
 		void _set_parent(Group* p) { parent = p; }
 		void _set_prev(Node* p) { prev = p; }
 

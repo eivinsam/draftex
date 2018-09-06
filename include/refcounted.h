@@ -55,11 +55,9 @@ public:
 
 		T* _ptr = nullptr;
 
-	public:
-		constexpr ptr() = default;
-		~ptr()
+		void _count_down_maybe_delete()
 		{
-			if (_ptr && _ptr->_count.fetch_sub(1) == 1)
+			if (_ptr->_count.fetch_sub(1) == 1)
 			{
 #ifdef DEBUG_REFCOUNTED
 				refcount_debug().destroy(_ptr);
@@ -67,16 +65,42 @@ public:
 				delete _ptr;
 			}
 		}
-		ptr(nullptr_t) : _ptr(nullptr) { }
-		template <class S> ptr(ptr<S>&& other) : _ptr(other._ptr) { other._ptr = nullptr; }
-		template <class S> ptr(const ptr<S>& other) : _ptr(other._ptr) { _ptr->_count += 1; }
 
-		template <class T>
-		ptr& operator=(T&& other)
+	public:
+		constexpr ptr() = default;
+		~ptr()
 		{
-			this->~ptr();
-			new (this) ptr(std::forward<T>(other));
+			if (_ptr)
+				_count_down_maybe_delete();
+		}
+		ptr(nullptr_t) : _ptr(nullptr) { }
+		ptr(ptr&& other) : _ptr(other._ptr) { other._ptr = nullptr; }
+		ptr(const ptr& other) : _ptr(other._ptr) { if (_ptr) _ptr->_count += 1; }
+		template <class S> ptr(ptr<S>&& other) : _ptr(other._ptr) { other._ptr = nullptr; }
+		template <class S> ptr(const ptr<S>& other) : _ptr(other._ptr) { if (_ptr) _ptr->_count += 1; }
+
+		ptr& operator=(ptr&& other)
+		{
+			if (_ptr)
+				_count_down_maybe_delete();
+			_ptr = other._ptr;
+			other._ptr = nullptr;
 			return *this;
+		}
+		ptr& operator=(const ptr& other)
+		{
+			if (_ptr)
+				_count_down_maybe_delete();
+			_ptr = other._ptr;
+			if (_ptr)
+				_ptr->_count += 1;
+			return *this;
+		}
+
+		template <class S>
+		ptr& operator=(S&& other)
+		{
+			return operator=(ptr(std::forward<S>(other)));
 		}
 
 		T* get() const { return _ptr; }

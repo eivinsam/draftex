@@ -40,37 +40,32 @@ namespace tex
 	{
 		Expects(sibling != nullptr);
 		Expects(sibling->parent == nullptr);
+		Expects(sibling->next == nullptr);
+		Expects(sibling->prev == nullptr);
 
-		//if (!text(prev()) && sibling->_needs_text_before(prev()))
-		//	_insert_before(Text::make(""));
+		sibling->change();
 
-		auto& sibling_ref = *sibling;
+		auto& prev_next = prev ? prev->_owning_next() : parent->_first;
 		sibling->parent = parent;
 		sibling->prev = prev;
-		auto& new_owner = prev ? prev->_owning_next() : parent->_first;
-		sibling->_owning_next() = std::move(new_owner);
-		new_owner = std::move(sibling);
-		prev = &sibling_ref;
-		prev->change();
-
-		//if (!text(*prev) && _needs_text_before(prev()))
-		//	_insert_before(Text::make(""));
+		sibling->_owning_next() = move(prev_next);
+		prev_next = move(sibling);
+		prev = prev_next.get();
 	}
 	void Group::_append(Owner<Node> child)
 	{
 		Expects(child != nullptr);
 		Expects(child->parent == nullptr);
+		Expects(child->next == nullptr);
+		Expects(child->prev == nullptr);
 
-		//if (!text(_last) && child->_needs_text_before(_last))
-		//	_append(Text::make(""));
+		child->change();
 
-		Node& child_ref = *child;
+		auto& last_owner = !_first ? _first : _last->_owning_next();
 		child->_set_parent(this);
 		child->_set_prev(_last);
-		auto& new_owner = !_first ? _first : _last->_owning_next();
-		new_owner = std::move(child);
-		_last = &child_ref;
-		_last->change();
+		last_owner = move(child);
+		_last = last_owner.get();
 	}
 
 	void Node::_insert_after(Owner<Node> sibling)
@@ -99,21 +94,14 @@ namespace tex
 
 		// do removing
 		change();
-		auto result = move(this == parent->_first.get() ?
-			parent->_first : prev->next.owning());
 
-		if (next)
-			next->prev = prev;
-		else
-			parent->_last = prev();
+		auto& prev_next = this == parent->_first ? parent->_first : prev->next.value;
+		auto& next_prev = this == parent->_last  ? parent->_last  : next->prev.value;
 
-		if (prev)
-		{
-			prev->next = move(next.owning());
-			prev = nullptr;
-		}
-		else
-			parent->_first = move(next.owning());
+		auto result = move(prev_next);
+		prev_next = move(next.value);
+		next_prev = prev.value;
+		prev.value = nullptr;
 
 		parent = nullptr;
 

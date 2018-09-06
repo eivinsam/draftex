@@ -87,7 +87,6 @@ namespace tex
 			constexpr Property(Owner<T> value) : value(std::move(value)) { }
 			constexpr Property& operator=(Owner<T> new_value) { value = std::move(new_value); return *this; }
 
-			constexpr Owner<T>& owning() { return value; }
 		public:
 			constexpr T* operator()() const { return value.get(); }
 			explicit constexpr operator bool() const { return static_cast<bool>(value); }

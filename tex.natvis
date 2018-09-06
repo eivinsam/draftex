@@ -1,54 +1,104 @@
 <?xml version="1.0" encoding="utf-8"?> 
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 
+  <Type Name="refcounted::ptr&lt;*&gt;">
+    <DisplayString>{_ptr}</DisplayString>
+    <Expand>
+      <ExpandedItem Condition="_ptr">*_ptr</ExpandedItem>
+    </Expand>
+  </Type>
+  
   <Type Name="SmallString">
     <DisplayString>{(_small.size &lt; 15 ? _small.data : _large.data),na}</DisplayString>
   </Type>
-  
-  <Type Name="tex::Text">
-    <DisplayString>{text}</DisplayString>
+
+  <Type Name="tex::details::Property&lt;*&gt;">
+    <DisplayString>{value}</DisplayString>
+    <Expand>
+      <ExpandedItem>value</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <Type Name="tex::Node">
+    <DisplayString>node ({_count} owners)</DisplayString>
     <Expand>
       <Item Name="box">_box</Item>
+      <Item Name="parent">parent</Item>
+      <Item Name="prev">prev</Item>
+      <Synthetic Name="before" Condition="prev.value &amp;&amp; prev.value->prev.value">
+        <DisplayString>...</DisplayString>
+        <Expand>
+          <LinkedListItems>
+            <HeadPointer>prev.value</HeadPointer>
+            <NextPointer>prev.value</NextPointer>
+            <ValueNode>this,na</ValueNode>
+          </LinkedListItems>
+        </Expand>
+      </Synthetic>
+      <Item Name="next">next</Item>
+      <Synthetic Name="after" Condition="next.value._ptr &amp;&amp; next.value._ptr->next.value._ptr">
+        <DisplayString>...</DisplayString>
+        <Expand>
+          <LinkedListItems>
+            <HeadPointer>next.value._ptr</HeadPointer>
+            <NextPointer>next.value._ptr</NextPointer>
+            <ValueNode>this,na</ValueNode>
+          </LinkedListItems>
+        </Expand>
+      </Synthetic>
+    </Expand>
+  </Type>
+  
+  <Type Name="tex::Text">
+    <DisplayString>{text} ({_count} owners)</DisplayString>
+    <Expand>
+      <ExpandedItem>(tex::Node&amp;)*this</ExpandedItem>
     </Expand>
   </Type>
   <Type Name="tex::Space">
-    <DisplayString>[space]</DisplayString>
+    <DisplayString>[space] ({_count} owners)</DisplayString>
+    <Expand>
+      <ExpandedItem>(tex::Node&amp;)*this</ExpandedItem>
+    </Expand>
   </Type>
   <Type Name="tex::Command">
-    <DisplayString>\{cmd,sb}</DisplayString>
+    <DisplayString>\{cmd,sb} ({_count} owners)</DisplayString>
+    <Expand>
+      <ExpandedItem>(tex::Node&amp;)*this</ExpandedItem>
+    </Expand>
   </Type>
 
   <Type Name="tex::Group">
-    <DisplayString>{__vfptr,na}</DisplayString>
+    <DisplayString>{__vfptr,na} ({_count} owners)</DisplayString>
     <Expand>
-      <Item Name="box">_box</Item>
+      <ExpandedItem>(Node&amp;)*this</ExpandedItem>
       <LinkedListItems>
-        <HeadPointer>_first._Mypair._Myval2</HeadPointer>
-        <NextPointer>next.value._Mypair._Myval2</NextPointer>
+        <HeadPointer>_first._ptr</HeadPointer>
+        <NextPointer>next.value._ptr</NextPointer>
         <ValueNode>this,na</ValueNode>
       </LinkedListItems>
     </Expand>
   </Type>
   <Type Name="tex::Root">
-    <DisplayString>[root]</DisplayString>
+    <DisplayString>[root] ({_count} owners)</DisplayString>
     <Expand>
       <ExpandedItem>(tex::Group*)this,nd</ExpandedItem>
     </Expand>
   </Type>
   <Type Name="tex::Document">
-    <DisplayString>[document]</DisplayString>
+    <DisplayString>[document] ({_count} owners)</DisplayString>
     <Expand>
       <ExpandedItem>(tex::Group*)this,nd</ExpandedItem>
     </Expand>
   </Type>
   <Type Name="tex::Par">
-    <DisplayString>[{_type} paragraph]</DisplayString>
+    <DisplayString>[{_type} paragraph] ({_count} owners)</DisplayString>
     <Expand>
       <ExpandedItem>(tex::Group*)this,nd</ExpandedItem>
     </Expand>
   </Type>
   <Type Name="tex::Curly">
-    <DisplayString>[curly]</DisplayString>
+    <DisplayString>[curly] ({_count} owners)</DisplayString>
     <Expand>
       <ExpandedItem>(tex::Group*)this,nd</ExpandedItem>
     </Expand>

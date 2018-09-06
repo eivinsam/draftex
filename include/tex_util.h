@@ -2,6 +2,8 @@
 
 #include <gsl-lite.hpp>
 
+#include "refcounted.h"
+
 namespace tex
 {
 	using gsl::narrow;
@@ -10,7 +12,7 @@ namespace tex
 	auto count(C&& c, const T& value) { return std::count(std::begin(c), std::end(c), value); }
 
 	template <class T>
-	using Owner = std::unique_ptr<T>;
+	using Owner = refcounted::ptr<T>;
 
 	template <class To, class From>
 	inline auto as(From* from) noexcept
@@ -34,12 +36,6 @@ namespace tex
 	};
 	template <auto... Values>
 	constexpr is_any_of_t<Values...> is_any_of = {};
-
-	//template <auto... Values, class T>
-	//constexpr bool is_any_of(const T& value)
-	//{
-	//	return ((value == Values) || ...);
-	//}
 
 
 	namespace details

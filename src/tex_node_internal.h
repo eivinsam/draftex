@@ -6,8 +6,7 @@
 
 namespace tex
 {
-	using std::make_unique;
-
+	using std::move;
 	inline string_view view(const string& s) noexcept { return string_view{ s }; }
 
 	enum class OnEnd : char { pass, match, fail };

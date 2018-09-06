@@ -420,7 +420,7 @@ namespace tex
 	template <class G>
 	Owner<Group> make_group(string name)
 	{
-		return make_unique<G>(std::move(name));
+		return refcounted::make<G>(std::move(name));
 	}
 	Owner<Group> Group::make(string name)
 	{

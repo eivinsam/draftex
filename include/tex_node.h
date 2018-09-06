@@ -2,7 +2,6 @@
 
 #include "tex.h"
 #include "express.h"
-#include <small_string.h>
 
 namespace tex
 {
@@ -13,7 +12,7 @@ namespace tex
 
 	class Paragraph;
 
-	class Node
+	class Node : public refcounted
 	{
 		friend class Group;
 
@@ -290,7 +289,7 @@ namespace tex
 		Type type() const noexcept final { return Type::command; }
 		Flow flow() const noexcept final { return Flow::line; }
 
-		static auto make() { return std::make_unique<Command>(); }
+		static auto make() { return refcounted::make<Command>(); }
 		static auto make(string data)
 		{
 			auto result = make();
@@ -326,7 +325,7 @@ namespace tex
 		Type type() const noexcept final { return Type::space; }
 		Flow flow() const noexcept final { return count(space, '\n') < 2 ? Flow::line : Flow::vertical; }
 
-		static auto make() { return std::make_unique<Space>(); }
+		static auto make() { return refcounted::make<Space>(); }
 
 		bool collect(Paragraph& out) override;
 		Box& updateSize(Context& con, Mode mode, Font font, float width) final;
@@ -350,7 +349,7 @@ namespace tex
 		Type type() const noexcept final { return Type::text; }
 		Flow flow() const noexcept final { return Flow::line; }
 
-		static auto make() { return std::make_unique<Text>(); }
+		static auto make() { return refcounted::make<Text>(); }
 		static auto make(string text)
 		{
 			auto result = make();

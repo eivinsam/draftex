@@ -140,6 +140,7 @@
     <ClInclude Include="include\express.h" />
     <ClInclude Include="include\find.h" />
     <ClInclude Include="include\ranged.h" />
+    <ClInclude Include="include\refcounted.h" />
     <ClInclude Include="include\small_string.h" />
     <ClInclude Include="include\tex.h" />
     <ClInclude Include="include\tex_node.h" />
@@ -147,7 +148,6 @@
     <ClInclude Include="include\tex_util.h" />
     <ClInclude Include="src\frozen_with_string_view.h" />
     <ClInclude Include="src\file_mapping.h" />
-    <ClInclude Include="src\refcounted.h" />
     <ClInclude Include="src\tex_bib.h" />
     <ClInclude Include="src\tex_node_internal.h" />
   </ItemGroup>

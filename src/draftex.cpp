@@ -15,6 +15,8 @@
 #include "tex_node.h"
 #include "file_mapping.h"
 
+using std::move;
+
 using tex::int_size;
 
 using oui::utf8len;

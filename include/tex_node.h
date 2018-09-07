@@ -12,16 +12,20 @@ namespace tex
 
 	class Paragraph;
 
-	class Node : public refcounted
+	//class Line : public std::vector<Text*>, public refcounted
+	//{
+	//public:
+	//	details::Property<Owner<Line>, Line> next;
+	//	details::Property<Line*, Line> prev;
+	//};
+
+	class Node : public intrusive::list<Node>::element
 	{
 		friend class Group;
 
 		bool _changed = true;
 	protected:
-
-		Owner<Node>& _owning_next() { return next.value; }
 		void _set_parent(Group* p) { parent = p; }
-		void _set_prev(Node* p) { prev = p; }
 
 		virtual Text* _this_or_prev_text() noexcept { return prevText(); }
 		virtual Text* _this_or_next_text() noexcept { return nextText(); }
@@ -29,16 +33,14 @@ namespace tex
 		virtual Text* _this_or_next_stop() noexcept { return nextStop(); }
 		virtual Text* _this_or_prev_stop() noexcept { return prevStop(); }
 
-		void _insert_before(Owner<Node> sibling);
-		void _insert_after(Owner<Node> sibling);
+		template <class T, class... Args>
+		static auto make(Args&&... args) { return intrusive::refcount::make<T>(std::forward<Args>(args)...); }
 
 		Box _box;
 	public:
 		using string = SmallString;
 
 		details::Property<Group*, Node> parent;
-		details::Property<Owner<Node>, Node> next;
-		details::Property<Node*, Node> prev;
 
 		enum class Type : char { space, text, group, command };
 
@@ -71,18 +73,8 @@ namespace tex
 		void change() noexcept;
 		virtual void commit() noexcept { _changed = false; }
 
-		template <class T> T* insertBefore(Owner<T> sibling) noexcept
-		{
-			auto raw = sibling.get();
-			_insert_before(std::move(sibling));
-			return raw;
-		}
-		template <class T> T* insertAfter(Owner<T> sibling) noexcept
-		{
-			auto raw = sibling.get();
-			_insert_after(std::move(sibling));
-			return raw;
-		}
+		template <class T> T* insertBefore(Owner<T>);
+		template <class T> T* insertAfter(Owner<T>);
 
 		Owner<Node> detach();
 		void remove()
@@ -97,7 +89,7 @@ namespace tex
 
 		virtual Node* expand() { return this; }
 		virtual void popArgument(Group& dst);
-		virtual Node* getArgument() { return next->getArgument(); }
+		virtual Node* getArgument() { return next()->getArgument(); }
 
 		virtual void enforceRules() { };
 
@@ -148,23 +140,21 @@ namespace tex
 	class Group : public Node
 	{
 		friend class Node;
-		Owner<Node> _first;
-		Node* _last = nullptr;
+		intrusive::list<Node> _subs;
 
 
-		Text* _this_or_prev_text() noexcept override { return _last  ? _last ->_this_or_prev_text() : prevText(); }
-		Text* _this_or_next_text() noexcept override { return _first ? _first->_this_or_next_text() : nextText(); }
+		Text* _this_or_prev_text() noexcept override { return !empty() ? _subs.rbegin()->_this_or_prev_text() : prevText(); }
+		Text* _this_or_next_text() noexcept override { return !empty() ? _subs. begin()->_this_or_next_text() : nextText(); }
 		virtual Text* _exit_this_or_next_text() noexcept { return nextText(); }
 		virtual Text* _exit_this_or_prev_text() noexcept { return prevText(); }
 
-		Text* _this_or_prev_stop() noexcept override { return _last  ? _last ->_this_or_prev_stop() : prevStop(); }
-		Text* _this_or_next_stop() noexcept override { return _first ? _first->_this_or_next_stop() : nextStop(); }
+		Text* _this_or_prev_stop() noexcept override { return !empty() ? _subs.rbegin()->_this_or_prev_stop() : prevStop(); }
+		Text* _this_or_next_stop() noexcept override { return !empty() ? _subs. begin()->_this_or_next_stop() : nextStop(); }
 		virtual Text* _exit_this_or_next_stop() noexcept { return nextStop(); }
 		virtual Text* _exit_this_or_prev_stop() noexcept { return prevStop(); }
 
-		void _append(Owner<Node> child);
 	protected:
-		void _enforce_child_rules() { for (auto&& e : *this) e.enforceRules(); }
+		void _enforce_child_rules() { for (auto&& e : _subs) e.enforceRules(); }
 	public:
 		Group() = default;
 
@@ -189,7 +179,8 @@ namespace tex
 		T* append(Owner<T> child) noexcept
 		{
 			auto raw = child.get();
-			_append(std::move(child));
+			_subs.append(move(child));
+			raw->_set_parent(this);
 			return raw;
 		}
 
@@ -201,42 +192,15 @@ namespace tex
 			return false;
 		}
 
-		bool empty() const noexcept { return !_first; }
+		bool empty() const noexcept { return _subs.empty(); }
 
-		      Node& front()       { return *_first; }
-		const Node& front() const { return *_first; }
-		      Node& back()        noexcept { return *_last; }
-		const Node& back()  const noexcept { return *_last; }
+		Node& front() const { return *_subs.begin(); }
+		Node& back()  const { return *_subs.rbegin(); }
 
-		template <class ValueType>
-		class Iterator
-		{
-			friend class Group;
-			ValueType* _it;
-			constexpr Iterator(ValueType* it) : _it(it) { }
-		public:
-			using iterator_category = std::forward_iterator_tag;
-			using difference_type = void;
-			using value_type = ValueType;
-			using reference = ValueType & ;
-			using pointer = ValueType * ;
-
-			constexpr Iterator& operator++() { _it = _it->next(); return *this; }
-
-			constexpr reference operator*() const { return *_it; }
-			constexpr pointer  operator->() const { return _it; }
-
-			constexpr bool operator==(const Iterator& other) const { return _it == other._it; }
-			constexpr bool operator!=(const Iterator& other) const { return _it != other._it; }
-		};
-
-		using iterator = Iterator<Node>;
-		using const_iterator = Iterator<const Node>;
-
-		      iterator begin()       noexcept { return { _first.get() }; }
-		const_iterator begin() const noexcept { return { _first.get() }; }
-		constexpr       iterator end()       { return { nullptr }; }
-		constexpr const_iterator end() const { return { nullptr }; }
+		auto begin()  const { return _subs.begin(); }
+		auto end()    const { return _subs.end(); }
+		auto rbegin() const { return _subs.rbegin(); }
+		auto rend()   const { return _subs.rend(); }
 
 		bool collect(Paragraph& out) override;
 		Box& updateSize(Context& con, Mode mode, Font font, float width) override;
@@ -245,31 +209,58 @@ namespace tex
 		void serialize(std::ostream& out) const override;
 		void serialize(std::ostream&& out) { serialize(out); }
 	};
+	template <class T> 
+	T* Node::insertBefore(Owner<T> e)
+	{
+		Expects(parent != nullptr);
+		T* result = e.get();
+		parent->_subs.insert_before(this, move(e));
+		result->parent = parent;
+		return result;
+	}
+	template <class T> 
+	T* Node::insertAfter(Owner<T> e)
+	{
+		Expects(parent != nullptr);
+		T* result = e.get();
+		parent->_subs.insert_after(this, move(e));
+		result->parent = parent;
+		return result;
+	}
+
+	inline Owner<Node> Node::detach()
+	{
+		Expects(parent != nullptr);
+		auto result = parent->_subs.detach(this);
+		result->parent = nullptr;
+		return result;
+	}
+
 	inline Text* Node::prevText() noexcept
 	{
 		return
-			prev ? prev->_this_or_prev_text() :
+			prev() ? prev()->_this_or_prev_text() :
 			parent ? parent->_exit_this_or_next_text() :
 			nullptr;
 	}
 	inline Text* Node::nextText() noexcept
 	{
 		return
-			next ? next->_this_or_next_text() :
+			next() ? next()->_this_or_next_text() :
 			parent ? parent->_exit_this_or_next_text() :
 			nullptr;
 	}
 	inline Text* Node::prevStop() noexcept
 	{
 		return
-			prev ? prev->_this_or_prev_stop() :
+			prev() ? prev()->_this_or_prev_stop() :
 			parent ? parent->_exit_this_or_prev_stop() :
 			nullptr;
 	}
 	inline Text* Node::nextStop() noexcept
 	{
 		return
-			next ? next->_this_or_next_stop() :
+			next() ? next()->_this_or_next_stop() :
 			parent ? parent->_exit_this_or_next_stop() :
 			nullptr;
 	}
@@ -289,7 +280,7 @@ namespace tex
 		Type type() const noexcept final { return Type::command; }
 		Flow flow() const noexcept final { return Flow::line; }
 
-		static auto make() { return refcounted::make<Command>(); }
+		static auto make() { return Node::make<Command>(); }
 		static auto make(string data)
 		{
 			auto result = make();
@@ -325,7 +316,7 @@ namespace tex
 		Type type() const noexcept final { return Type::space; }
 		Flow flow() const noexcept final { return count(space, '\n') < 2 ? Flow::line : Flow::vertical; }
 
-		static auto make() { return refcounted::make<Space>(); }
+		static auto make() { return Node::make<Space>(); }
 
 		bool collect(Paragraph& out) override;
 		Box& updateSize(Context& con, Mode mode, Font font, float width) final;
@@ -341,6 +332,7 @@ namespace tex
 		Text* _this_or_next_text() noexcept final { return this; };
 
 	public:
+		//Owner<Line> line;
 		string text;
 
 		Font font = { FontType::mono, FontSize::normalsize };
@@ -349,7 +341,7 @@ namespace tex
 		Type type() const noexcept final { return Type::text; }
 		Flow flow() const noexcept final { return Flow::line; }
 
-		static auto make() { return refcounted::make<Text>(); }
+		static auto make() { return Node::make<Text>(); }
 		static auto make(string text)
 		{
 			auto result = make();

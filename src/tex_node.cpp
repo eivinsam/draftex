@@ -36,45 +36,6 @@ namespace tex
 
 	namespace align = oui::align;
 
-	void Node::_insert_before(Owner<Node> sibling)
-	{
-		Expects(sibling != nullptr);
-		Expects(sibling->parent == nullptr);
-		Expects(sibling->next == nullptr);
-		Expects(sibling->prev == nullptr);
-
-		sibling->change();
-
-		auto& prev_next = prev ? prev->_owning_next() : parent->_first;
-		sibling->parent = parent;
-		sibling->prev = prev;
-		sibling->_owning_next() = move(prev_next);
-		prev_next = move(sibling);
-		prev = prev_next.get();
-	}
-	void Group::_append(Owner<Node> child)
-	{
-		Expects(child != nullptr);
-		Expects(child->parent == nullptr);
-		Expects(child->next == nullptr);
-		Expects(child->prev == nullptr);
-
-		child->change();
-
-		auto& last_owner = !_first ? _first : _last->_owning_next();
-		child->_set_parent(this);
-		child->_set_prev(_last);
-		last_owner = move(child);
-		_last = last_owner.get();
-	}
-
-	void Node::_insert_after(Owner<Node> sibling)
-	{
-		next ?
-			next->insertBefore(std::move(sibling)) :
-			parent->append(std::move(sibling));
-	}
-
 	void Node::change() noexcept
 	{
 		for (Node* n = this; n != nullptr; n = n->parent())
@@ -85,27 +46,6 @@ namespace tex
 		Node::commit();
 		for (auto&& child : *this)
 			child.commit();
-	}
-
-	Owner<Node> Node::detach()
-	{
-		if (!parent)
-			throw std::logic_error("trying to detach loose child");
-
-		// do removing
-		change();
-
-		auto& prev_next = this == parent->_first ? parent->_first : prev->next.value;
-		auto& next_prev = this == parent->_last  ? parent->_last  : next->prev.value;
-
-		auto result = move(prev_next);
-		prev_next = move(next.value);
-		next_prev = prev.value;
-		prev.value = nullptr;
-
-		parent = nullptr;
-
-		return result;
 	}
 
 	Space * Text::insertSpace(int offset)
@@ -236,8 +176,8 @@ namespace tex
 	{
 		if (text.empty())
 		{
-			Expects(next != nullptr);
-			return void(next->popArgument(dst));
+			Expects(next() != nullptr);
+			return void(next()->popArgument(dst));
 		}
 		const auto frontlen = utf8len(text.front());
 		if (text.size() == frontlen)
@@ -285,7 +225,7 @@ namespace tex
 
 	Node* Group::expand()
 	{
-		for (auto child = _first.get(); child != nullptr; child = child->next())
+		for (auto child = &front(); child != nullptr; child = child->next())
 			child = child->expand();
 
 		return this;

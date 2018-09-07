@@ -298,14 +298,14 @@ struct Caret
 		target_x = no_target;
 		if (offset >= maxOffset())
 		{
-			if (node->next)
+			if (node->next())
 			{
-				Expects(not text(*node->next));
-				node->next->remove();
+				Expects(not text(*node->next()));
+				node->next()->remove();
 				if (auto tnext = tex::as<tex::Text>(node->next()))
 				{
 					node->text.append(tnext->text);
-					node->next->remove();
+					node->next()->remove();
 				}
 			}
 			return;
@@ -322,15 +322,15 @@ struct Caret
 		target_x = no_target;
 		if (offset <= 0)
 		{
-			if (node->prev)
+			if (node->prev())
 			{
-				Expects(not text(*node->prev));
-				node->prev->remove();
+				Expects(not text(*node->prev()));
+				node->prev()->remove();
 				if (auto tprev = tex::as<tex::Text>(node->prev()))
 				{
 					offset = tprev->text.size();
 					node->text.insert(0, tprev->text);
-					node->prev->remove();
+					node->prev()->remove();
 				}
 			}
 			return;
@@ -372,7 +372,7 @@ struct Caret
 			old_node->text.resize(offset);
 		}
 		while (old_node->next())
-			new_par->append(old_node->next->detach());
+			new_par->append(old_node->next()->detach());
 
 		offset = 0;
 	}
@@ -442,8 +442,8 @@ struct Draftex
 		for (auto&& e : *tokens)
 			if (auto group = tex::as<tex::Group>(&e); group && group->terminatedBy("document"))
 			{
-				if (group->prev)
-					caret.node = group->prev->nextText();
+				if (group->prev())
+					caret.node = group->prev()->nextText();
 				else
 					caret.node = group->parent->nextText();
 				break;
@@ -709,13 +709,9 @@ namespace menu
 }
 
 #include "tex_bib.h"
-#include "refcounted.h"
 
 int main()
 {
-	auto foo = refcounted::make<refcounted>();
-	auto bar = refcounted::claim(foo.get());
-
 	auto bib = tex::Bib(FileMapping("test.bib").data);
 
 	oui::debug::println("sizeof Node: ", sizeof(tex::Node));

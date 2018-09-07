@@ -77,7 +77,7 @@
     <ClInclude Include="src\file_mapping.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\refcounted.h">
+    <ClInclude Include="include\intrusive.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

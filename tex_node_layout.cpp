@@ -235,7 +235,7 @@ namespace tex
 
 			const auto new_curl = front().insertBefore(Group::make("curly"));
 			while (new_curl->next() != terminator)
-				new_curl->append(new_curl->next->detach());
+				new_curl->append(new_curl->next()->detach());
 		}
 		else if (t == Type::simple)
 		{

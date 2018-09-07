@@ -140,7 +140,7 @@
     <ClInclude Include="include\express.h" />
     <ClInclude Include="include\find.h" />
     <ClInclude Include="include\ranged.h" />
-    <ClInclude Include="include\refcounted.h" />
+    <ClInclude Include="include\intrusive.h" />
     <ClInclude Include="include\small_string.h" />
     <ClInclude Include="include\tex.h" />
     <ClInclude Include="include\tex_node.h" />

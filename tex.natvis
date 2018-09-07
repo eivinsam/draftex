@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?> 
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 
-  <Type Name="refcounted::ptr&lt;*&gt;">
+  <Type Name="intrusive::raw::ptr&lt;*&gt;">
     <DisplayString>{_ptr}</DisplayString>
     <Expand>
       <ExpandedItem Condition="_ptr">*_ptr</ExpandedItem>
     </Expand>
   </Type>
-  
+  <Type Name="intrusive::refcount::ptr&lt;*&gt;">
+    <DisplayString>{_ptr}</DisplayString>
+    <Expand>
+      <ExpandedItem Condition="_ptr">*_ptr</ExpandedItem>
+    </Expand>
+  </Type>
+
   <Type Name="SmallString">
     <DisplayString>{(_small.size &lt; 15 ? _small.data : _large.data),na}</DisplayString>
   </Type>
@@ -24,24 +30,24 @@
     <Expand>
       <Item Name="box">_box</Item>
       <Item Name="parent">parent</Item>
-      <Item Name="prev">prev</Item>
-      <Synthetic Name="before" Condition="prev.value &amp;&amp; prev.value->prev.value">
+      <Item Name="prev">_prev</Item>
+      <Synthetic Name="before" Condition="_prev._ptr &amp;&amp; _prev._ptr->_prev._ptr">
         <DisplayString>...</DisplayString>
         <Expand>
           <LinkedListItems>
-            <HeadPointer>prev.value</HeadPointer>
-            <NextPointer>prev.value</NextPointer>
+            <HeadPointer>_prev._ptr</HeadPointer>
+            <NextPointer>_prev._ptr</NextPointer>
             <ValueNode>this,na</ValueNode>
           </LinkedListItems>
         </Expand>
       </Synthetic>
-      <Item Name="next">next</Item>
-      <Synthetic Name="after" Condition="next.value._ptr &amp;&amp; next.value._ptr->next.value._ptr">
+      <Item Name="next">_next</Item>
+      <Synthetic Name="after" Condition="_next._ptr &amp;&amp; _next._ptr->_next._ptr">
         <DisplayString>...</DisplayString>
         <Expand>
           <LinkedListItems>
-            <HeadPointer>next.value._ptr</HeadPointer>
-            <NextPointer>next.value._ptr</NextPointer>
+            <HeadPointer>_next._ptr</HeadPointer>
+            <NextPointer>_next._ptr</NextPointer>
             <ValueNode>this,na</ValueNode>
           </LinkedListItems>
         </Expand>
@@ -73,8 +79,8 @@
     <Expand>
       <ExpandedItem>(Node&amp;)*this</ExpandedItem>
       <LinkedListItems>
-        <HeadPointer>_first._ptr</HeadPointer>
-        <NextPointer>next.value._ptr</NextPointer>
+        <HeadPointer>_subs._first._ptr</HeadPointer>
+        <NextPointer>_next._ptr</NextPointer>
         <ValueNode>this,na</ValueNode>
       </LinkedListItems>
     </Expand>

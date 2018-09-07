@@ -211,7 +211,7 @@ namespace tex
 		{
 			Expects(mode == Mode::math);
 			const auto p = front().getArgument();
-			const auto q = p->next->getArgument();
+			const auto q = p->next()->getArgument();
 
 			font.size = shift(font.size, -2);
 
@@ -420,7 +420,7 @@ namespace tex
 	template <class G>
 	Owner<Group> make_group(string name)
 	{
-		return refcounted::make<G>(std::move(name));
+		return intrusive::refcount::make<G>(std::move(name));
 	}
 	Owner<Group> Group::make(string name)
 	{

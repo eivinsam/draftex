@@ -2,7 +2,7 @@
 
 #include <gsl-lite.hpp>
 
-#include "refcounted.h"
+#include "intrusive.h"
 
 namespace tex
 {
@@ -12,7 +12,7 @@ namespace tex
 	auto count(C&& c, const T& value) { return std::count(std::begin(c), std::end(c), value); }
 
 	template <class T>
-	using Owner = refcounted::ptr<T>;
+	using Owner = intrusive::refcount::ptr<T>;
 
 	template <class To, class From>
 	inline auto as(From* from) noexcept

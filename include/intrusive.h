@@ -202,6 +202,22 @@ namespace intrusive
 		static E* _e(const Ptr& p) { return &(p.get()->*EM); }
 		static E* _e(T* p) { return &(p->*EM); }
 	public:
+		~list()
+		{
+			while (_last)
+				pop_back();
+		}
+		list(const list&) = delete;
+		list& operator=(const list&) = delete;
+
+		void pop_back()
+		{
+			auto le = _e(_last);
+			le->_parent = nullptr;
+			_last = std::exchange(le->_prev, nullptr);
+			if (_last)
+				_e(_last)->_next = nullptr;
+		}
 
 		template <class S>
 		S* append(refcount::ptr<S> e)

@@ -38,7 +38,7 @@ namespace tex
 
 	void Node::change() noexcept
 	{
-		for (Node* n = this; n != nullptr; n = n->parent())
+		for (Node* n = this; n != nullptr; n = n->group())
 			n->_changed = true;
 	}
 	void Group::commit() noexcept
@@ -53,9 +53,9 @@ namespace tex
 		if (offset > text.size())
 			offset = text.size();
 		const auto offset_size = narrow<size_t>(offset);
-		insertAfter(Text::make(text.substr(offset_size)));
+		insertAfterThis(Text::make(text.substr(offset_size)));
 		text.resize(offset_size);
-		return insertAfter(Space::make());
+		return insertAfterThis(Space::make());
 
 	}
 
@@ -168,21 +168,21 @@ namespace tex
 
 	void Node::popArgument(Group & dst)
 	{
-		const auto n = next();
-		dst.append(detach());
+		const auto n = group.next();
+		dst.append(detachFromGroup());
 		tryPopArgument(n, dst);
 	}
 	void Text::popArgument(Group & dst)
 	{
 		if (text.empty())
 		{
-			Expects(next() != nullptr);
-			return void(next()->popArgument(dst));
+			Expects(group.next() != nullptr);
+			return void(group.next()->popArgument(dst));
 		}
 		const auto frontlen = utf8len(text.front());
 		if (text.size() == frontlen)
 		{
-			dst.append(detach());
+			dst.append(detachFromGroup());
 			return;
 		}
 
@@ -216,7 +216,7 @@ namespace tex
 			return {};
 
 		if (opt.size() == text->text.size())
-			return next->detach();
+			return next->detachFromGroup();
 
 		auto result = Text::make(move(opt));
 		text->text.erase(0, result->text.size());
@@ -225,7 +225,7 @@ namespace tex
 
 	Node* Group::expand()
 	{
-		for (auto child = &front(); child != nullptr; child = child->next())
+		for (auto child = &front(); child != nullptr; child = child->group.next())
 			child = child->expand();
 
 		return this;
@@ -233,12 +233,12 @@ namespace tex
 
 	void Group::enforceRules()
 	{
-		if (parent)
+		if (group())
 		{
-			if (!text(prev()))
-				insertBefore(Text::make());
-			if (!text(next()))
-				insertAfter(Text::make());
+			if (!text(group.prev()))
+				insertBeforeThis(Text::make());
+			if (!text(group.next()))
+				insertAfterThis(Text::make());
 		}
 		_enforce_child_rules();
 	}
@@ -249,10 +249,10 @@ namespace tex
 	Owner<Group> expand_aoa(Command* src)
 	{
 		Owner<Group> result = Group::make(src->cmd);
-		tryPopArgument(src->next(), *result);
-		if (auto opt = read_optional(src->next()))
+		tryPopArgument(src->group.next(), *result);
+		if (auto opt = read_optional(src->group.next()))
 			result->append(move(opt));
-		tryPopArgument(src->next(), *result);
+		tryPopArgument(src->group.next(), *result);
 		return result;
 	}
 	// pops command plus and optional and a mandatory argument, no expansion
@@ -260,9 +260,9 @@ namespace tex
 	{
 		auto result = Group::make(src->cmd);
 		result->append(Command::make(std::move(src->cmd)));
-		if (auto opt = read_optional(src->next()))
+		if (auto opt = read_optional(src->group.next()))
 			result->append(move(opt));
-		tryPopArgument(src->next(), *result);
+		tryPopArgument(src->group.next(), *result);
 		return result;
 	}
 
@@ -270,15 +270,15 @@ namespace tex
 	Owner<Group> expand_A(Command* src)
 	{
 		auto result = Group::make(src->cmd);
-		tryPopArgument(src->next(), *result); result->back().expand();
+		tryPopArgument(src->group.next(), *result); result->back().expand();
 		return result;
 	}
 	// pops two arguments, expanding both
 	Owner<Group> expand_AA(Command* src)
 	{
 		auto result = Group::make(src->cmd);
-		tryPopArgument(src->next(), *result); result->back().expand();
-		tryPopArgument(src->next(), *result); result->back().expand();
+		tryPopArgument(src->group.next(), *result); result->back().expand();
+		tryPopArgument(src->group.next(), *result); result->back().expand();
 		return result;
 	}
 
@@ -304,7 +304,7 @@ namespace tex
 		auto result = cmd_case->second(this);
 
 		const auto raw_result = result.get();
-		const auto forget_self = replace(move(result));
+		const auto forget_self = replaceWith(move(result));
 		return raw_result;
 	}
 

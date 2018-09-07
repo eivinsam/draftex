@@ -100,15 +100,15 @@ struct Caret
 	{
 		if (node->text.empty())
 		{
-			if (space(node->prev()) && space(node->next()))
+			if (space(node->group.prev()) && space(node->group.next()))
 			{
 				move == Move::forward ?
 					erasePrev() :
 					eraseNext();
 			}
-			if (!node->prev() && !node->next() && typeid(*node->parent) == typeid(tex::Par))
+			if (!node->group.prev() && !node->group.next() && typeid(*node->group()) == typeid(tex::Par))
 			{
-				const auto to_remove = node->parent();
+				const auto to_remove = node->group();
 				if (move == Move::forward)
 				{
 					if (const auto candidate = node->prevText())
@@ -125,7 +125,7 @@ struct Caret
 						return;
 					offset = 0;
 				}
-				to_remove->remove();
+				to_remove->removeFromGroup();
 			}
 		}
 	}
@@ -298,14 +298,14 @@ struct Caret
 		target_x = no_target;
 		if (offset >= maxOffset())
 		{
-			if (node->next())
+			if (node->group.next())
 			{
-				Expects(not text(*node->next()));
-				node->next()->remove();
-				if (auto tnext = tex::as<tex::Text>(node->next()))
+				Expects(not text(*node->group.next()));
+				node->group.next()->removeFromGroup();
+				if (auto tnext = tex::as<tex::Text>(node->group.next()))
 				{
 					node->text.append(tnext->text);
-					node->next()->remove();
+					node->group.next()->removeFromGroup();
 				}
 			}
 			return;
@@ -322,15 +322,15 @@ struct Caret
 		target_x = no_target;
 		if (offset <= 0)
 		{
-			if (node->prev())
+			if (node->group.prev())
 			{
-				Expects(not text(*node->prev()));
-				node->prev()->remove();
-				if (auto tprev = tex::as<tex::Text>(node->prev()))
+				Expects(not text(*node->group.prev()));
+				node->group.prev()->removeFromGroup();
+				if (auto tprev = tex::as<tex::Text>(node->group.prev()))
 				{
 					offset = tprev->text.size();
 					node->text.insert(0, tprev->text);
-					node->prev()->remove();
+					node->group.prev()->removeFromGroup();
 				}
 			}
 			return;
@@ -341,7 +341,7 @@ struct Caret
 
 	void insertSpace()
 	{
-		if (offset == 0 && nullOrSpace(node->prev()))
+		if (offset == 0 && nullOrSpace(node->group.prev()))
 			return;
 		const auto space = node->insertSpace(offset);
 		node = space->nextText();
@@ -351,18 +351,18 @@ struct Caret
 	void breakParagraph()
 	{
 		Expects(node);
-		if (typeid(*node->parent) != typeid(tex::Par))
+		if (typeid(*node->group()) != typeid(tex::Par))
 			return;
-		if (offset == 0 && !node->parent->contains(node->prevText()))
+		if (offset == 0 && !node->group->contains(node->prevText()))
 			return;
 
-		auto new_par = node->parent->insertAfter(tex::Group::make("par"));
+		auto new_par = node->insertAfterThis(tex::Group::make("par"));
 		auto old_node = node;
 
 		if (offset <= 0)
 		{
-			old_node = node->insertBefore(tex::Text::make());
-			new_par->append(node->detach());
+			old_node = node->insertBeforeThis(tex::Text::make());
+			new_par->append(node->detachFromGroup());
 		}
 		else if (offset >= node->text.size())
 			node = new_par->append(tex::Text::make());
@@ -371,8 +371,8 @@ struct Caret
 			node = new_par->append(tex::Text::make(node->text.substr(offset)));
 			old_node->text.resize(offset);
 		}
-		while (old_node->next())
-			new_par->append(old_node->next()->detach());
+		while (old_node->group.next())
+			new_par->append(old_node->group.next()->detachFromGroup());
 
 		offset = 0;
 	}
@@ -442,10 +442,10 @@ struct Draftex
 		for (auto&& e : *tokens)
 			if (auto group = tex::as<tex::Group>(&e); group && group->terminatedBy("document"))
 			{
-				if (group->prev())
-					caret.node = group->prev()->nextText();
+				if (group->group.prev())
+					caret.node = group->group.prev()->nextText();
 				else
-					caret.node = group->parent->nextText();
+					caret.node = group->group->nextText();
 				break;
 			}
 
@@ -547,19 +547,19 @@ struct Draftex
 		{
 			caret.offset = 0;
 			caret.node = caret.node
-				->insertAfter(move(result))
+				->insertAfterThis(move(result))
 				->append(tex::Text::make());
 			return;
 		}
 		if (caret.offset > 0)
 		{
 			auto prev_node = caret.node;
-			caret.node = caret.node->insertAfter(tex::Text::make(caret.node->text.substr(caret.offset)));
+			caret.node = caret.node->insertAfterThis(tex::Text::make(caret.node->text.substr(caret.offset)));
 			prev_node->text.resize(caret.offset);
 			caret.offset = 0;
 		}
 		caret.node = caret.node
-			->insertBefore(move(result))
+			->insertBeforeThis(move(result))
 			->append(tex::Text::make());
 	}
 
@@ -574,8 +574,8 @@ struct Draftex
 
 	void change_par(tex::Par::Type new_type)
 	{
-		for (const tex::Node* n = caret.node; ; n = n->parent())
-			if (auto par = tex::as<tex::Par>(n->parent()))
+		for (const tex::Node* n = caret.node; ; n = n->group())
+			if (auto par = tex::as<tex::Par>(n->group()))
 			{
 				par->partype(new_type);
 				return;
@@ -638,7 +638,7 @@ struct Draftex
 		oui::shift(shift);
 
 		oui::fill(caret_box, { 0.0f, 0.1f, 1, 0.2f });
-		for (auto p = caret.node->parent(); p != nullptr; p = p->parent())
+		for (auto p = caret.node->group(); p != nullptr; p = p->group())
 			if (tex::as<tex::Par>(p))
 				oui::fill(p->absBox(), { 0, 0, 1, 0.1f });
 

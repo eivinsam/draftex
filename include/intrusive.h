@@ -68,11 +68,11 @@ namespace intrusive
 			friend constexpr bool operator==(const ptr& a, const ptr& b) { return a._ptr == b._ptr; }
 			friend constexpr bool operator!=(const ptr& a, const ptr& b) { return a._ptr != b._ptr; }
 
-			friend constexpr bool operator==(const ptr& a, T* b) { return a._ptr == b; }
-			friend constexpr bool operator!=(const ptr& a, T* b) { return a._ptr != b; }
+			template <class S> friend constexpr bool operator==(const ptr& a, S* b) { return a._ptr == b; }
+			template <class S> friend constexpr bool operator!=(const ptr& a, S* b) { return a._ptr != b; }
 
-			friend constexpr bool operator==(T* a, const ptr& b) { return a == b._ptr; }
-			friend constexpr bool operator!=(T* a, const ptr& b) { return a != b._ptr; }
+			template <class S> friend constexpr bool operator==(S* a, const ptr& b) { return a == b._ptr; }
+			template <class S> friend constexpr bool operator!=(S* a, const ptr& b) { return a != b._ptr; }
 
 			explicit constexpr operator bool() const { return _ptr != nullptr; }
 		};
@@ -169,30 +169,44 @@ namespace intrusive
 		}
 	};
 
+	template <class, class>
+	class list_element;
+	template <class, class, auto>
+	class list;
 
-	template <class T, class ID = void>
+	template <class T, class P>
+	class list_element
+	{
+		template <class, class, auto>
+		friend class list;
+		refcount::ptr<T> _next;
+		raw::ptr<T> _prev;
+		raw::ptr<P> _parent;
+	public:
+		T* next() const { return _next.get(); }
+		T* prev() const { return _prev.get(); }
+
+		P* operator()() const { return _parent.get(); }
+
+		P* operator->() const { return _parent.get(); }
+	};
+
+	template <class T, class P, auto EM>
 	class list
 	{
+		using E = std::remove_reference_t<decltype(std::declval<T*>()->*EM)>;
+
 		refcount::ptr<T> _first;
 		raw::ptr<T> _last;
-	public:
-		class element : public refcount
-		{
-			friend class list;
-			refcount::ptr<T> _next;
-			raw::ptr<T> _prev;
-		public:
-			T* next() const { return _next.get(); }
-			T* prev() const { return _prev.get(); }
-		};
-	private:
-		template <class P, class = decltype(std::declval<P>().get())>
-		static element* _e(const P& p) { return static_cast<element*>(p.get()); }
-		static element* _e(T* p) { return static_cast<element*>(p); }
+		template <class Ptr, class = decltype(std::declval<Ptr>().get())>
+		static E* _e(const Ptr& p) { return &(p.get()->*EM); }
+		static E* _e(T* p) { return &(p->*EM); }
 	public:
 
-		T* append(refcount::ptr<T> e)
+		template <class S>
+		S* append(refcount::ptr<S> e)
 		{
+			const auto raw_e = e.get();
 			if (!_last)
 			{
 				_first = move(e);
@@ -205,42 +219,46 @@ namespace intrusive
 				_last = _e(old_last)->_next;
 				_e(_last)->_prev = old_last;
 			}
-			return _last.get();
+			_e(_last)->_parent = static_cast<P*>(this);
+			return raw_e;
 		}
 
-		T* insert_before(element* next, refcount::ptr<T> e)
+		template <class S>
+		S* insert_before(T* next, refcount::ptr<S> e)
 		{
 			Expects(next != nullptr);
+			const auto raw_e = e.get();
 			const auto ee = _e(e);
-			if (const auto next_prev = next->_prev)
+			if (const auto next_prev = _e(next)->_prev)
 			{
 				ee->_next = move(_e(next_prev)->_next);
 				ee->_prev = next_prev;
-				next->_prev = e;
+				_e(next)->_prev = e.get();
 				_e(next_prev)->_next = move(e);
 			}
 			else
 			{
 				ee->_next = move(_first);
 				ee->_prev = nullptr;
-				next->_prev = e;
+				_e(next)->_prev = e.get();
 				_first = move(e);
 			}
-			return next->_prev.get();
+			_e(_e(next)->_prev)->_parent = static_cast<P*>(this);
+			return raw_e;
 		}
 
-		T* insert_after(element* prev, refcount::ptr<T> e)
+		template <class S>
+		S* insert_after(T* prev, refcount::ptr<S> e)
 		{
-			return prev->_next ?
-				insert_before(_e(prev->_next), move(e)) :
+			return _e(prev)->_next ?
+				insert_before(_e(prev)->_next.get(), move(e)) :
 				append(move(e));
 		}
 
 		refcount::ptr<T> detach(T* e)
 		{
 			const auto ee = _e(e);
-			Expects(ee->_prev || _first == e);
-			Expects(ee->_next || _last == e);
+			Expects(ee->_parent == this);
 
 			auto& prev_next = ee->_prev ? _e(ee->_prev)->_next : _first;
 			auto& next_prev = ee->_next ? _e(ee->_next)->_prev : _last;
@@ -250,7 +268,14 @@ namespace intrusive
 			prev_next = move(ee->_next);
 			next_prev = move(ee->_prev);
 
+			ee->_parent = nullptr;
+
 			return result;
+		}
+
+		void remove(T* e)
+		{
+			(void)detach(e);
 		}
 
 		constexpr bool empty() const { return _first == _last; }

@@ -29,25 +29,25 @@
     <DisplayString>node ({_count} owners)</DisplayString>
     <Expand>
       <Item Name="box">_box</Item>
-      <Item Name="parent">parent</Item>
-      <Item Name="prev">_prev</Item>
-      <Synthetic Name="before" Condition="_prev._ptr &amp;&amp; _prev._ptr->_prev._ptr">
+      <Item Name="parent">group._parent</Item>
+      <Item Name="prev">group._prev</Item>
+      <Synthetic Name="before" Condition="group._prev._ptr &amp;&amp; group._prev._ptr->group._prev._ptr">
         <DisplayString>...</DisplayString>
         <Expand>
           <LinkedListItems>
-            <HeadPointer>_prev._ptr</HeadPointer>
-            <NextPointer>_prev._ptr</NextPointer>
+            <HeadPointer>group._prev._ptr</HeadPointer>
+            <NextPointer>group._prev._ptr</NextPointer>
             <ValueNode>this,na</ValueNode>
           </LinkedListItems>
         </Expand>
       </Synthetic>
-      <Item Name="next">_next</Item>
-      <Synthetic Name="after" Condition="_next._ptr &amp;&amp; _next._ptr->_next._ptr">
+      <Item Name="next">group._next</Item>
+      <Synthetic Name="after" Condition="group._next._ptr &amp;&amp; group._next._ptr->group._next._ptr">
         <DisplayString>...</DisplayString>
         <Expand>
           <LinkedListItems>
-            <HeadPointer>_next._ptr</HeadPointer>
-            <NextPointer>_next._ptr</NextPointer>
+            <HeadPointer>group._next._ptr</HeadPointer>
+            <NextPointer>group._next._ptr</NextPointer>
             <ValueNode>this,na</ValueNode>
           </LinkedListItems>
         </Expand>
@@ -79,8 +79,8 @@
     <Expand>
       <ExpandedItem>(Node&amp;)*this</ExpandedItem>
       <LinkedListItems>
-        <HeadPointer>_subs._first._ptr</HeadPointer>
-        <NextPointer>_next._ptr</NextPointer>
+        <HeadPointer>_first._ptr</HeadPointer>
+        <NextPointer>group._next._ptr</NextPointer>
         <ValueNode>this,na</ValueNode>
       </LinkedListItems>
     </Expand>

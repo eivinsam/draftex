@@ -233,9 +233,9 @@ namespace tex
 		{
 			terminator->space = "\n";
 
-			const auto new_curl = front().insertBefore(Group::make("curly"));
-			while (new_curl->next() != terminator)
-				new_curl->append(new_curl->next()->detach());
+			const auto new_curl = front().insertBeforeThis(Group::make("curly"));
+			while (new_curl->group.next() != terminator)
+				new_curl->append(new_curl->group.next()->detachFromGroup());
 		}
 		else if (t == Type::simple)
 		{
@@ -243,8 +243,8 @@ namespace tex
 
 			const auto curly = as<Group>(&front());
 			while (!curly->empty())
-				curly->insertAfter(curly->back().detach());
-			curly->remove();
+				curly->insertAfterThis(curly->back().detachFromGroup());
+			curly->removeFromGroup();
 		}
 
 		_type = t; 
@@ -281,7 +281,7 @@ namespace tex
 		_parindent = 0;
 		if (_type == Type::simple)
 		{
-			if (auto pp = as<Par>(prev()); pp && pp->_type == Type::simple)
+			if (auto pp = as<Par>(group.prev()); pp && pp->_type == Type::simple)
 				_parindent = 1.5f*em;
 		}
 		else 

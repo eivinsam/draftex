@@ -142,7 +142,7 @@ namespace tex
 			while (auto space = as<Space>(empty() ? nullptr : &back()))
 			{
 				terminator.insert(0, space->space);
-				back().remove();
+				back().removeFromGroup();
 			}
 			Float::enforceRules();
 		}
@@ -211,7 +211,7 @@ namespace tex
 		{
 			Expects(mode == Mode::math);
 			const auto p = front().getArgument();
-			const auto q = p->next()->getArgument();
+			const auto q = p->group.next()->getArgument();
 
 			font.size = shift(font.size, -2);
 
@@ -325,7 +325,7 @@ namespace tex
 			{
 				auto& lbox = sub->layoutBox();
 				auto loff = lbox.offset;
-				for (auto p = sub->parent(); p && p != this; p = p->parent())
+				for (auto p = sub->group(); p && p != this; p = p->group())
 					loff += p->layoutBox().offset;
 
 				loff.y -= lbox.above;

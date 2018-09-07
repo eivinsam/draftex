@@ -14,13 +14,13 @@ namespace intrusive
 class refcounted;
 struct refcount_debug_data
 {
-	std::unordered_set<refcounted*> _register;
+	std::unordered_set<void*> _register;
 
-	void create(refcounted* p)
+	void create(void* p)
 	{
 		_register.insert(p);
 	}
-	void destroy(refcounted* p)
+	void destroy(void* p)
 	{
 		auto found = _register.find(p);
 		Expects(found != _register.end());
@@ -174,26 +174,35 @@ namespace intrusive
 	template <class, class, auto>
 	class list;
 
-	template <class T, class P>
-	class list_element
+	template <class T>
+	class list_element<T, void>
 	{
 		template <class, class, auto>
 		friend class list;
 		refcount::ptr<T> _next;
 		raw::ptr<T> _prev;
-		raw::ptr<P> _parent;
 	public:
 		T* next() const { return _next.get(); }
 		T* prev() const { return _prev.get(); }
+	};
+
+	template <class T, class P>
+	class list_element : public list_element<T, void>
+	{
+		template <class, class, auto>
+		friend class list;
+		raw::ptr<P> _parent;
+	public:
 
 		P* operator()() const { return _parent.get(); }
-
 		P* operator->() const { return _parent.get(); }
 	};
+
 
 	template <class T, class P, auto EM>
 	class list
 	{
+		static constexpr bool P_void = std::is_same_v<P, void>;
 		using E = std::remove_reference_t<decltype(std::declval<T*>()->*EM)>;
 
 		refcount::ptr<T> _first;
@@ -202,6 +211,7 @@ namespace intrusive
 		static E* _e(const Ptr& p) { return &(p.get()->*EM); }
 		static E* _e(T* p) { return &(p->*EM); }
 	public:
+		constexpr list() = default;
 		~list()
 		{
 			while (_last)
@@ -213,7 +223,8 @@ namespace intrusive
 		void pop_back()
 		{
 			auto le = _e(_last);
-			le->_parent = nullptr;
+			if constexpr (!P_void)
+				le->_parent = nullptr;
 			_last = std::exchange(le->_prev, nullptr);
 			if (_last)
 				_e(_last)->_next = nullptr;
@@ -235,7 +246,8 @@ namespace intrusive
 				_last = _e(old_last)->_next;
 				_e(_last)->_prev = old_last;
 			}
-			_e(_last)->_parent = static_cast<P*>(this);
+			if constexpr (!P_void)
+				_e(_last)->_parent = static_cast<P*>(this);
 			return raw_e;
 		}
 
@@ -259,7 +271,8 @@ namespace intrusive
 				_e(next)->_prev = e.get();
 				_first = move(e);
 			}
-			_e(_e(next)->_prev)->_parent = static_cast<P*>(this);
+			if constexpr (!P_void)
+				_e(_e(next)->_prev)->_parent = static_cast<P*>(this);
 			return raw_e;
 		}
 
@@ -274,7 +287,14 @@ namespace intrusive
 		refcount::ptr<T> detach(T* e)
 		{
 			const auto ee = _e(e);
-			Expects(ee->_parent == this);
+			if constexpr (P_void)
+			{
+				Expects(ee->_prev || e == _first);
+				Expects(ee->_next || e == _last);
+				ee->_parent = nullptr;
+			}
+			else
+				Expects(ee->_parent == this);
 
 			auto& prev_next = ee->_prev ? _e(ee->_prev)->_next : _first;
 			auto& next_prev = ee->_next ? _e(ee->_next)->_prev : _last;
@@ -283,8 +303,6 @@ namespace intrusive
 
 			prev_next = move(ee->_next);
 			next_prev = move(ee->_prev);
-
-			ee->_parent = nullptr;
 
 			return result;
 		}

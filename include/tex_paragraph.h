@@ -6,17 +6,17 @@
 namespace tex
 {
 	class Node;
+	class Context;
+
 	class Paragraph
 	{
 		std::vector<Node*> _nodes;
-
 	public:
-
 		void clear() { _nodes.clear(); }
 		void push_back(Node* node) { _nodes.push_back(node); }
 
 		// returns the resulting height
-		float updateLayout(Vector pen, float indent, float width);
+		float updateLayout(Context& con, Vector pen, float indent, float width);
 
 
 		class iterator
@@ -40,5 +40,5 @@ namespace tex
 		iterator end() { return { _nodes.end() }; }
 	};
 
-	float layoutParagraph(Group* p, float indent, float width);
+	float layoutParagraph(Context& con, Group* p, float indent, float width);
 }

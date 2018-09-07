@@ -17,6 +17,7 @@ namespace tex
 	class LineBulider
 	{
 		using iterator = Paragraph::iterator;
+		Context& _con;
 		int space_count;
 		float max_above;
 		float max_below;
@@ -27,8 +28,8 @@ namespace tex
 
 		enum class Align { left, justified };
 	public:
-		LineBulider(Vector pen, iterator par_begin, iterator par_end) :
-			pen(pen), rest(par_begin, par_end) { }
+		LineBulider(Context& con, Vector pen, iterator par_begin, iterator par_end) :
+			_con(con), pen(pen), rest(par_begin, par_end) { }
 
 		bool done() const { return rest.empty(); }
 		float height() const { return pen.y; }
@@ -73,6 +74,7 @@ namespace tex
 		}
 		void collectLine()
 		{
+			push(_con.lines, intrusive::refcount::make<Line>());
 			for (it = rest.begin(); it != rest.end(); ++it)
 			{
 				auto& lbox = it->layoutBox();
@@ -83,6 +85,9 @@ namespace tex
 				max_above = std::max(max_above, lbox.above);
 				max_below = std::max(max_below, lbox.below);
 				width_left -= box_width;
+
+				if (auto text = as<Text>(&*it))
+					_con.lines->append(intrusive::refcount::claim(text));
 			}
 			unwindEndSpace();
 		}
@@ -120,9 +125,9 @@ namespace tex
 			pen.y += max_below;
 		}
 	};
-	float Paragraph::updateLayout(Vector pen, float indent, float width)
+	float Paragraph::updateLayout(Context& con, Vector pen, float indent, float width)
 	{
-		LineBulider builder(pen, begin(), end());
+		LineBulider builder(con, pen, begin(), end());
 
 		if (builder.done())
 			return 0;
@@ -134,7 +139,7 @@ namespace tex
 		return builder.height();
 	}
 
-	float layoutParagraph(Group* p, float indent, float width)
+	float layoutParagraph(Context& con, Group* p, float indent, float width)
 	{
 		Paragraph par;
 
@@ -148,7 +153,7 @@ namespace tex
 				++it;
 				while (it != p->end() && it->collect(par))
 					++it;
-				pen.y = par.updateLayout(pen, indent, width);
+				pen.y = par.updateLayout(con, pen, indent, width);
 				indent = 0;
 				if (it == p->end())  break;
 			}
@@ -295,7 +300,7 @@ namespace tex
 		for (auto&& sub : *this)
 			sub.updateSize(con, mode, font, width);
 
-		_box.height(layoutParagraph(this, _parindent, _box.width()), align::min);
+		_box.height(layoutParagraph(con, this, _parindent, _box.width()), align::min);
 
 		return _box;
 	}

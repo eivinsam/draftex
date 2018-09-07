@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tex.h"
+#include "tex_context.h"
 #include "express.h"
 
 namespace tex
@@ -12,11 +12,6 @@ namespace tex
 
 	class Paragraph;
 
-	//class Line : public std::vector<Text*>, public intrusive::refcount
-	//{
-	//	intrusive::list<Text> _items;
-	//public:
-	//};
 
 	class Node : public intrusive::refcount
 	{
@@ -290,8 +285,8 @@ namespace tex
 		Text* _this_or_next_text() noexcept final { return this; };
 
 	public:
-		//Owner<Line> line;
 		string text;
+		intrusive::list_element<Text, Line> line;
 
 		Font font = { FontType::mono, FontSize::normalsize };
 		Mode mode = Mode::text;
@@ -319,6 +314,27 @@ namespace tex
 		void serialize(std::ostream& out) const override { out << text; }
 		void serialize(std::ostream&& out) { serialize(out); }
 	};
+
+	class Line : public intrusive::refcount, public intrusive::list<Text, Line, &Text::line>
+	{
+		intrusive::refcount::ptr<Line> _next;
+		intrusive::raw::ptr<Line> _prev;
+	public:
+		Line* next() const { return _next.get(); }
+		Line* prev() const { return _prev.get(); }
+
+		friend void push(Owner<Line>& head, Owner<Line> value)
+		{
+			if (head)
+			{
+				head->_prev = value;
+				value->_next = move(head);
+			}
+			head = move(value);
+		}
+	};
+
+
 
 	class Par : public Group
 	{

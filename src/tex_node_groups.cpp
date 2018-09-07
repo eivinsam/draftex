@@ -52,6 +52,7 @@ namespace tex
 	class Float : public Group
 	{
 		Box _float_box;
+		Owner<Line> _lines;
 	protected:
 		Text* _exit_this_or_next_text() noexcept override { return nullptr; }
 		Text* _exit_this_or_prev_text() noexcept override { return nullptr; }
@@ -96,8 +97,12 @@ namespace tex
 			for (auto&& sub : *this)
 				sub.updateSize(con, mode, font, width);
 
+			auto lines_backup = std::exchange(con.lines, nullptr);
+
 			_float_box.width(con.float_width, align::min);
-			_float_box.height(layoutParagraph(this, 0, _float_box.width()), align::min);
+			_float_box.height(layoutParagraph(con, this, 0, _float_box.width()), align::min);
+
+			_lines = std::exchange(con.lines, move(lines_backup));
 
 			return _box;
 		}
@@ -279,6 +284,7 @@ namespace tex
 		Box& updateSize(Context& con, Mode mode, Font font, float width) final
 		{
 			con.floats.clear();
+			con.lines = nullptr;
 			con.section = 0;
 			con.subsection = 0;
 

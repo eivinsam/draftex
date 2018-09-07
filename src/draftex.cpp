@@ -192,10 +192,27 @@ struct Caret
 		offset = int_size(textdata);
 	}
 
+	void findClosestOnLine(tex::Context& con, tex::Line* line)
+	{
+		if (!line)
+			return;
+		float closest_d = std::numeric_limits<float>::infinity();
+		for (auto&& e : *line)
+		{
+			auto abs_box = e.absBox();
+			float d = std::min(std::abs(target_x - abs_box.min.x), std::abs(target_x - abs_box.max.x));
+			if (closest_d > d)
+			{
+				closest_d = d;
+				node = &e;
+			}
+		}
+		return findPlace(con);
+	}
+
 	void up(tex::Context& con)
 	{
 		using namespace tex;
-		using namespace xpr;
 
 		if (!node)
 			return;
@@ -203,30 +220,8 @@ struct Caret
 
 		if (isnan(target_x))
 			target_x = node->absLeft() + offsetX(con);
-
-		if (auto first_above = first.of(those.of(node->allTextBefore()).that(is_above(*node)))) 
-		{
-			if (target_x >= first_above->absLeft())
-			{
-				node = first_above;
-				return findPlace(con);
-			}
-			Text* prev_above = first_above;
-			for (auto&& above : first_above->allTextBefore())
-			{
-				if (is_above(*prev_above)(above))
-					break;
-				if (target_x >= above.absLeft())
-				{
-					node = (target_x - above.absRight() < prev_above->absLeft() - target_x) ? 
-						&above : prev_above;
-					return findPlace(con);
-				}
-				prev_above = &above;
-			}
-			node = prev_above;
-			return findPlace(con);
-		}
+		if (node->line())
+			findClosestOnLine(con, node->line->next());
 	}
 	void down(tex::Context& con)
 	{
@@ -239,30 +234,8 @@ struct Caret
 
 		if (isnan(target_x))
 			target_x = node->absLeft() + offsetX(con);
-
-		if (auto first_below = first.of(those.of(node->allTextAfter()).that(is_below(*node))))
-		{
-			if (target_x <= first_below->absRight())
-			{
-				node = first_below;
-				return findPlace(con);
-			}
-			auto prev_below = first_below;
-			for (auto&& below : first_below->allTextAfter())
-			{
-				if (is_below(*prev_below)(below))
-					break;
-				if (target_x <= below.absRight())
-				{
-					node = (target_x - below.absLeft() > prev_below->absRight() - target_x) ?
-						&below : prev_below;
-					return findPlace(con);
-				}
-				prev_below = &below;
-			}
-			node = prev_below;
-			return findPlace(con);
-		}
+		if (node->line())
+			findClosestOnLine(con, node->line->prev());
 	}
 	void home()
 	{

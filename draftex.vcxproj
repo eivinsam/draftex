@@ -143,6 +143,7 @@
     <ClInclude Include="include\intrusive.h" />
     <ClInclude Include="include\small_string.h" />
     <ClInclude Include="include\tex.h" />
+    <ClInclude Include="include\tex_context.h" />
     <ClInclude Include="include\tex_node.h" />
     <ClInclude Include="include\tex_paragraph.h" />
     <ClInclude Include="include\tex_util.h" />

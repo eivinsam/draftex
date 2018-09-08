@@ -81,7 +81,7 @@
       <LinkedListItems>
         <HeadPointer>_first._ptr</HeadPointer>
         <NextPointer>group._next._ptr</NextPointer>
-        <ValueNode>this,na</ValueNode>
+        <ValueNode>this</ValueNode>
       </LinkedListItems>
     </Expand>
   </Type>

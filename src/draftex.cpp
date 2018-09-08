@@ -212,8 +212,6 @@ struct Caret
 
 	void up(tex::Context& con)
 	{
-		using namespace tex;
-
 		if (!node)
 			return;
 		prepare(Move::backward);
@@ -225,9 +223,6 @@ struct Caret
 	}
 	void down(tex::Context& con)
 	{
-		using namespace tex;
-		using namespace xpr;
-
 		if (!node)
 			return;
 		prepare(Move::forward);
@@ -241,28 +236,22 @@ struct Caret
 	{
 		prepare(Move::backward);
 		target_x = no_target;
-		while (auto prev_text = node->prevText())
+
+		if (node->line())
 		{
-			if (prev_text->absLeft() > node->absLeft())
-			{
-				offset = 0;
-				return;
-			}
-			node = prev_text;
+			node = &*node->line->begin();
+			offset = 0;
 		}
 	}
 	void end()
 	{
 		prepare(Move::forward);
 		target_x = no_target;
-		while (auto next_text = node->nextText())
+
+		if (node->line())
 		{
-			if (next_text->absRight() < node->absRight())
-			{
-				offset = maxOffset();
-				return;
-			}
-			node = next_text;
+			node = &*node->line->rbegin();
+			offset = node->text.size();
 		}
 	}
 

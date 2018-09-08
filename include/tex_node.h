@@ -193,7 +193,7 @@ namespace tex
 	{
 		return
 			group.prev() ? group.prev()->_this_or_prev_text() :
-			group() ? group->_exit_this_or_next_text() :
+			group() ? group->_exit_this_or_prev_text() :
 			nullptr;
 	}
 	inline Text* Node::nextText() noexcept

@@ -217,7 +217,8 @@ namespace tex
 		_box.before = _box.after = 0;
 		for (auto&& e : *this)
 		{
-			auto& ebox = e.updateSize(con, mode, font, width);;
+			auto& ebox = e.updateSize(con, mode, font, width);
+			e._box.offset = { _box.after, 0 };
 			_box.above = std::max(_box.above, ebox.above);
 			_box.below = std::max(_box.below, ebox.below);
 			_box.after += ebox.width();

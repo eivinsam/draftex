@@ -18,8 +18,62 @@ namespace tex
 		oui::VectorFont italic;
 		oui::VectorFont bold;
 	public:
+		template <class T>
+		class Param
+		{
+			T _value;
+		public:
+			constexpr Param()
+			{
+				if constexpr (std::is_arithmetic_v<T>)
+					_value = 0;
+			}
+			constexpr Param(T initial) : _value(std::move(initial)) { }
+
+			Param(Param&&) = delete;
+			Param(const Param&) = delete;
+			Param& operator=(Param&&) = delete;
+			Param& operator=(const Param&) = delete;
+
+			class Old
+			{
+				friend class Param;
+				T* _loc;
+				T _value;
+				Old(T* loc) : _loc(loc), _value(std::move(*loc)) { }
+			public:
+				Old(const Old&&) = delete;
+				Old(Old&& other) : _loc(other._loc), _value(std::move(other._value)) { other._loc = nullptr; }
+				Old& operator=(Old&&) = delete;
+				Old& operator=(const Old&) = delete;
+
+				~Old() { if (_loc) *_loc = std::move(_value); }
+			};
+
+			const T* operator->() const { return &_value; }
+
+			operator const T&() const { return _value; }
+
+			template <class S> friend bool operator==(const Param& a, const S& b) { return a._value == b; }
+			template <class S> friend bool operator!=(const Param& a, const S& b) { return a._value != b; }
+
+			template <class S> friend bool operator==(const S& a, const Param& b) { return a == b._value; }
+			template <class S> friend bool operator!=(const S& a, const Param& b) { return a != b._value; }
+
+			Old push(T new_value) { Old backup(&_value); _value = std::move(new_value); return backup; }
+		};
+
+
+
 		std::vector<Float*> floats;
+
+		Param<Mode> mode;
+		Param<FontType> font_type;
+		Param<FontSize> font_size;
+		Param<float> width;
+
 		Owner<Line> lines;
+
 
 		float keysize = 6;
 
@@ -30,19 +84,17 @@ namespace tex
 		//Vector float_margin;
 		//Vector float_pen;
 
-		Context(oui::Window& window) : _w(&window),
-			mono{ "fonts/LinLibertine_Mah.ttf" },
-			sans{ "fonts/LinBiolinum_Rah.ttf" },
-			roman{ "fonts/LinLibertine_Rah.ttf" },
-			italic{ "fonts/LinLibertine_RIah.ttf" },
-			bold{ "fonts/LinLibertine_RBah.ttf" } {}
+		Context(oui::Window& window);
 
 		void reset(oui::Window& window) noexcept
 		{
 			_w = &window;
 		}
 
-		gsl::not_null<oui::VectorFont*> font(FontType f)
+		Font font() const { return { font_type, font_size }; }
+
+		gsl::not_null<oui::VectorFont*> 
+			fontData(FontType f)
 		{
 			switch (f)
 			{
@@ -55,12 +107,14 @@ namespace tex
 				throw std::logic_error("unknown tex::FontType");
 			}
 		}
-		auto font(Font f) { return font(f.type); }
+		auto fontData(Font f) { return fontData(f.type); }
+		auto fontData() { return fontData(font_type); }
 
 		oui::Window& window() const noexcept { return *_w; }
 
 		float ptsize(FontSize size) const { return tex::ptsize(size, keysize); }
 		float ptsize(Font f) const { return ptsize(f.size); }
+		float ptsize() const { return ptsize(font_size); }
 	};
 
 }

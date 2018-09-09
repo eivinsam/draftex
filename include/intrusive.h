@@ -247,7 +247,10 @@ namespace intrusive
 				_e(_last)->_prev = old_last;
 			}
 			if constexpr (!P_void)
+			{
+				Expects(_e(_last)->_parent == nullptr);
 				_e(_last)->_parent = static_cast<P*>(this);
+			}
 			return raw_e;
 		}
 
@@ -291,10 +294,12 @@ namespace intrusive
 			{
 				Expects(ee->_prev || e == _first);
 				Expects(ee->_next || e == _last);
-				ee->_parent = nullptr;
 			}
 			else
+			{
 				Expects(ee->_parent == this);
+				ee->_parent = nullptr;
+			}
 
 			auto& prev_next = ee->_prev ? _e(ee->_prev)->_next : _first;
 			auto& next_prev = ee->_next ? _e(ee->_next)->_prev : _last;

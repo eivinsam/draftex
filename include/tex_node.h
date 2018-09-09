@@ -12,7 +12,7 @@ namespace tex
 
 	class Paragraph;
 
-
+	
 	class Node : public intrusive::refcount
 	{
 		friend class Group;
@@ -94,7 +94,7 @@ namespace tex
 		auto allTextAfter()  { return xpr::generator(&Node::nextText, this); }
 
 		virtual bool collect(Paragraph& out);
-		virtual Box& updateSize(Context& con, Mode mode, Font font, float width) = 0;
+		virtual Box& updateLayout(Context& con) = 0;
 		virtual void render(Context& con, Vector offset) const = 0;
 
 		virtual void serialize(std::ostream& out) const = 0;
@@ -170,7 +170,7 @@ namespace tex
 		Node& back()  const { return *rbegin(); }
 
 		bool collect(Paragraph& out) override;
-		Box& updateSize(Context& con, Mode mode, Font font, float width) override;
+		Box& updateLayout(Context& con) override;
 		void render(Context& con, Vector offset) const override;
 
 		void serialize(std::ostream& out) const override;
@@ -253,7 +253,7 @@ namespace tex
 				return {};
 		}
 
-		Box& updateSize(Context& con, Mode, Font font, float width) final;
+		Box& updateLayout(Context& con) final;
 
 		void render(tex::Context& con, Vector offset) const final;
 
@@ -272,7 +272,7 @@ namespace tex
 		static auto make() { return Node::make<Space>(); }
 
 		bool collect(Paragraph& out) override;
-		Box& updateSize(Context& con, Mode mode, Font font, float width) final;
+		Box& updateLayout(Context& con) final;
 		void render(tex::Context&, Vector) const final { } // does nothing
 
 		void serialize(std::ostream& out) const override { out << space; }
@@ -308,7 +308,7 @@ namespace tex
 		Space* insertSpace(int offset);
 		int insert(int offset, std::string_view text);
 
-		Box& updateSize(Context& con, Mode mode, Font font, float width) final;
+		Box& updateLayout(Context& con) final;
 		void render(tex::Context& con, oui::Vector offset) const final;
 
 		void serialize(std::ostream& out) const override { out << text; }
@@ -372,7 +372,7 @@ namespace tex
 
 		bool collect(Paragraph&) final { return false; }
 
-		Box& updateSize(Context& con, Mode mode, Font font, float width) override;
+		Box& updateLayout(Context& con) override;
 		void render(Context& con, Vector offset) const final;
 		void serialize(std::ostream& out) const final
 		{

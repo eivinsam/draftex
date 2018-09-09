@@ -71,7 +71,7 @@ struct Caret
 
 	float offsetX(tex::Context& con) const
 	{
-		return con.font(node->font)->offset(subview(node->text, 0, offset), con.ptsize(node->font));
+		return con.fontData(node->font)->offset(subview(node->text, 0, offset), con.ptsize(node->font));
 	}
 
 	void render(tex::Context& con)
@@ -174,7 +174,7 @@ struct Caret
 
 	void findPlace(tex::Context& con)
 	{
-		const auto font = con.font(node->font);
+		const auto font = con.fontData(node->font);
 		const auto textdata = std::string_view(node->text);
 		auto prev_x = node->absLeft();
 
@@ -586,9 +586,8 @@ struct Draftex
 		if (tokens->changed())
 		{
 			tokens->enforceRules();
-			auto& tbox = tokens->updateSize(context,
-				tex::Mode::text, { tex::FontType::sans, tex::FontSize::normalsize },
-				window.area().width());
+			auto set_width = context.width.push(window.area().width());
+			auto& tbox = tokens->updateLayout(context);
 			tokens->layoutOffset({ window.area().width()*tbox.before/tbox.width(), 0 });
 			tokens->commit();
 			check_title();
@@ -613,7 +612,7 @@ struct Draftex
 		if (!options.empty())
 		{
 			oui::fill(window.area(), oui::Color{ 1,1,1,0.3f });
-			auto optfont = context.font(tex::FontType::sans);
+			auto optfont = context.fontData(tex::FontType::sans);
 
 			const float h = 24;
 

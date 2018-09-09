@@ -12,6 +12,17 @@ inline string_view view(const string& s) noexcept { return string_view{ s }; }
 
 namespace tex
 {
+	Context::Context(oui::Window& window) : _w(&window),
+		mono{ "fonts/LinLibertine_Mah.ttf" },
+		sans{ "fonts/LinBiolinum_Rah.ttf" },
+		roman{ "fonts/LinLibertine_Rah.ttf" },
+		italic{ "fonts/LinLibertine_RIah.ttf" },
+		bold{ "fonts/LinLibertine_RBah.ttf" },
+		mode{ Mode::text },
+		font_type{ FontType::sans },
+		font_size{ FontSize::normalsize }
+	{}
+
 	namespace align = oui::align;
 
 	class LineBulider
@@ -181,43 +192,43 @@ namespace tex
 		return true;
 	}
 
-	Box& Command::updateSize(Context& con, Mode, Font font, float /*width*/)
+	Box& Command::updateLayout(Context& con)
 	{
-		const auto F = con.font(font);
-		_box.width(F->offset(cmd, con.ptsize(font)), align::min);
-		_box.height(con.ptsize(font), align::center);
+		const auto F = con.fontData();
+		_box.width(F->offset(cmd, con.ptsize()), align::min);
+		_box.height(con.ptsize(), align::center);
 		return _box;
 	}
-	Box& Text::updateSize(Context& con, Mode new_mode, Font new_font, float /*width*/)
+	Box& Text::updateLayout(Context& con)
 	{
-		mode = new_mode;
-		font = new_font;
-		const auto F = con.font(font);
+		mode = con.mode;
+		font = con.font();
+		const auto F = con.fontData(font);
 		_box.width(F->offset(text, con.ptsize(font)), align::min);
 		_box.height(con.ptsize(font), align::center);
 		return _box;
 	}
-	Box& Space::updateSize(Context& con, Mode mode, Font font, float /*width*/)
+	Box& Space::updateLayout(Context& con)
 	{
 		if (count(space, '\n') >= 2)
 		{
-			Expects(mode != Mode::math);
+			Expects(con.mode != Mode::math);
 			_box.width(0, align::min);
 			_box.height(0, align::min);
 			return _box;
 		}
-		_box.width(con.ptsize(font)*(mode == Mode::math ? 0 : 0.25f), align::min);
-		_box.height(con.ptsize(font), align::center);
+		_box.width (con.ptsize()*(con.mode == Mode::math ? 0 : 0.25f), align::min);
+		_box.height(con.ptsize(), align::center);
 		return _box;
 	}
 
 
-	Box& Group::updateSize(Context& con, Mode mode, Font font, float width)
+	Box& Group::updateLayout(Context& con)
 	{
 		_box.before = _box.after = 0;
 		for (auto&& e : *this)
 		{
-			auto& ebox = e.updateSize(con, mode, font, width);
+			auto& ebox = e.updateLayout(con);
 			e._box.offset = { _box.after, 0 };
 			_box.above = std::max(_box.above, ebox.above);
 			_box.below = std::max(_box.below, ebox.below);
@@ -257,7 +268,7 @@ namespace tex
 
 		change(); 
 	}
-	Box& Par::updateSize(Context & con, Mode mode, Font font, float width)
+	Box& Par::updateLayout(Context & con)
 	{
 		static const Font styles[] = 
 		{
@@ -267,7 +278,9 @@ namespace tex
 			{ FontType::bold, FontSize::Large }, // section
 			{ FontType::bold, FontSize::large } // subsection
 		};
-		_font = font = gsl::at(styles, _code(_type));
+		_font = gsl::at(styles, _code(_type));
+		auto old_type = con.font_type.push(_font.type);
+		auto old_size = con.font_size.push(_font.size);
 
 		if (_type == Type::section)
 		{
@@ -282,7 +295,7 @@ namespace tex
 		else
 			_pretitle = "";
 
-		const auto em = con.ptsize(font);
+		const auto em = con.ptsize(_font);
 
 		_parindent = 0;
 		if (_type == Type::simple)
@@ -291,15 +304,15 @@ namespace tex
 				_parindent = 1.5f*em;
 		}
 		else 
-			_parindent = con.font(font)->offset(_pretitle, em);
+			_parindent = con.fontData(_font)->offset(_pretitle, em);
 
 		_box.above = 0;
 		_box.below = em;
 		_box.before = 0;
-		_box.after = width;
+		_box.after = con.width;
 
 		for (auto&& sub : *this)
-			sub.updateSize(con, mode, font, width);
+			sub.updateLayout(con);
 
 		_box.height(layoutParagraph(con, this, _parindent, _box.width()), align::min);
 
@@ -320,7 +333,7 @@ namespace tex
 		{
 			using namespace oui::colors;
 			static constexpr auto color = mix(white, black, 0.6);
-			con.font(_font)->drawLine(_box.min() + offset, _pretitle, con.ptsize(_font), color);
+			con.fontData(_font)->drawLine(_box.min() + offset, _pretitle, con.ptsize(_font), color);
 		}
 
 		Group::render(con, offset);
@@ -329,12 +342,12 @@ namespace tex
 
 	void Command::render(Context& con, Vector offset) const
 	{
-		con.font(tex::FontType::sans)->drawLine(offset + _box.min(), cmd,
+		con.fontData(tex::FontType::sans)->drawLine(offset + _box.min(), cmd,
 			oui::Color{ .3f, .9f, .1f }, con.ptsize(tex::FontSize::normalsize));
 	}
 	void Text::render(tex::Context& con, oui::Vector offset) const
 	{
-		con.font(font.type)->drawLine(offset + _box.min(), text,
+		con.fontData(font.type)->drawLine(offset + _box.min(), text,
 			oui::colors::black, con.ptsize(font.size));
 	}
 }

@@ -241,29 +241,6 @@ namespace tex
 	{ 
 		if (_type == t)
 			return;
-		Expects(!empty());
-
-		auto terminator = as<Space>(&back());
-		if (!terminator)
-			terminator = append(Space::make());
-
-		if (_type == Type::simple)
-		{
-			terminator->space = "\n";
-
-			const auto new_curl = front().insertBeforeThis(Group::make("curly"));
-			while (new_curl->group.next() != terminator)
-				new_curl->append(new_curl->group.next()->detachFromGroup());
-		}
-		else if (t == Type::simple)
-		{
-			terminator->space = "\n\n";
-
-			const auto curly = as<Group>(&front());
-			while (!curly->empty())
-				curly->insertAfterThis(curly->back().detachFromGroup());
-			curly->removeFromGroup();
-		}
 
 		_type = t; 
 
@@ -339,6 +316,16 @@ namespace tex
 
 		Group::render(con, offset);
 
+	}
+	void Par::serialize(std::ostream & out) const
+	{
+		out << name(_type);
+		if (_type != Type::simple)
+			out << '{';
+		Group::serialize(out);
+		if (_type != Type::simple)
+			out << '}';
+		out << terminator;
 	}
 
 	void Command::render(Context& con, Vector offset) const

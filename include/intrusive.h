@@ -317,7 +317,7 @@ namespace intrusive
 			(void)detach(e);
 		}
 
-		constexpr bool empty() const { return _first == _last; }
+		constexpr bool empty() const { return _first == nullptr; }
 
 		struct sentinel {};
 

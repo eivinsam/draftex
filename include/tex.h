@@ -28,7 +28,12 @@ namespace tex
 		std::string _message;
 	public:
 
-		IllFormed(std::string message) noexcept : _message(std::move(message)) {  }
+		template <class... Args>
+		IllFormed(Args&&... args) noexcept 
+		{
+			_message.reserve((std::size(args) + ...));
+			(_message.append(args), ...);
+		}
 
 		const char* what() const noexcept final { return _message.c_str(); }
 	};

@@ -221,7 +221,7 @@ namespace tex
 	void Group::tokenize(string_view & in, Mode mode)
 	{
 		while (!in.empty())
-			if (auto sub = tokenize_single(in, *this, mode, OnEnd::fail))
+			if (auto sub = tokenize_single(in, *this, mode, OnEnd::match))
 				append(move(sub));
 			else break;
 	}
@@ -252,38 +252,6 @@ namespace tex
 		text.erase(0, frontlen);
 	}
 
-	static string read_optional_text(string_view data)
-	{
-		Expects(!data.empty());
-		if (data.front() != '[')
-			return {};
-
-		if (const auto found = data.find_first_of(']', 1); found != data.npos)
-			return string(data.substr(0, found + 1));
-
-		throw IllFormed("could not find end of optional argument (only non-space text supported)");
-	}
-	static Owner<Node> read_optional(Node* next)
-	{
-		auto text = as<Text>(next);
-		if (!text || text->text.empty())
-			return {};
-
-		if (text->text.front() != '[')
-			return {};
-
-		auto opt = read_optional_text(text->text);
-
-		if (opt.empty())
-			return {};
-
-		if (opt.size() == text->text.size())
-			return next->detachFromGroup();
-
-		auto result = Text::make(move(opt));
-		text->text.erase(0, result->text.size());
-		return result;
-	}
 
 	Node* Group::expand()
 	{
@@ -305,70 +273,6 @@ namespace tex
 		_enforce_child_rules();
 	}
 
-	using CommandExpander = Owner<Group>(*)(Command*);
-
-	// pops mandatory, optional and then mandatory argument, no expansion
-	Owner<Group> expand_aoa(Command* src)
-	{
-		Owner<Group> result = Group::make(src->cmd);
-		tryPopArgument(src->group.next(), *result);
-		if (auto opt = read_optional(src->group.next()))
-			result->append(move(opt));
-		tryPopArgument(src->group.next(), *result);
-		return result;
-	}
-	// pops command plus and optional and a mandatory argument, no expansion
-	Owner<Group> expand_coa(Command* src)
-	{
-		auto result = Group::make(src->cmd);
-		result->append(Command::make(std::move(src->cmd)));
-		if (auto opt = read_optional(src->group.next()))
-			result->append(move(opt));
-		tryPopArgument(src->group.next(), *result);
-		return result;
-	}
-
-	// pops one argument and expands it
-	Owner<Group> expand_A(Command* src)
-	{
-		auto result = Group::make(src->cmd);
-		tryPopArgument(src->group.next(), *result); result->back().expand();
-		return result;
-	}
-	// pops two arguments, expanding both
-	Owner<Group> expand_AA(Command* src)
-	{
-		auto result = Group::make(src->cmd);
-		tryPopArgument(src->group.next(), *result); result->back().expand();
-		tryPopArgument(src->group.next(), *result); result->back().expand();
-		return result;
-	}
-
-
-	Node * Command::expand()
-	{
-		static constexpr frozen::unordered_map<string_view, CommandExpander, 5> cases =
-		{
-			//{ "newcommand", &expand_aoa },
-			//{ "usepackage", &expand_coa },
-			//{ "documentclass", &expand_coa },
-			{ "frac", &expand_AA },
-			{ "title", &expand_A },
-			{ "author", &expand_A },
-			{ "section", &expand_A },
-			{ "subsection", &expand_A }
-		};
-
-		auto cmd_case = cases.find(cmd);
-		if (cmd_case == cases.end())
-			return this;
-
-		auto result = cmd_case->second(this);
-
-		const auto raw_result = result.get();
-		const auto forget_self = replaceWith(move(result));
-		return raw_result;
-	}
 
 	void Group::serialize(std::ostream & out) const
 	{

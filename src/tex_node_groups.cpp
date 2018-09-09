@@ -356,53 +356,54 @@ namespace tex
 
 	class Document : public VerticalGroup
 	{
+		string _initial_space;
 	public:
 		using VerticalGroup::VerticalGroup;
 
 		void enforceRules() final { _enforce_child_rules(); }
 
-		void tokenize(string_view & in, Mode mode) final
+		Node* expand() final
 		{
-			static constexpr frozen::unordered_set<std::string_view, 4> headings =
+			if (empty())
+				return this;
+			if (auto sp = as<Space>(&front()))
 			{
-				"title",
-				"author",
-				"section",
-				"subsection"
-			};
+				_initial_space = move(sp->space);
+				sp->removeFromGroup();
+			}
 
-			Owner<Group> par;
-			while (!in.empty())
-				if (auto sub = tokenize_single(in, *this, mode, OnEnd::match))
+			Par* prev_par = nullptr;
+			while (auto p = prev_par ? prev_par->group.next() : &front())
+			{
+				p = p->expand();
+
+				if (auto pp = as<Par>(p))
 				{
-					if (auto sp = as<Space>(sub.get()); sp && count(sp->space, '\n') >= 2)
+					prev_par = pp;
+					continue;
+				}
+				if (auto sp = as<Space>(p))
+				{
+					Expects(prev_par);
+					if (count(sp->space, '\n') >= 2 || prev_par->partype() != Par::Type::simple)
 					{
-						if (par) append(move(par));
-						par = Group::make("par");
-					}
-					else if (auto cmd = as<Command>(sub.get()); cmd && headings.count(cmd->cmd))
-					{
-						if (par) append(move(par));
-						if (in.front() != '{')
-							throw IllFormed(std::string("expected { after \\" + cmd->cmd));
-						in.remove_prefix(1);
-						auto arg = Group::make("curly");
-						arg->tokenize(in, mode);
-						auto headg = Group::make(cmd->cmd);
-						headg->append(move(arg));
-						if (isspace(in.front()))
-							headg->append(tokenize_single(in, *this, mode, OnEnd::match));
-						append(move(headg));
-
+						Expects(prev_par->terminator.empty());
+						prev_par->terminator = move(sp->space);
+						sp->removeFromGroup();
 						continue;
 					}
-
-					if (!par) par = Group::make("par");
-					par->append(move(sub));
 				}
-				else break;
-			append(move(par));
+
+				if (!prev_par
+					|| prev_par->partype() != Par::Type::simple
+					|| !prev_par->terminator.empty())
+					prev_par = p->insertBeforeThis(intrusive::refcount::make<Par>("par"));
+				prev_par->append(p->detachFromGroup());
+			}
+
+			return this;
 		}
+
 		bool terminatedBy(string_view token) const final { return token == "document"; }
 
 		bool collect(Paragraph&) final { return false; }
@@ -419,7 +420,7 @@ namespace tex
 
 		void serialize(std::ostream& out) const final
 		{
-			out << "\\begin{document}";
+			out << "\\begin{document}" << _initial_space;
 			Group::serialize(out);
 			out << "\\end{document}";
 		}
@@ -431,6 +432,7 @@ namespace tex
 	{
 		return intrusive::refcount::make<G>(std::move(name));
 	}
+
 	Owner<Group> Group::make(string name)
 	{
 		static constexpr frozen::unordered_map<string_view, Owner<Group>(*)(string), 10>
@@ -450,4 +452,120 @@ namespace tex
 
 		return find(maker_lookup, name, default_value = &make_group<Curly>)(std::move(name));
 	}
+
+	static string read_optional_text(string_view data)
+	{
+		Expects(!data.empty());
+		if (data.front() != '[')
+			return {};
+
+		if (const auto found = data.find_first_of(']', 1); found != data.npos)
+			return string(data.substr(0, found + 1));
+
+		throw IllFormed("could not find end of optional argument (only non-space text supported)");
+	}
+	static Owner<Node> read_optional(Node* next)
+	{
+		auto text = as<Text>(next);
+		if (!text || text->text.empty())
+			return {};
+
+		if (text->text.front() != '[')
+			return {};
+
+		auto opt = read_optional_text(text->text);
+
+		if (opt.empty())
+			return {};
+
+		if (opt.size() == text->text.size())
+			return next->detachFromGroup();
+
+		auto result = Text::make(move(opt));
+		text->text.erase(0, result->text.size());
+		return result;
+	}
+
+
+	using CommandExpander = Owner<Group>(*)(Command*);
+
+	// pops mandatory, optional and then mandatory argument, no expansion
+	Owner<Group> expand_aoa(Command* src)
+	{
+		Owner<Group> result = Group::make(src->cmd);
+		tryPopArgument(src->group.next(), *result);
+		if (auto opt = read_optional(src->group.next()))
+			result->append(move(opt));
+		tryPopArgument(src->group.next(), *result);
+		return result;
+	}
+	// pops command plus and optional and a mandatory argument, no expansion
+	Owner<Group> expand_coa(Command* src)
+	{
+		auto result = Group::make(src->cmd);
+		result->append(Command::make(std::move(src->cmd)));
+		if (auto opt = read_optional(src->group.next()))
+			result->append(move(opt));
+		tryPopArgument(src->group.next(), *result);
+		return result;
+	}
+
+	// pops one argument and expands it
+	Owner<Group> expand_A(Command* src)
+	{
+		auto result = Group::make(src->cmd);
+		tryPopArgument(src->group.next(), *result); result->back().expand();
+		return result;
+	}
+	// pops two arguments, expanding both
+	Owner<Group> expand_AA(Command* src)
+	{
+		auto result = Group::make(src->cmd);
+		tryPopArgument(src->group.next(), *result); result->back().expand();
+		tryPopArgument(src->group.next(), *result); result->back().expand();
+		return result;
+	}
+
+	// demand one curly after, and expand it
+	Owner<Group> expand_C(Command* src)
+	{
+		auto result = Group::make(src->cmd);
+		if (auto cp = as<Curly>(src->group.next()))
+		{
+			cp->expand();
+			while (!cp->empty())
+				result->append(cp->front().detachFromGroup());
+			cp->detachFromGroup();
+		}
+		else
+			throw IllFormed("missing { after \\", src->cmd);
+		return result;
+	}
+
+
+	Node * Command::expand()
+	{
+		static constexpr frozen::unordered_map<string_view, CommandExpander, 5> cases =
+		{
+			//{ "newcommand", &expand_aoa },
+			//{ "usepackage", &expand_coa },
+			//{ "documentclass", &expand_coa },
+			{ "frac", &expand_AA },
+			{ "title", &expand_C },
+			{ "author", &expand_C },
+			{ "section", &expand_C },
+			{ "subsection", &expand_C }
+		};
+
+		auto cmd_case = cases.find(cmd);
+		if (cmd_case == cases.end())
+			return this;
+
+		auto result = cmd_case->second(this);
+
+		const auto raw_result = result.get();
+		const auto forget_self = replaceWith(move(result));
+		return raw_result;
+	}
+
 }

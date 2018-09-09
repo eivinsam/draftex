@@ -153,7 +153,7 @@ namespace tex
 		virtual void tokenize(std::string_view& in, Mode mode);
 		virtual bool terminatedBy(std::string_view token) const = 0;
 
-		Node* expand() final;
+		Node* expand() override;
 		void popArgument(Group& dst) final { dst.append(group->detach(this)); }
 		Node* getArgument() noexcept final { return this; }
 
@@ -364,6 +364,8 @@ namespace tex
 	protected:
 		float _parindent = 0;
 	public:
+		string terminator;
+
 		Par(string token);
 
 		void enforceRules() final { _enforce_child_rules(); }
@@ -377,12 +379,7 @@ namespace tex
 
 		Box& updateLayout(Context& con) override;
 		void render(Context& con, Vector offset) const final;
-		void serialize(std::ostream& out) const final
-		{
-			out << name(_type);
-
-			Group::serialize(out);
-		}
+		void serialize(std::ostream& out) const final;
 	};
 
 	std::vector<Node*> interval(Node& a, Node& b);

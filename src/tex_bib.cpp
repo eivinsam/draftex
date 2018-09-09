@@ -34,7 +34,7 @@ namespace tex
 	}
 
 	template <class P>
-	void accept_space_expect(string_view& in, P&& expected, const char* unexpected_message)
+	void accept_space_expect(string_view& in, P&& expected, string_view unexpected_message)
 	{
 		for (;; skip(in))
 			if (in.empty())

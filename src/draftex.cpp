@@ -59,19 +59,35 @@ struct Caret
 {
 	static constexpr float no_target = std::numeric_limits<float>::quiet_NaN();
 
+	enum class Move : char { none, backward, forward };
+
 	tex::Text* node = nullptr;
+	tex::Text* node_start = nullptr;
 	int offset = 0;
+	int offset_start = 0;
 	float target_x = no_target;
 	bool change = false;
 
-	enum class Move : char { backward, forward };
+	constexpr bool hasSelection() const { return offset != offset_start || node != node_start; }
 
+
+	void resetStart()
+	{ 
+		node_start = node; 
+		offset_start = offset; 
+	}
 
 	int maxOffset() const { Expects(node); return node->text.size(); }
 
+
+	static float offsetXof(tex::Context& con, tex::Text* n, int o)
+	{
+		return con.fontData(n->font)->offset(subview(n->text, 0, o), con.ptsize(n->font));
+	}
+
 	float offsetX(tex::Context& con) const
 	{
-		return con.fontData(node->font)->offset(subview(node->text, 0, offset), con.ptsize(node->font));
+		return offsetXof(con, node, offset);
 	}
 
 	void render(tex::Context& con)
@@ -79,13 +95,50 @@ struct Caret
 		if (!con.window().focus())
 			return;
 
-		auto box = node->absBox();
-	
+		auto render_one = [&con](tex::Text* n, int o, const oui::Color& c)
+		{
+			auto box = n->absBox();
+			box.min.x += offsetXof(con, n, o) - 1;
+			box.max.x = box.min.x + 2;
+			oui::fill(box, c);
+		};
 
-		box.min.x += offsetX(con) - 1;
-		box.max.x = box.min.x + 2;
 
-		oui::fill(box, oui::colors::black);
+		render_one(node, offset, oui::colors::black);
+
+		if (hasSelection())
+			render_one(node_start, offset_start, oui::colors::magenta);
+
+
+		static constexpr auto marker = oui::Color{ 1,1,0,0.5f };
+
+		const auto xe = offsetX(con);
+		const auto xs = offsetXof(con, node_start, offset_start);
+
+		if (node == node_start)
+		{
+			auto box = node->absBox();
+
+			oui::fill({ {box.min.x + xs, box.min.y}, {box.min.x + xe, box.max.y } }, marker);
+
+			return;
+		}
+
+		auto to_mark = interval(*node_start, *node);
+		Expects(to_mark.size() >= 2);
+		const auto fwd = to_mark.front() == node_start;
+
+		{
+			auto box = node->absBox();
+			(fwd ? box.max.x : box.min.x) = box.min.x + xe;
+			oui::fill(box, marker);
+			box = node_start->absBox();
+			(fwd ? box.min.x : box.max.x) = box.min.x + xs;
+			oui::fill(box, marker);
+		}
+
+		for (auto it = ++to_mark.begin(), end = --to_mark.end(); it != end; ++it)
+			oui::fill((*it)->absBox(), marker);
 	}
 
 	int repairOffset(int off)
@@ -102,28 +155,31 @@ struct Caret
 		{
 			if (space(node->group.prev()) && space(node->group.next()))
 			{
-				move == Move::forward ?
-					erasePrev() :
-					eraseNext();
+				switch (move)
+				{
+				case Move::forward:  erasePrev(); break;
+				case Move::backward: eraseNext(); break;
+				}
 			}
 			if (!node->group.prev() && !node->group.next() && typeid(*node->group()) == typeid(tex::Par))
 			{
 				const auto to_remove = node->group();
-				if (move == Move::forward)
+				switch (move)
 				{
+				case Move::forward:
 					if (const auto candidate = node->prevText())
 						node = candidate;
 					else
 						return;
 					offset = node->text.size();
-				}
-				else
-				{
+					break;
+				case Move::backward:
 					if (const auto candidate = node->nextText())
 						node = candidate;
 					else
 						return;
 					offset = 0;
+					break;
 				}
 				to_remove->removeFromGroup();
 			}
@@ -148,7 +204,6 @@ struct Caret
 			offset = 0;
 			return;
 		}
-		return;
 	}
 	void prev()
 	{
@@ -166,10 +221,8 @@ struct Caret
 		{
 			node = prev_text;
 			offset = node->text.size();
-
 			return;
 		}
-		return;
 	}
 
 	void findPlace(tex::Context& con)
@@ -255,9 +308,28 @@ struct Caret
 		}
 	}
 
+	void eraseSelection()
+	{
+		Expects(hasSelection());
+
+		if (node == node_start)
+		{
+			if (offset_start > offset)
+				std::swap(offset_start, offset);
+			node->text.erase(offset_start, offset - offset_start);
+			offset = offset_start;
+			node->change();
+			return;
+		}
+	}
+
 	void eraseNext()
 	{
 		target_x = no_target;
+
+		if (hasSelection())
+			return eraseSelection();
+
 		if (offset >= maxOffset())
 		{
 			if (node->group.next())
@@ -282,6 +354,10 @@ struct Caret
 	void erasePrev()
 	{
 		target_x = no_target;
+
+		if (hasSelection())
+			return eraseSelection();
+
 		if (offset <= 0)
 		{
 			if (node->group.prev())
@@ -303,15 +379,22 @@ struct Caret
 
 	void insertSpace()
 	{
+		if (hasSelection())
+			eraseSelection();
+
 		if (offset == 0 && nullOrSpace(node->group.prev()))
 			return;
 		const auto space = node->insertSpace(offset);
 		node = space->nextText();
 		offset = 0;
+		resetStart();
 	}
 
 	void breakParagraph()
 	{
+		if (hasSelection())
+			eraseSelection();
+
 		Expects(node);
 		if (typeid(*node->group()) != typeid(tex::Par))
 			return;
@@ -337,6 +420,7 @@ struct Caret
 			new_par->append(old_node->group.next()->detachFromGroup());
 
 		offset = 0;
+		resetStart();
 	}
 
 	void nextStop()
@@ -346,6 +430,7 @@ struct Caret
 			node = new_node;
 			offset = 0;
 		}
+		resetStart();
 	}
 	void prevStop()
 	{
@@ -354,6 +439,7 @@ struct Caret
 			node = new_node;
 			offset = node->text.size();
 		}
+		resetStart();
 	}
 };
 
@@ -408,6 +494,7 @@ struct Draftex
 					caret.node = group->group.prev()->nextText();
 				else
 					caret.node = group->group->nextText();
+				caret.resetStart();
 				break;
 			}
 
@@ -461,6 +548,8 @@ struct Draftex
 				oui::debug::println("key ", static_cast<int>(key));
 				return;
 			}
+			if (!shift_down)
+				caret.resetStart();
 			window.redraw();
 		};
 		oui::input.keyup = [this](oui::Key key)
@@ -482,6 +571,7 @@ struct Draftex
 
 			caret.offset += caret.node->insert(caret.offset, oui::utf8(charcode));
 			caret.target_x = Caret::no_target;
+			caret.resetStart();
 			window.redraw();
 			return;
 		};
@@ -598,10 +688,10 @@ struct Draftex
 	
 		oui::shift(shift);
 
-		oui::fill(caret_box, { 0.0f, 0.1f, 1, 0.2f });
-		for (auto p = caret.node->group(); p != nullptr; p = p->group())
-			if (tex::as<tex::Par>(p))
-				oui::fill(p->absBox(), { 0, 0, 1, 0.1f });
+		//oui::fill(caret_box, { 0.0f, 0.1f, 1, 0.2f });
+		//for (auto p = caret.node->group(); p != nullptr; p = p->group())
+		//	if (tex::as<tex::Par>(p))
+		//		oui::fill(p->absBox(), { 0, 0, 1, 0.1f });
 
 		tokens->render(context, {});
 

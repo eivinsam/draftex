@@ -123,15 +123,16 @@ namespace tex
 			for (auto&& e : currentLine())
 			{
 				e.layoutOffset(pen);
-				pen.x += e.layoutBox().width();
+				if (alignment == Align::justified)
+					if (auto sp = as<Space>(&e))
+					{
+						const float incr = width_left / space_count;
+						width_left -= incr;
+						space_count -= 1;
 
-				if (alignment == Align::justified && space(e))
-				{
-					const float incr = width_left / space_count;
-					width_left -= incr;
-					space_count -= 1;
-					pen.x += incr;
-				}
+						sp->widen(incr);
+					}
+				pen.x += e.layoutBox().width();
 			}
 			pen.y += max_below;
 		}

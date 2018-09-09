@@ -42,6 +42,7 @@ namespace tex
 		template <class T> T* insertBeforeThis(Owner<T> p);
 		template <class T> T* insertAfterThis(Owner<T> p);
 
+		std::vector<Node*> parents();
 
 		void layoutOffset(Vector offset) { _box.offset = offset; }
 		const Box& layoutBox()  const { return _box; }
@@ -266,6 +267,8 @@ namespace tex
 	public:
 		string space;
 
+		void widen(float amount) { _box.after += amount; }
+
 		Type type() const noexcept final { return Type::space; }
 		Flow flow() const noexcept final { return count(space, '\n') < 2 ? Flow::line : Flow::vertical; }
 
@@ -382,6 +385,7 @@ namespace tex
 		}
 	};
 
+	std::vector<Node*> interval(Node& a, Node& b);
 
 	inline Owner<Group> tokenize(std::string_view in)
 	{

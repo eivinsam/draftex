@@ -36,6 +36,68 @@ namespace tex
 
 	namespace align = oui::align;
 
+	std::vector<Node*> Node::parents()
+	{
+		std::vector<Node*> result;
+		for (auto p = this; p; p = p->group())
+			result.push_back(p);
+		return result;
+	}
+
+	std::vector<Node*> interval(Node& a, Node& b)
+	{
+		auto ap = a.parents();
+		auto bp = b.parents();
+
+		std::vector<Node*> result;
+		if (&a == &b)
+		{
+			result.push_back(&a);
+			return result;
+		}
+
+		auto ia = ap.rbegin();
+		auto ib = bp.rbegin();
+		for (; *ia == *ib; ++ia, ++ib)
+			if (ia == ap.rend() || ib == bp.rend())
+				return result;
+
+		for (auto sa = (*ia)->group.next(), sb = (*ib)->group.next(); sb && sa != *ib; sa = sa->group.next(), sb = sb->group.next())
+		{
+			// check if sa is later than sb
+			if (!sa || sb == *ia)
+			{
+				std::swap(ap, bp);
+				std::swap(ia, ib);
+				break;
+			}
+		}
+
+		// add nodes from a branch
+		result.push_back(ap.front()); // including a
+		for (auto ja = --ap.rend(); ja != ia; --ja)
+			for (auto s = (*ja)->group.next(); s; s = s->group.next())
+				result.push_back(s);
+		// add nodes between ia and ib
+		for (auto s = (*ia)->group.next(); s != *ib; s = s->group.next())
+		{
+			Expects(s);
+			result.push_back(s);
+		}
+		// then add nodes from b branch
+		for (++ib; ib != bp.rend(); ++ib)
+			for (auto s = &(*ib)->group->front(); s != *ib; s = s->group.next())
+			{
+				Expects(s);
+				result.push_back(s);
+			}
+		result.push_back(bp.front()); // including b
+
+		return result;
+	}
+
+
+
 	void Node::change() noexcept
 	{
 		for (Node* n = this; n != nullptr; n = n->group())

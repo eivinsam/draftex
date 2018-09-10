@@ -31,6 +31,7 @@ void SmallString::resize(const int new_size, const char fill)
 			_small.size = static_cast<unsigned char>(new_size);
 		else
 			_large.size = new_size;
+		operator[](new_size) = 0;
 		return;
 	}
 	reserve(new_size);

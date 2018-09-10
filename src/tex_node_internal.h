@@ -11,12 +11,44 @@ namespace tex
 
 	enum class OnEnd : char { pass, match, fail };
 
-	inline Owner<Group> tokenize(string_view& in, string type, Mode mode)
+	class InputReader
 	{
-		auto result = Group::make(std::move(type));
-		result->tokenize(in, mode);
-		return result;
-	}
+		string_view in;
 
-	Owner<Node> tokenize_single(string_view&, Group&, Mode, OnEnd);
+		Owner<Node> _tokenize_single(Group& parent, Mode mode, OnEnd on_end);
+	public:
+		InputReader(string_view in) : in(in) { }
+
+		constexpr explicit operator bool() const { return !in.empty(); }
+		constexpr char operator*() const { return in.front(); }
+
+		constexpr char pop()
+		{
+			const char result = in.front();
+			in.remove_prefix(1);
+			return result;
+		}
+		constexpr void skip()
+		{
+			in.remove_prefix(1);
+		}
+
+		string readCurly();
+
+		Owner<Group> tokenize_group(string type, Mode mode)
+		{
+			auto result = Group::make(std::move(type));
+			result->tokenize(*this, mode);
+			return result;
+		}
+
+		Owner<Node> tokenize_single(Group& parent, Mode mode, OnEnd on_end)
+		{
+			auto result = _tokenize_single(parent, mode, on_end);
+			if (result)
+				while (*this && **this >= 0 && **this <= ' ')
+					result->space_after.push_back(pop());
+			return result;
+		}
+	};
 }

@@ -329,6 +329,7 @@ namespace intrusive
 			constexpr iterator(T* p) : _p(p) { }
 		public:
 			iterator& operator++() { _p = _e(_p)->_next.get(); }
+			iterator operator++(int) { auto copy = *this; ++*this; return copy; }
 
 			T* operator->() const { return _p; }
 			T& operator*() const { return *_p; }

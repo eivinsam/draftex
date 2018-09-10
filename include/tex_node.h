@@ -7,10 +7,10 @@ namespace tex
 {
 	class Group;
 	class Command;
-	class Space;
 	class Text;
 
 	class Paragraph;
+	class InputReader;
 
 	
 	class Node : public intrusive::refcount
@@ -33,8 +33,9 @@ namespace tex
 		using string = SmallString;
 
 		intrusive::list_element<Node, Group> group;
+		string space_after;
 
-		enum class Type : char { space, text, group, command };
+		enum class Type : char { text, group, command };
 
 		Owner<Node> replaceWith(Owner<Node> p);
 		Owner<Node> detachFromGroup();
@@ -59,6 +60,7 @@ namespace tex
 			const auto off = absOffset();
 			return { Point(-cbox.before, -cbox.above) + off, Point(cbox.after, cbox.below) + off };
 		}
+		void widen(float w) { _box.after += w; }
 
 		Node() = default;
 		virtual ~Node() = default;
@@ -101,11 +103,8 @@ namespace tex
 		virtual void serialize(std::ostream& out) const = 0;
 		void serialize(std::ostream&& out) { serialize(out); }
 	};
-	inline bool space(const Node& n) { return n.type() == Node::Type::space; }
 	inline bool text(const Node& n) { return n.type() == Node::Type::text; }
-	inline bool space(const Node* n) { return n && space(*n); }
 	inline bool text(const Node* n) { return n && text(*n); }
-	inline bool nullOrSpace(const Node* n) { return !n || space(*n); }
 	inline bool nullOrText(const Node* n) { return !n || text(*n); }
 	template <class T>
 	inline bool space(const Owner<T>& n) { return n && space(*n); }
@@ -150,7 +149,7 @@ namespace tex
 
 		static Owner<Group> make(string name);
 
-		virtual void tokenize(std::string_view& in, Mode mode);
+		virtual void tokenize(InputReader& in, Mode mode);
 		virtual bool terminatedBy(std::string_view token) const = 0;
 
 		Node* expand() override;
@@ -262,26 +261,6 @@ namespace tex
 		void serialize(std::ostream&& out) { serialize(out); }
 	};
 
-	class Space : public Node
-	{
-	public:
-		string space;
-
-		void widen(float amount) { _box.after += amount; }
-
-		Type type() const noexcept final { return Type::space; }
-		Flow flow() const noexcept final { return count(space, '\n') < 2 ? Flow::line : Flow::vertical; }
-
-		static auto make() { return Node::make<Space>(); }
-
-		bool collect(Paragraph& out) override;
-		Box& updateLayout(Context& con) final;
-		void render(tex::Context&, Vector) const final { } // does nothing
-
-		void serialize(std::ostream& out) const override { out << space; }
-		void serialize(std::ostream&& out) { serialize(out); }
-	};
-
 	class Text : public Node
 	{
 		Text* _this_or_prev_text() noexcept final { return this; };
@@ -308,7 +287,7 @@ namespace tex
 		void popArgument(Group& dst) final;
 		Node* getArgument() noexcept final { return this; }
 
-		Space* insertSpace(int offset);
+		void insertSpace(int offset);
 		int insert(int offset, std::string_view text);
 
 		Box& updateLayout(Context& con) final;
@@ -384,10 +363,5 @@ namespace tex
 
 	std::vector<Node*> interval(Node& a, Node& b);
 
-	inline Owner<Group> tokenize(std::string_view in)
-	{
-		auto result = Group::make("root");
-		result->tokenize(in, Mode::text);
-		return result;
-	}
+	Owner<Group> tokenize(std::string_view in);
 }

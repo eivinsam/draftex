@@ -113,8 +113,8 @@ public:
 
 	SmallString(SmallString&& other) : _small(other._small)
 	{
-		if (other._large)
-			other._small = { 0 };
+		other._small.size = 0;
+		other._small.data[0] = 0;
 	}
 	SmallString(const SmallString& other) : SmallString(view(other)) { }
 	~SmallString() { if (_large) delete _large.data; }

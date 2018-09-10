@@ -149,41 +149,113 @@ struct Caret
 		return off;
 	}
 
-	void prepare(Move move)
+	void check_for_deletion(tex::Text& n)
 	{
-		if (node->text.empty())
+		const auto rem_node = [](tex::Node& n)
 		{
-			if (space(node->group.prev()) && space(node->group.next()))
-			{
-				switch (move)
-				{
-				case Move::forward:  erasePrev(); break;
-				case Move::backward: eraseNext(); break;
-				}
-			}
-			if (!node->group.prev() && !node->group.next() && typeid(*node->group()) == typeid(tex::Par))
-			{
-				const auto to_remove = node->group();
-				switch (move)
-				{
-				case Move::forward:
-					if (const auto candidate = node->prevText())
-						node = candidate;
-					else
-						return;
-					offset = node->text.size();
-					break;
-				case Move::backward:
-					if (const auto candidate = node->nextText())
-						node = candidate;
-					else
-						return;
-					offset = 0;
-					break;
-				}
-				to_remove->removeFromGroup();
-			}
+			if (auto prev = n.group.prev();
+				prev && prev->space_after.empty())
+				prev->space_after = std::move(n.space_after);
+			n.group->change();
+			n.removeFromGroup();
+		};
+
+		if (&n == node)
+			return;
+
+		if (n.text.empty())
+		{
+			auto g = n.group();
+			rem_node(n);
+			while (g->empty())
+				rem_node(*std::exchange(g, g->group()));
 		}
+
+	}
+
+	void prepare(Move /*move*/)
+	{
+		//const auto rem_node = [](tex::Node& n)
+		//{
+		//	if (auto prev = n.group.prev();
+		//		prev && prev->space_after.empty())
+		//		prev->space_after = std::move(n.space_after);
+		//	n.group->change();
+		//	n.removeFromGroup();
+		//};
+		//
+		//if (node->text.empty())
+		//{
+		//	auto g = node->group();
+		//	switch (move)
+		//	{
+		//	case Move::forward:
+		//		if (auto prev = node->prevText())
+		//		{
+		//			rem_node(*std::exchange(node, prev));
+		//			offset = node->text.size();
+		//			break;
+		//		}
+		//		else
+		//			return;
+		//	case Move::backward:
+		//		if (auto next = node->nextText())
+		//		{
+		//			rem_node(*std::exchange(node, next));
+		//			offset = 0;
+		//			break;
+		//		}
+		//		else
+		//			return;
+		//	}
+		//	while (g->empty())
+		//		rem_node(*std::exchange(g, g->group()));
+		//}
+
+		//if (node->text.empty())
+		//{
+		//	if (!node->group.prev() && !)
+		//	{
+		//
+		//	}
+		//
+		//}
+		//
+		//
+		//if (auto prev = tex::as<tex::Text>(node->group.prev()); prev && node->text.empty())
+		//{
+		//	Expects(!prev->space_after.empty());
+		//	if (!node->space_after.empty())
+		//	{
+		//		switch (move)
+		//		{
+		//		case Move::forward:  erasePrev(); break;
+		//		case Move::backward: eraseNext(); break;
+		//		}
+		//	}
+		//	if (!node->group.prev() && !node->group.next() && typeid(*node->group()) == typeid(tex::Par))
+		//	{
+		//		const auto to_remove = node->group();
+		//		switch (move)
+		//		{
+		//		case Move::forward:
+		//			if (const auto candidate = node->prevText())
+		//				node = candidate;
+		//			else
+		//				return;
+		//			offset = node->text.size();
+		//			break;
+		//		case Move::backward:
+		//			if (const auto candidate = node->nextText())
+		//				node = candidate;
+		//			else
+		//				return;
+		//			offset = 0;
+		//			break;
+		//		}
+		//		to_remove->removeFromGroup();
+		//	}
+		//}
 	}
 
 	void next()
@@ -200,7 +272,7 @@ struct Caret
 		}
 		if (auto next_text = node->nextText())
 		{
-			node = next_text;
+			check_for_deletion(*std::exchange(node, next_text));
 			offset = 0;
 			return;
 		}
@@ -219,7 +291,7 @@ struct Caret
 		}
 		if (auto prev_text = node->prevText())
 		{
-			node = prev_text;
+			check_for_deletion(*std::exchange(node, prev_text));
 			offset = node->text.size();
 			return;
 		}
@@ -249,6 +321,9 @@ struct Caret
 	{
 		if (!line)
 			return;
+
+		auto& original_node = *node;
+
 		float closest_d = std::numeric_limits<float>::infinity();
 		for (auto&& e : *line)
 		{
@@ -260,6 +335,7 @@ struct Caret
 				node = &e;
 			}
 		}
+		check_for_deletion(original_node);
 		return findPlace(con);
 	}
 
@@ -292,7 +368,7 @@ struct Caret
 
 		if (node->line())
 		{
-			node = &*node->line->begin();
+			check_for_deletion(*std::exchange(node, &*node->line->begin()));
 			offset = 0;
 		}
 	}
@@ -303,7 +379,7 @@ struct Caret
 
 		if (node->line())
 		{
-			node = &*node->line->rbegin();
+			check_for_deletion(*std::exchange(node, &*node->line->rbegin()));
 			offset = node->text.size();
 		}
 	}
@@ -330,25 +406,35 @@ struct Caret
 		if (hasSelection())
 			return eraseSelection();
 
-		if (offset >= maxOffset())
+		if (offset < maxOffset())
 		{
-			if (node->group.next())
+			node->change();
+			node->text.erase(offset, utf8len(node->text[offset]));
+			if (node->text.empty())
 			{
-				Expects(not text(*node->group.next()));
-				node->group.next()->removeFromGroup();
-				if (auto tnext = tex::as<tex::Text>(node->group.next()))
-				{
-					node->text.append(tnext->text);
-					node->group.next()->removeFromGroup();
-				}
+				//handle_empty();
 			}
 			return;
 		}
-		node->change();
-		node->text.erase(offset, utf8len(node->text[offset]));
-		if (node->text.empty())
+		if (node->space_after.empty())
 		{
-			//handle_empty();
+			if (node->group.next())
+			{
+				Expects(!text(*node->group.next()));
+				node->group.next()->removeFromGroup();
+			}
+			else
+				return;
+		}
+		else
+			node->space_after = "";
+
+		if (auto tnext = tex::as<tex::Text>(node->group.next()))
+		{
+			node->text.append(move(tnext->text));
+			node->space_after = move(tnext->space_after);
+			tnext->removeFromGroup();
+			node->change();
 		}
 	}
 	void erasePrev()
@@ -358,23 +444,51 @@ struct Caret
 		if (hasSelection())
 			return eraseSelection();
 
-		if (offset <= 0)
+		if (offset > 0)
 		{
-			if (node->group.prev())
-			{
-				Expects(not text(*node->group.prev()));
-				node->group.prev()->removeFromGroup();
-				if (auto tprev = tex::as<tex::Text>(node->group.prev()))
-				{
-					offset = tprev->text.size();
-					node->text.insert(0, tprev->text);
-					node->group.prev()->removeFromGroup();
-				}
-			}
+			prev();
+			eraseNext();
 			return;
 		}
-		prev();
-		eraseNext();
+		if (auto prev = node->group.prev())
+		{
+			if (prev->space_after.empty())
+			{
+				Expects(!text(*node->group.prev()));
+				node->group.prev()->removeFromGroup();
+			}
+			else
+				prev->space_after = "";
+
+			if (auto pt = tex::as<tex::Text>(prev))
+			{
+				offset = pt->text.size();
+				pt->text.append(move(node->text));
+				pt->space_after = move(node->space_after);
+				node->removeFromGroup();
+				node = pt;
+				node->change();
+			}
+		}
+		else if (auto par = tex::as<tex::Par>(node->group()))
+		{
+			if (auto prev_par = tex::as<tex::Par>(par->group.prev()))
+			{
+				while (!par->empty())
+					prev_par->append(par->front().detachFromGroup());
+				prev_par->space_after = move(par->space_after);
+				par->removeFromGroup();
+				prev_par->change();
+				if (auto prevt = tex::as<tex::Text>(node->group.prev());
+					prevt && prevt->space_after.empty())
+				{
+					offset = prevt->text.size();
+					prevt->text.append(move(node->text));
+					prevt->space_after = move(node->space_after);
+					std::exchange(node, prevt)->removeFromGroup();
+				}
+			}
+		}
 	}
 
 	void insertSpace()
@@ -382,10 +496,10 @@ struct Caret
 		if (hasSelection())
 			eraseSelection();
 
-		if (offset == 0 && nullOrSpace(node->group.prev()))
+		if (offset == 0 && (!node->group.prev() || !node->group.prev()->space_after.empty()))
 			return;
-		const auto space = node->insertSpace(offset);
-		node = space->nextText();
+		node->insertSpace(offset);
+		node = node->nextText();
 		offset = 0;
 		resetStart();
 	}
@@ -401,12 +515,15 @@ struct Caret
 		if (offset == 0 && !node->group->contains(node->prevText()))
 			return;
 
-		auto new_par = node->insertAfterThis(tex::Group::make("par"));
+		node->group()->change();
+		auto new_par = node->group()->insertAfterThis(tex::Group::make("par"));
 		auto old_node = node;
 
 		if (offset <= 0)
 		{
-			old_node = node->insertBeforeThis(tex::Text::make());
+			old_node = tex::as<tex::Text>(node->group.prev());
+			if (!old_node)
+				old_node = node->insertBeforeThis(tex::Text::make());
 			new_par->append(node->detachFromGroup());
 		}
 		else if (offset >= node->text.size())
@@ -414,6 +531,7 @@ struct Caret
 		else
 		{
 			node = new_par->append(tex::Text::make(node->text.substr(offset)));
+			node->space_after = move(old_node->space_after);
 			old_node->text.resize(offset);
 		}
 		while (old_node->group.next())
@@ -688,7 +806,7 @@ struct Draftex
 	
 		oui::shift(shift);
 
-		//oui::fill(caret_box, { 0.0f, 0.1f, 1, 0.2f });
+		oui::fill(caret_box, { 0.0f, 0.1f, 1, 0.2f });
 		//for (auto p = caret.node->group(); p != nullptr; p = p->group())
 		//	if (tex::as<tex::Par>(p))
 		//		oui::fill(p->absBox(), { 0, 0, 1, 0.1f });

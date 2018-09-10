@@ -54,16 +54,12 @@ namespace tex
 		{
 			reset(start_x, width);
 
-			skipSpaces();
 			if (rest.empty())
 				return;
 
 			collectLine();
 
-			auto jt = it;
-			while (jt != rest.end() && space(*jt))
-				++jt;
-			position(jt == rest.end() ? Align::left : Align::justified);
+			position(it == rest.end() ? Align::left : Align::justified);
 
 			rest.first = it;
 		}
@@ -77,22 +73,18 @@ namespace tex
 			width_left = width;
 			it = rest.first;
 		}
-		void skipSpaces()
-		{
-			while (it != rest.end() && space(*it))
-				++it;
-			rest.first = it;
-		}
 		void collectLine()
 		{
 			push(_con.lines, intrusive::refcount::make<Line>());
+			Node* last = nullptr;
 			for (it = rest.begin(); it != rest.end(); ++it)
 			{
 				auto& lbox = it->layoutBox();
 				const auto box_width = lbox.width();
 				if (width_left < box_width && it != rest.begin())
 					break;
-				space_count += space(*it) ? 1 : 0;
+				last = &*it;
+				space_count += it->space_after.empty() ? 0 : 1;
 				max_above = std::max(max_above, lbox.above);
 				max_below = std::max(max_below, lbox.below);
 				width_left -= box_width;
@@ -100,22 +92,8 @@ namespace tex
 				if (auto text = as<Text>(&*it))
 					_con.lines->append(intrusive::refcount::claim(text));
 			}
-			unwindEndSpace();
-		}
-		void unwindEndSpace()
-		{
-			Expects(it != rest.begin());
-			if (it != rest.end() && space(*it))
-				return;
-
-			--it;
-			for (; space(*it); --it)
-			{
-				Expects(it != rest.begin());
-				width_left += it->layoutBox().width();
+			if (last && !last->space_after.empty())
 				space_count -= 1;
-			}
-			++it;
 		}
 		void position(const Align alignment)
 		{
@@ -123,14 +101,13 @@ namespace tex
 			for (auto&& e : currentLine())
 			{
 				e.layoutOffset(pen);
-				if (alignment == Align::justified)
-					if (auto sp = as<Space>(&e))
+				if (space_count > 0 && alignment == Align::justified)
+					if (!e.space_after.empty())
 					{
 						const float incr = width_left / space_count;
 						width_left -= incr;
 						space_count -= 1;
-
-						sp->widen(incr);
+						e.widen(incr);
 					}
 				pen.x += e.layoutBox().width();
 			}
@@ -157,20 +134,25 @@ namespace tex
 
 		Vector pen = { 0, 0 };
 
-		for (auto it = p->begin(); it != p->end(); ++it)
+		for (auto it = p->begin(); it != p->end(); )
 		{
 			par.clear();
-			if (it->collect(par))
+			if (!it->collect(par))
 			{
+				it->layoutOffset(pen);
+				pen.y += it->layoutBox().height();
 				++it;
-				while (it != p->end() && it->collect(par))
-					++it;
-				pen.y = par.updateLayout(con, pen, indent, width);
-				indent = 0;
-				if (it == p->end())  break;
+				continue;
 			}
-			it->layoutOffset(pen);
-			pen.y += it->layoutBox().height();
+
+			while (count((it++)->space_after, '\n') < 2) // note the post-increment in the condition 
+			{
+				if (it == p->end() || !it->collect(par))
+					break;
+			}
+
+			pen.y = par.updateLayout(con, pen, indent, width);
+			indent = 0;
 		}
 		return pen.y;
 	}
@@ -182,13 +164,6 @@ namespace tex
 	}
 	bool Group::collect(Paragraph& out)
 	{
-		out.push_back(this);
-		return true;
-	}
-	bool Space::collect(Paragraph& out)
-	{
-		if (count(space, '\n') >= 2)
-			return false;
 		out.push_back(this);
 		return true;
 	}
@@ -206,20 +181,8 @@ namespace tex
 		font = con.font();
 		const auto F = con.fontData(font);
 		_box.width(F->offset(text, con.ptsize(font)), align::min);
+		_box.after += F->offset(" ", con.ptsize(font));
 		_box.height(con.ptsize(font), align::center);
-		return _box;
-	}
-	Box& Space::updateLayout(Context& con)
-	{
-		if (count(space, '\n') >= 2)
-		{
-			Expects(con.mode != Mode::math);
-			_box.width(0, align::min);
-			_box.height(0, align::min);
-			return _box;
-		}
-		_box.width (con.ptsize()*(con.mode == Mode::math ? 0 : 0.25f), align::min);
-		_box.height(con.ptsize(), align::center);
 		return _box;
 	}
 

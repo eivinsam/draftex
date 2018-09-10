@@ -56,26 +56,20 @@
   </Type>
   
   <Type Name="tex::Text">
-    <DisplayString>{text} ({_count} owners)</DisplayString>
-    <Expand>
-      <ExpandedItem>(tex::Node&amp;)*this</ExpandedItem>
-    </Expand>
-  </Type>
-  <Type Name="tex::Space">
-    <DisplayString>[space] ({_count} owners)</DisplayString>
+    <DisplayString>{text} : {space_after} ({_count} owners)</DisplayString>
     <Expand>
       <ExpandedItem>(tex::Node&amp;)*this</ExpandedItem>
     </Expand>
   </Type>
   <Type Name="tex::Command">
-    <DisplayString>\{cmd,sb} ({_count} owners)</DisplayString>
+    <DisplayString>\{cmd,sb} : {space_after} ({_count} owners)</DisplayString>
     <Expand>
       <ExpandedItem>(tex::Node&amp;)*this</ExpandedItem>
     </Expand>
   </Type>
 
   <Type Name="tex::Group">
-    <DisplayString>{__vfptr,na} ({_count} owners)</DisplayString>
+    <DisplayString>{__vfptr,na} : {space_after} ({_count} owners)</DisplayString>
     <Expand>
       <ExpandedItem>(Node&amp;)*this</ExpandedItem>
       <LinkedListItems>
@@ -86,25 +80,26 @@
     </Expand>
   </Type>
   <Type Name="tex::Root">
-    <DisplayString>[root] ({_count} owners)</DisplayString>
+    <DisplayString>[root] : {space_after} ({_count} owners)</DisplayString>
     <Expand>
       <ExpandedItem>(tex::Group*)this,nd</ExpandedItem>
     </Expand>
   </Type>
   <Type Name="tex::Document">
-    <DisplayString>[document] ({_count} owners)</DisplayString>
+    <DisplayString>[document] : {space_after} ({_count} owners)</DisplayString>
     <Expand>
+      <Item Name="_initial_space">_initial_space</Item>
       <ExpandedItem>(tex::Group*)this,nd</ExpandedItem>
     </Expand>
   </Type>
   <Type Name="tex::Par">
-    <DisplayString>[{_type} paragraph] ({_count} owners)</DisplayString>
+    <DisplayString>[{_type} par] : {space_after} ({_count} owners)</DisplayString>
     <Expand>
       <ExpandedItem>(tex::Group*)this,nd</ExpandedItem>
     </Expand>
   </Type>
   <Type Name="tex::Curly">
-    <DisplayString>[curly] ({_count} owners)</DisplayString>
+    <DisplayString>[curly] : {space_after} ({_count} owners)</DisplayString>
     <Expand>
       <ExpandedItem>(tex::Group*)this,nd</ExpandedItem>
     </Expand>

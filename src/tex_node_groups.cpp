@@ -113,7 +113,7 @@ namespace tex
 			constexpr auto padding = Vector{ 2, 2 };
 			const Rectangle lbox =
 			{
-				offset + _box.min(),
+				offset + _box.min() + Vector{ 0, -6 },
 				offset + _box.max()
 			};
 			const Rectangle cbox =
@@ -122,11 +122,11 @@ namespace tex
 				offset + _float_box.max() + padding
 			};
 
-			const auto bend = Point{ cbox.min.x - 10, lbox.max.y };
+			const auto bend = Point{ cbox.min.x - 10, lbox.min.y };
 
 			oui::fill(lbox, color);
 			oui::fill(cbox, color);
-			oui::line(lbox.max, bend, color, 2);
+			oui::line({ lbox.max.x, lbox.min.y }, bend, color, 2);
 			oui::line(bend, Point{ cbox.min.x, std::clamp(bend.y, cbox.min.y, cbox.max.y) }, color, 2);
 
 			Group::render(con, offset + (_float_box.offset - _box.offset));
@@ -136,19 +136,12 @@ namespace tex
 	class Comment : public Float
 	{
 	public:
-		string terminator;
-
 		Comment(string) { }
 
 		bool terminatedBy(string_view) const final { return false; }
 
 		void enforceRules() final 
 		{ 
-			while (auto space = as<Space>(empty() ? nullptr : &back()))
-			{
-				terminator.insert(0, space->space);
-				back().removeFromGroup();
-			}
 			Float::enforceRules();
 		}
 
@@ -156,7 +149,7 @@ namespace tex
 		{
 			out << '%';
 			Group::serialize(out);
-			out << terminator;
+			out << space_after;
 		}
 	};
 
@@ -187,7 +180,7 @@ namespace tex
 		{
 			out << '$';
 			Group::serialize(out);
-			out << '$';
+			out << '$' << space_after;
 		}
 	};
 
@@ -204,6 +197,7 @@ namespace tex
 			out << '\\' << _cmd;
 			for (auto&& e : *this)
 				e.serialize(out);
+			out << space_after;
 		}
 	};
 
@@ -366,10 +360,11 @@ namespace tex
 		{
 			if (empty())
 				return this;
-			if (auto sp = as<Space>(&front()))
+			if (auto tp = as<Text>(&front()); 
+				tp && tp->text.empty() && !tp->space_after.empty())
 			{
-				_initial_space = move(sp->space);
-				sp->removeFromGroup();
+				_initial_space = move(tp->space_after);
+				tp->removeFromGroup();
 			}
 
 			Par* prev_par = nullptr;
@@ -381,17 +376,6 @@ namespace tex
 				{
 					prev_par = pp;
 					continue;
-				}
-				if (auto sp = as<Space>(p))
-				{
-					Expects(prev_par);
-					if (count(sp->space, '\n') >= 2 || prev_par->partype() != Par::Type::simple)
-					{
-						Expects(prev_par->terminator.empty());
-						prev_par->terminator = move(sp->space);
-						sp->removeFromGroup();
-						continue;
-					}
 				}
 
 				if (!prev_par

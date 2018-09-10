@@ -11,28 +11,95 @@ using oui::popCodepoint;
 
 namespace tex
 {
+	Owner<Node> InputReader::_tokenize_single(Group& parent, Mode mode, OnEnd on_end)
+	{
+		switch (**this)
+		{
+		case '\\':
+		{
+			string cmd;
+			skip();
+			if (!*this)
+				throw IllFormed("end of input after '\\'");
+			cmd.push_back(pop());
+			while (*this && isalpha(**this))
+				cmd.push_back(pop());
+
+			if (cmd == "begin")
+			{
+				return tokenize_group(readCurly(), mode);
+			}
+			if (cmd == "end")
+			{
+				auto end_of = readCurly();
+				switch (on_end)
+				{
+				case OnEnd::pass: return Command::make("end " + end_of);
+				case OnEnd::fail: throw IllFormed(std::string("unexpected \\end{" + end_of + "}"));
+				case OnEnd::match:
+					if (parent.terminatedBy(end_of))
+						return nullptr;
+					throw IllFormed(std::string("unexpected \\end{" + end_of + "}"));
+				default:
+					throw std::logic_error("unknown OnEnd value");
+				}
+			}
+			return Command::make(move(cmd));
+		}
+		case '%':
+		{
+			auto result = Group::make("%");
+			auto next_newline = in.find_first_of("\r\n");
+			if (next_newline >= in.size())
+				result->tokenize(*this, mode);
+			else
+			{
+				auto rest_of_line = InputReader{ in.substr(1, next_newline-1) };
+				result->tokenize(rest_of_line, mode);
+				in.remove_prefix(next_newline);
+			}
+			return result;
+		}
+		case '{':
+			skip();
+			return tokenize_group("curly", mode);
+		case '}':
+			skip();
+			if (parent.terminatedBy("}"))
+				return nullptr;
+			throw IllFormed("unexpected }");
+		case '$':
+			skip();
+			if (parent.terminatedBy("$"))
+				return nullptr;
+			else if (mode == Mode::math)
+				throw IllFormed("improperly balanced group or environment in math mode");
+			return tokenize_group("math", Mode::math);
+		default:
+			auto result = Text::make();
+			while (*this && isregular(**this))
+				result->text.push_back(pop());
+			return result;
+		}
+	}
+
+	string InputReader::readCurly()
+	{
+		if (!*this || **this != '{')
+			throw IllFormed("expected '{'");
+		skip();
+		string result;
+		while (*this && **this != '}')
+			result.push_back(pop());
+		if (!*this)
+			throw IllFormed("no matching '}'");
+		skip();
+		return result;
+	}
+
+
 	using uchar = unsigned char;
 
-	constexpr char pop_front(string_view& in)
-	{
-		const char result = in.front();
-		in.remove_prefix(1);
-		return result;
-	}
-
-	static string readCurly(string_view& in)
-	{
-		if (in.empty() || in.front() != '{')
-			throw IllFormed("expected '{'");
-		in.remove_prefix(1);
-		string result;
-		while (!in.empty() && in.front() != '}')
-			result.push_back(pop_front(in));
-		if (in.empty())
-			throw IllFormed("no matching '}'");
-		in.remove_prefix(1);
-		return result;
-	}
 
 	namespace align = oui::align;
 
@@ -96,6 +163,14 @@ namespace tex
 		return result;
 	}
 
+	Owner<Group> tokenize(std::string_view text_in)
+	{
+		auto in = InputReader{ text_in };
+		auto result = Group::make("root");
+		result->tokenize(in, Mode::text);
+		return result;
+	}
+
 
 
 	void Node::change() noexcept
@@ -110,15 +185,23 @@ namespace tex
 			child.commit();
 	}
 
-	Space * Text::insertSpace(int offset)
+	void Text::insertSpace(int offset)
 	{
-		if (offset > text.size())
-			offset = text.size();
-		const auto offset_size = narrow<size_t>(offset);
-		insertAfterThis(Text::make(text.substr(offset_size)));
-		text.resize(offset_size);
-		return insertAfterThis(Space::make());
-
+		change();
+		if (offset >= text.size())
+		{
+			if (!space_after.empty())
+				insertAfterThis(Text::make())
+				->space_after = move(space_after);
+			space_after = " ";
+		}
+		else
+		{
+			insertAfterThis(Text::make(text.substr(offset)))
+				->space_after = move(space_after);
+			text.resize(offset);
+			space_after = " ";
+		}
 	}
 
 	int Text::insert(int offset, std::string_view new_text)
@@ -132,96 +215,12 @@ namespace tex
 
 
 
-	Owner<Node> tokenize_single(string_view& in, Group& parent, Mode mode, OnEnd on_end)
-	{
-		switch (in.front())
-		{
-		case '\\':
-		{
-			string cmd;
-			in.remove_prefix(1);
-			if (in.empty())
-				throw IllFormed("end of input after '\\'");
-			cmd.push_back(pop_front(in));
-			for (; !in.empty() && isalpha(in.front()); in.remove_prefix(1))
-				cmd.push_back(in.front());
 
-			if (cmd == "begin")
-			{
-				return tokenize(in, readCurly(in), mode);
-			}
-			if (cmd == "end")
-			{
-				auto end_of = readCurly(in);
-				switch (on_end)
-				{
-				case OnEnd::pass: return Command::make("end " + end_of);
-				case OnEnd::fail: throw IllFormed(std::string("unexpected \\end{" + end_of + "}"));
-				case OnEnd::match:
-					if (parent.terminatedBy(end_of))
-						return nullptr;
-					throw IllFormed(std::string("unexpected \\end{" + end_of + "}"));
-				default:
-					throw std::logic_error("unknown OnEnd value");
-				}
-			}
-			return Command::make(move(cmd));
-		}
-		case '%':
-		{
-			auto result = Group::make("%");
-			auto next_newline = in.find_first_of("\r\n");
-			if (next_newline >= in.size())
-				result->tokenize(in, mode);
-			else
-			{
-				const auto ender = in[next_newline];
- 				const auto after_ender = in.size() > (next_newline + 1) ? in[next_newline + 1] : 0;
-				if ((after_ender == '\n' || after_ender == '\r') && after_ender != ender)
-					next_newline += 1;
-				auto rest_of_line = in.substr(1, next_newline);
-				result->tokenize(rest_of_line, mode);
-				in.remove_prefix(next_newline + 1);
-			}
-			return result;
-		}
-		case '{':
-			in.remove_prefix(1);
-			return tokenize(in, "curly", mode);
-		case '}':
-			in.remove_prefix(1);
-			if (parent.terminatedBy("}"))
-				return nullptr;
-			throw IllFormed("unexpected }");
-		case '$':
-			in.remove_prefix(1);
-			if (parent.terminatedBy("$"))
-				return nullptr;
-			else if (mode == Mode::math)
-				throw IllFormed("improperly balanced group or environment in math mode");
-			return tokenize(in, "math", Mode::math);
-		default:
-			if (in.front() >= 0 && in.front() <= ' ')
-			{
-				auto result = Space::make();
-				while (!in.empty() && in.front() >= 0 && in.front() <= ' ')
-					result->space.push_back(pop_front(in));
-				return result;
-			}
-			else
-			{
-				auto result = Text::make();
-				while (!in.empty() && isregular(in.front()))
-					result->text.push_back(pop_front(in));
-				return result;
-			}
-		}
-	}
 
-	void Group::tokenize(string_view & in, Mode mode)
+	void Group::tokenize(InputReader& in, Mode mode)
 	{
-		while (!in.empty())
-			if (auto sub = tokenize_single(in, *this, mode, OnEnd::match))
+		while (in)
+			if (auto sub = in.tokenize_single(*this, mode, OnEnd::match))
 				append(move(sub));
 			else break;
 	}

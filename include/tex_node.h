@@ -293,7 +293,7 @@ namespace tex
 		Box& updateLayout(Context& con) final;
 		void render(tex::Context& con, oui::Vector offset) const final;
 
-		void serialize(std::ostream& out) const override { out << text; }
+		void serialize(std::ostream& out) const override { out << text << space_after; }
 		void serialize(std::ostream&& out) { serialize(out); }
 	};
 

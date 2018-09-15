@@ -53,6 +53,7 @@ namespace tex
 	{
 		Box _float_box;
 		Owner<Line> _lines;
+		oui::Color _color;
 	protected:
 		Text* _exit_this_or_next_text() noexcept override { return nullptr; }
 		Text* _exit_this_or_prev_text() noexcept override { return nullptr; }
@@ -76,6 +77,7 @@ namespace tex
 			Ensures(text);
 			return text;
 		};
+		Float(const oui::Color& color) : _color(color) { }
 	public:
 
 
@@ -109,7 +111,6 @@ namespace tex
 
 		void render(tex::Context& con, oui::Vector offset) const final
 		{
-			constexpr auto color = oui::Color{ 1, 0.8, 0.1 };
 			constexpr auto padding = Vector{ 2, 2 };
 			const Rectangle lbox =
 			{
@@ -124,10 +125,14 @@ namespace tex
 
 			const auto bend = Point{ cbox.min.x - 10, lbox.min.y };
 
-			oui::fill(lbox, color);
-			oui::fill(cbox, color);
-			oui::line({ lbox.max.x, lbox.min.y }, bend, color, 2);
-			oui::line(bend, Point{ cbox.min.x, std::clamp(bend.y, cbox.min.y, cbox.max.y) }, color, 2);
+			oui::set(oui::Blend::multiply);
+			oui::set(_color);
+			oui::set(oui::LineThickness{ 2 });
+
+			oui::fill(lbox);
+			oui::fill(cbox);
+			oui::line({ lbox.max.x, lbox.min.y }, bend);
+			oui::line(bend, Point{ cbox.min.x, std::clamp(bend.y, cbox.min.y, cbox.max.y) });
 
 			Group::render(con, offset + (_float_box.offset - _box.offset));
 		}
@@ -136,7 +141,7 @@ namespace tex
 	class Comment : public Float
 	{
 	public:
-		Comment(string) { }
+		Comment(string) : Float({ 1, 0.8, 0.1 }) { }
 
 		bool terminatedBy(string_view) const final { return false; }
 
@@ -171,7 +176,8 @@ namespace tex
 
 		void render(tex::Context& con, oui::Vector offset) const
 		{
-			oui::fill(absBox(), oui::Color{ 0.1f, 0.2f, 1.0f, 0.1f });
+			oui::set(oui::Color{ 0.9f, 0.9f, 1.0f });
+			oui::fill(absBox());
 			
 			Group::render(con, offset);
 		}
@@ -230,8 +236,8 @@ namespace tex
 		void render(tex::Context& con, oui::Vector offset) const final
 		{
 			Group::render(con, offset);
-			oui::fill(oui::align::centerLeft(oui::origo + offset + _box.offset).size({ _box.width(), 1 }), 
-				oui::colors::black);
+			oui::set(oui::colors::black);
+			oui::fill(oui::align::centerLeft(oui::origo + offset + _box.offset).size({ _box.width(), 1 }));
 		}
 	};
 	class VerticalGroup : public Group
@@ -270,6 +276,7 @@ namespace tex
 
 	class Root : public VerticalGroup
 	{
+		std::vector<oui::Vector> _line_max;
 	public:
 		using VerticalGroup::VerticalGroup;
 
@@ -277,6 +284,7 @@ namespace tex
 
 		Box& updateLayout(Context& con) final
 		{
+			_line_max.clear();
 			con.floats.clear();
 			con.section = 0;
 			con.subsection = 0;
@@ -285,6 +293,7 @@ namespace tex
 			const auto em = con.ptsize();
 			con.float_width = std::min(con.width*0.3f, em * 12);
 			const auto main_width = con.width - (con.float_width + em);
+
 
 
 			_box.before = 0;
@@ -303,11 +312,13 @@ namespace tex
 					if (sub.flow() == Flow::vertical)
 					{
 						height += line_height;
+						_line_max.push_back({ line_offset, height });
 						line_height = 0;
 						line_offset = em;
 						const auto sub_align = sbox.before / sbox.width();
 						sbox.offset = { (main_width - em)*sub_align + 0.5f*em, height + sbox.above };
 						height += sbox.height();
+						_line_max.push_back({ sbox.offset.x + sbox.after, height });
 					}
 					else
 					{
@@ -323,6 +334,7 @@ namespace tex
 
 			// pass 2: place floats
 			Vector pen = { con.width - (con.float_width + 0.5f*em) , 0 };
+			auto lm_it = _line_max.begin();
 			for (auto&& sub : con.floats)
 			{
 				auto& lbox = sub->layoutBox();
@@ -337,6 +349,16 @@ namespace tex
 
 				loff.y += lbox.above;
 				loff += -lbox.offset;
+
+				while (lm_it != _line_max.end() && lm_it->y < pen.y - lbox.above)
+					++lm_it;
+				pen.x = lm_it->x;
+				while (lm_it != _line_max.end() && lm_it->y < pen.y + lbox.below)
+				{
+					++lm_it;
+					pen.x = std::max(pen.x, lm_it->x);
+				}
+				pen.x += em;
 
 				sub->floatOffset(pen - loff);
 

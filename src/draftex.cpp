@@ -95,22 +95,21 @@ struct Caret
 		if (!con.window().focus())
 			return;
 
-		auto render_one = [&con](tex::Text* n, int o, const oui::Color& c)
+		auto render_one = [&con](tex::Text* n, int o)
 		{
 			auto box = n->absBox();
 			box.min.x += offsetXof(con, n, o) - 1;
 			box.max.x = box.min.x + 2;
-			oui::fill(box, c);
+			oui::fill(box);
 		};
 
 
-		render_one(node, offset, oui::colors::black);
+		oui::set(oui::Blend::multiply);
+		oui::set(oui::colors::black);
+		render_one(node, offset);
 
-		if (hasSelection())
-			render_one(node_start, offset_start, oui::colors::magenta);
 
-
-		static constexpr auto marker = oui::Color{ 1,1,0,0.5f };
+		oui::set(oui::Color{ 0.9,1,0.5 });
 
 		const auto xe = offsetX(con);
 		const auto xs = offsetXof(con, node_start, offset_start);
@@ -119,7 +118,7 @@ struct Caret
 		{
 			auto box = node->absBox();
 
-			oui::fill({ {box.min.x + xs, box.min.y}, {box.min.x + xe, box.max.y } }, marker);
+			oui::fill({ {box.min.x + xs, box.min.y}, {box.min.x + xe, box.max.y } });
 
 			return;
 		}
@@ -131,14 +130,14 @@ struct Caret
 		{
 			auto box = node->absBox();
 			(fwd ? box.max.x : box.min.x) = box.min.x + xe;
-			oui::fill(box, marker);
+			oui::fill(box);
 			box = node_start->absBox();
 			(fwd ? box.min.x : box.max.x) = box.min.x + xs;
-			oui::fill(box, marker);
+			oui::fill(box);
 		}
 
 		for (auto it = ++to_mark.begin(), end = --to_mark.end(); it != end; ++it)
-			oui::fill((*it)->absBox(), marker);
+			oui::fill((*it)->absBox());
 	}
 
 	int repairOffset(int off)
@@ -175,87 +174,6 @@ struct Caret
 
 	void prepare(Move /*move*/)
 	{
-		//const auto rem_node = [](tex::Node& n)
-		//{
-		//	if (auto prev = n.group.prev();
-		//		prev && prev->space_after.empty())
-		//		prev->space_after = std::move(n.space_after);
-		//	n.group->change();
-		//	n.removeFromGroup();
-		//};
-		//
-		//if (node->text.empty())
-		//{
-		//	auto g = node->group();
-		//	switch (move)
-		//	{
-		//	case Move::forward:
-		//		if (auto prev = node->prevText())
-		//		{
-		//			rem_node(*std::exchange(node, prev));
-		//			offset = node->text.size();
-		//			break;
-		//		}
-		//		else
-		//			return;
-		//	case Move::backward:
-		//		if (auto next = node->nextText())
-		//		{
-		//			rem_node(*std::exchange(node, next));
-		//			offset = 0;
-		//			break;
-		//		}
-		//		else
-		//			return;
-		//	}
-		//	while (g->empty())
-		//		rem_node(*std::exchange(g, g->group()));
-		//}
-
-		//if (node->text.empty())
-		//{
-		//	if (!node->group.prev() && !)
-		//	{
-		//
-		//	}
-		//
-		//}
-		//
-		//
-		//if (auto prev = tex::as<tex::Text>(node->group.prev()); prev && node->text.empty())
-		//{
-		//	Expects(!prev->space_after.empty());
-		//	if (!node->space_after.empty())
-		//	{
-		//		switch (move)
-		//		{
-		//		case Move::forward:  erasePrev(); break;
-		//		case Move::backward: eraseNext(); break;
-		//		}
-		//	}
-		//	if (!node->group.prev() && !node->group.next() && typeid(*node->group()) == typeid(tex::Par))
-		//	{
-		//		const auto to_remove = node->group();
-		//		switch (move)
-		//		{
-		//		case Move::forward:
-		//			if (const auto candidate = node->prevText())
-		//				node = candidate;
-		//			else
-		//				return;
-		//			offset = node->text.size();
-		//			break;
-		//		case Move::backward:
-		//			if (const auto candidate = node->nextText())
-		//				node = candidate;
-		//			else
-		//				return;
-		//			offset = 0;
-		//			break;
-		//		}
-		//		to_remove->removeFromGroup();
-		//	}
-		//}
 	}
 
 	void next()
@@ -780,7 +698,7 @@ struct Draftex
 							std::ostringstream os;
 							for (auto& te : *p)
 								te.serialize(os);
-							window.title("draftex " + os.str());
+							window.title("draftex - " + os.str());
 							return;
 						}
 		window.title("draftex");
@@ -806,7 +724,8 @@ struct Draftex
 	
 		oui::shift(shift);
 
-		oui::fill(caret_box, { 0.0f, 0.1f, 1, 0.2f });
+		oui::set(oui::Color{ 0.0f, 0.1f, 1, 0.2f });
+		oui::fill(caret_box);
 		//for (auto p = caret.node->group(); p != nullptr; p = p->group())
 		//	if (tex::as<tex::Par>(p))
 		//		oui::fill(p->absBox(), { 0, 0, 1, 0.1f });
@@ -819,11 +738,14 @@ struct Draftex
 
 		if (!options.empty())
 		{
-			oui::fill(window.area(), oui::Color{ 1,1,1,0.3f });
+			oui::set(oui::Blend::normal);
+			oui::set(oui::Color{ 1,1,1,0.3f });
+			oui::fill(window.area());
 			auto optfont = context.fontData(tex::FontType::sans);
 
 			const float h = 24;
 
+			oui::set(oui::colors::black);
 			oui::Point pen = { 0, 0 };
 			for (auto&& opt : options)
 			{
@@ -834,7 +756,7 @@ struct Draftex
 					pen.y + h * 0.85f
 				};
 				oui::fill(oui::align::topLeft(underline_tlc)
-					.size({ optfont->offset(opt.name.substr(opt.highlight, 1), h), h*0.0625f }), oui::colors::black);
+					.size({ optfont->offset(opt.name.substr(opt.highlight, 1), h), h*0.0625f }));
 				pen.y += h;
 			}
 		}

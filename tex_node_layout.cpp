@@ -181,7 +181,8 @@ namespace tex
 		font = con.font();
 		const auto F = con.fontData(font);
 		_box.width(F->offset(text, con.ptsize(font)), align::min);
-		_box.after += F->offset(" ", con.ptsize(font));
+		if (!space_after.empty())
+			_box.after += F->offset(" ", con.ptsize(font));
 		_box.height(con.ptsize(font), align::center);
 		return _box;
 	}

@@ -79,6 +79,7 @@ namespace tex
 
 		short section = 0;
 		short subsection = 0;
+		short footnote = 0;
 
 		float float_width;
 		//Vector float_margin;

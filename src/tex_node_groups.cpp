@@ -89,13 +89,13 @@ namespace tex
 		{
 			con.floats.push_back(this);
 
-			auto old_size = con.font_size.push(shift(con.font_size, -2));
 
 			const auto em = con.ptsize();
 			_box.above = _box.below = em * 0.5f;
 			_box.before = 0;
 			_box.after = em * 0.125f;
 
+			auto old_size = con.font_size.push(shift(con.font_size, -2));
 			for (auto&& sub : *this)
 				sub.updateLayout(con);
 
@@ -109,7 +109,7 @@ namespace tex
 			return _box;
 		}
 
-		void render(tex::Context& con, oui::Vector offset) const final
+		void render(tex::Context& con, oui::Vector offset) const override
 		{
 			constexpr auto padding = Vector{ 2, 2 };
 			const Rectangle lbox =
@@ -155,6 +155,51 @@ namespace tex
 			out << '%';
 			Group::serialize(out);
 			out << space_after;
+		}
+	};
+
+	class Footnote : public Float
+	{
+		string _id;
+		Font _font;
+	public:
+		Footnote(string) : Float({ 0.92, 0.98, 1 }) { }
+
+		bool terminatedBy(string_view) const final { return false; }
+
+		void enforceRules() final
+		{
+			Float::enforceRules();
+		}
+
+		Box& updateLayout(Context& con) final
+		{
+			Float::updateLayout(con);
+
+			con.footnote += 1;
+			_id = std::to_string(con.footnote);
+			_font = { con.font_type, shift(con.font_size, -3) };
+
+			_box.after = con.fontData(_font)->offset(_id, con.ptsize(_font));
+
+			return _box;
+		}
+		void render(tex::Context& con, oui::Vector offset) const final
+		{
+			const auto em = con.ptsize(_font);
+			con.fontData(_font)->drawLine(offset + _box.min() - oui::Vector{ 0, 0.2f*em },
+				_id, oui::colors::black, em);
+
+			con.fontData(_font)->drawLine(offset + contentBox().min() -  oui::Vector{ _box.width() + em*0.125f, em*0.2f }, 
+				_id, oui::colors::black, em);
+			Float::render(con, offset);
+		}
+
+		void serialize(std::ostream& out) const final
+		{
+			out << "\\footnote{";
+			Group::serialize(out);
+			out << '}' << space_after;
 		}
 	};
 
@@ -288,6 +333,7 @@ namespace tex
 			con.floats.clear();
 			con.section = 0;
 			con.subsection = 0;
+			con.footnote = 0;
 			con.lines = nullptr;
 
 			const auto em = con.ptsize();
@@ -362,7 +408,7 @@ namespace tex
 
 				sub->floatOffset(pen - loff);
 
-				pen.y += sub->contentBox().height() + em;
+				pen.y += sub->contentBox().height() + 0.5f*em;
 			}
 			con.floats.clear();
 
@@ -441,10 +487,11 @@ namespace tex
 
 	Owner<Group> Group::make(string name)
 	{
-		static constexpr frozen::unordered_map<string_view, Owner<Group>(*)(string), 10>
+		static constexpr frozen::unordered_map<string_view, Owner<Group>(*)(string), 11>
 			maker_lookup =
 		{
 		{ "%", make_group<Comment> },
+		{ "footnote", make_group<Footnote> },
 		{ "math", make_group<Math> },
 		{ "frac", make_group<Frac> },
 		{ "par", make_group<Par> },
@@ -551,7 +598,7 @@ namespace tex
 
 	Node * Command::expand()
 	{
-		static constexpr frozen::unordered_map<string_view, CommandExpander, 5> cases =
+		static constexpr frozen::unordered_map<string_view, CommandExpander, 6> cases =
 		{
 			//{ "newcommand", &expand_aoa },
 			//{ "usepackage", &expand_coa },
@@ -560,7 +607,8 @@ namespace tex
 			{ "title", &expand_C },
 			{ "author", &expand_C },
 			{ "section", &expand_C },
-			{ "subsection", &expand_C }
+			{ "subsection", &expand_C },
+			{ "footnote", &expand_C }
 		};
 
 		auto cmd_case = cases.find(cmd);

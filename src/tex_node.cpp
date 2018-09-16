@@ -225,6 +225,12 @@ namespace tex
 			else break;
 	}
 
+	void Group::tokenizeText(string_view text)
+	{
+		InputReader in{ text };
+		tokenize(in, Mode::text);
+	}
+
 
 
 	void Node::popArgument(Group & dst)

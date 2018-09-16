@@ -226,8 +226,7 @@ namespace intrusive
 			if constexpr (!P_void)
 				le->_parent = nullptr;
 			_last = std::exchange(le->_prev, nullptr);
-			if (_last)
-				_e(_last)->_next = nullptr;
+			(_last ? _e(_last)->_next : _first) = nullptr;
 		}
 
 		template <class S>

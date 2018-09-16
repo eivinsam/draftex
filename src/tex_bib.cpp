@@ -159,9 +159,16 @@ namespace tex
 	{
 		auto lb = std::lower_bound(_entries.begin(), _entries.end(), name, 
 			[](const Entry& e, const string_view& name) { return e.name < name;  });
-		if (lb != _entries.end() & lb->name == name)
+		if (lb != _entries.end() && lb->name == name)
 			return std::addressof(*lb);
 		else
 			return nullptr;
+	}
+	const string* Bib::Entry::tag(string_view tag_name) const
+	{
+		for (auto&& e : tags)
+			if (e.name == tag_name)
+				return &e.content;
+		return nullptr;
 	}
 }

@@ -1,5 +1,7 @@
 #include "tex_node_internal.h"
+#include "tex_bib.h"
 #include <tex_paragraph.h>
+#include "file_mapping.h"
 
 namespace tex
 {
@@ -46,6 +48,27 @@ namespace tex
 			out << '{';
 			Group::serialize(out);
 			out << '}';
+		}
+	};
+
+	class Bibliography : public Group
+	{
+		std::optional<Bib> _data;
+	public:
+		Bibliography(string) { }
+
+		bool terminatedBy(std::string_view) const final { return false; }
+
+		const Bib::Entry* entry(string_view key)
+		{
+			if (!_data)
+			{
+				const auto text = as<Text>(&*begin());
+				Expects(text && !text->group.next());
+
+				_data.emplace(FileMapping((text->text + ".bib").c_str()).data);
+			}
+			return (*_data)[key];
 		}
 	};
 
@@ -114,7 +137,7 @@ namespace tex
 			constexpr auto padding = Vector{ 2, 2 };
 			const Rectangle lbox =
 			{
-				offset + _box.min() + Vector{ 0, -6 },
+				offset + _box.min() + Vector{ 0, -2 },
 				offset + _box.max()
 			};
 			const Rectangle cbox =
@@ -123,7 +146,7 @@ namespace tex
 				offset + _float_box.max() + padding
 			};
 
-			const auto bend = Point{ cbox.min.x - 10, lbox.min.y };
+			const auto bend = Point{ cbox.min.x - 10, lbox.min.y+1 };
 
 			oui::set(oui::Blend::multiply);
 			oui::set(_color);
@@ -131,7 +154,7 @@ namespace tex
 
 			oui::fill(lbox);
 			oui::fill(cbox);
-			oui::line({ lbox.max.x, lbox.min.y }, bend);
+			oui::line({ lbox.max.x, lbox.min.y + 1 }, bend);
 			oui::line(bend, Point{ cbox.min.x, std::clamp(bend.y, cbox.min.y, cbox.max.y) });
 
 			Group::render(con, offset + (_float_box.offset - _box.offset));
@@ -163,7 +186,7 @@ namespace tex
 		string _id;
 		Font _font;
 	public:
-		Footnote(string) : Float({ 0.92, 0.98, 1 }) { }
+		Footnote(string) : Float(oui::colors::white) { }//Float({ 0.92, 0.98, 1 }) { }
 
 		bool terminatedBy(string_view) const final { return false; }
 
@@ -201,6 +224,58 @@ namespace tex
 			Group::serialize(out);
 			out << '}' << space_after;
 		}
+	};
+
+	class Cite : public Float
+	{
+		string _key;
+		Font _font;
+	public:
+		Cite(string key) : Float(oui::Color{ 0.8, 1, 0.75 }), _key(key) { }
+
+		bool terminatedBy(std::string_view) const final { return false; }
+
+		Box& updateLayout(Context& con) final
+		{
+			while (!empty())
+				pop_back();
+
+			if (auto bib = bibliography())
+			{
+				if (auto match = bib->entry(_key))
+				{
+					if (auto author = match->tag("author"))
+						tokenizeText(*author + " ");
+					else
+						tokenizeText("[No author field] ");
+
+					if (auto title = match->tag("title"))
+						tokenizeText(*title);
+					else
+						tokenizeText("[No title field]");
+				}
+				else
+					tokenizeText("[No match in bibilography]");
+			}
+			else
+				tokenizeText("[No bibliography]");
+
+
+			Float::updateLayout(con);
+
+			_font = { con.font_type, con.font_size };
+			_box.after = con.fontData(_font)->offset("("+_key+")", con.ptsize(_font));
+
+			return _box;
+		}
+		void render(tex::Context& con, oui::Vector offset) const final
+		{
+			const auto em = con.ptsize(_font);
+			con.fontData(_font)->drawLine(offset + _box.min(), "("+_key+")", oui::colors::black, em);
+
+			Float::render(con, offset);
+		}
+
 	};
 
 	class Math : public Group
@@ -326,6 +401,8 @@ namespace tex
 		using VerticalGroup::VerticalGroup;
 
 		bool terminatedBy(string_view) const final { return false; }
+
+		Bibliography* bibliography() const noexcept { return nullptr; }
 
 		Box& updateLayout(Context& con) final
 		{
@@ -458,6 +535,16 @@ namespace tex
 
 		bool terminatedBy(string_view token) const final { return token == "document"; }
 
+		Bibliography* bibliography() const noexcept
+		{
+			for (auto&& e : *this)
+				if (auto p = as<Par>(&e))
+				for (auto&& pe : *p)
+					if (auto bib = as<Bibliography>(&pe))
+						return bib;
+			return nullptr;
+		}
+
 		bool collect(Paragraph&) final { return false; }
 
 		Box& updateLayout(Context& con) override
@@ -479,6 +566,7 @@ namespace tex
 	};
 
 
+
 	template <class G>
 	Owner<Group> make_group(string name)
 	{
@@ -487,7 +575,7 @@ namespace tex
 
 	Owner<Group> Group::make(string name)
 	{
-		static constexpr frozen::unordered_map<string_view, Owner<Group>(*)(string), 11>
+		static constexpr frozen::unordered_map<string_view, Owner<Group>(*)(string), 12>
 			maker_lookup =
 		{
 		{ "%", make_group<Comment> },
@@ -500,7 +588,8 @@ namespace tex
 		{ "title", make_group<Par> },
 		{ "author", make_group<Par> },
 		{ "section", make_group<Par> },
-		{ "subsection", make_group<Par> }
+		{ "subsection", make_group<Par> },
+		{ "bibliography", make_group<Bibliography> }
 		};
 
 		return find(maker_lookup, name, default_value = &make_group<Curly>)(std::move(name));
@@ -595,20 +684,37 @@ namespace tex
 		return result;
 	}
 
+	Owner<Group> expand_cite(Command* src)
+	{
+		if (auto cp = as<Curly>(src->group.next()))
+		{
+			auto key = as<Text>(&*cp->begin());
+			Expects(key && !key->group.next());
+			auto result = intrusive::refcount::make<Cite>(key->text);
+			cp->removeFromGroup();
+			return result;
+		}
+		else
+			throw IllFormed("missing { after \\cite");
+
+	}
+
 
 	Node * Command::expand()
 	{
-		static constexpr frozen::unordered_map<string_view, CommandExpander, 6> cases =
+		static constexpr frozen::unordered_map<string_view, CommandExpander, 8> cases =
 		{
-			//{ "newcommand", &expand_aoa },
-			//{ "usepackage", &expand_coa },
-			//{ "documentclass", &expand_coa },
-			{ "frac", &expand_AA },
-			{ "title", &expand_C },
-			{ "author", &expand_C },
-			{ "section", &expand_C },
-			{ "subsection", &expand_C },
-			{ "footnote", &expand_C }
+		//{ "newcommand", &expand_aoa },
+		//{ "usepackage", &expand_coa },
+		//{ "documentclass", &expand_coa },
+		{ "frac", &expand_AA },
+		{ "title", &expand_C },
+		{ "author", &expand_C },
+		{ "section", &expand_C },
+		{ "subsection", &expand_C },
+		{ "footnote", &expand_C },
+		{ "bibliography", &expand_C },
+		{ "cite", &expand_cite }
 		};
 
 		auto cmd_case = cases.find(cmd);

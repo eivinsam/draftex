@@ -8,6 +8,7 @@ namespace tex
 	class Group;
 	class Command;
 	class Text;
+	class Bibliography;
 
 	class Paragraph;
 	class InputReader;
@@ -96,6 +97,8 @@ namespace tex
 		auto allTextBefore() { return xpr::generator(&Node::prevText, this); }
 		auto allTextAfter()  { return xpr::generator(&Node::nextText, this); }
 
+		virtual Bibliography* bibliography() const noexcept;
+
 		virtual bool collect(Paragraph& out);
 		virtual Box& updateLayout(Context& con) = 0;
 		virtual void render(Context& con, Vector offset) const = 0;
@@ -150,6 +153,7 @@ namespace tex
 		static Owner<Group> make(string name);
 
 		virtual void tokenize(InputReader& in, Mode mode);
+		void tokenizeText(string_view);
 		virtual bool terminatedBy(std::string_view token) const = 0;
 
 		Node* expand() override;
@@ -224,9 +228,14 @@ namespace tex
 			result += n->contentBox().offset;
 		return result;
 	}
+	inline Bibliography* Node::bibliography() const noexcept
+	{
+		return group()->bibliography();
+	}
 
 	class Command : public Node
 	{
+		FontSize _font_size;
 	public:
 		string cmd;
 

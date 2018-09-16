@@ -170,9 +170,11 @@ namespace tex
 
 	Box& Command::updateLayout(Context& con)
 	{
-		const auto F = con.fontData();
-		_box.width(F->offset(cmd, con.ptsize()), align::min);
-		_box.height(con.ptsize(), align::center);
+		_font_size = con.font_size;
+		const auto em = con.ptsize(_font_size);
+		const auto F = con.fontData(FontType::sans);
+		_box.width(F->offset(cmd, em), align::min);
+		_box.height(em, align::center);
 		return _box;
 	}
 	Box& Text::updateLayout(Context& con)
@@ -295,7 +297,7 @@ namespace tex
 	void Command::render(Context& con, Vector offset) const
 	{
 		con.fontData(tex::FontType::sans)->drawLine(offset + _box.min(), cmd,
-			oui::Color{ .3f, .9f, .1f }, con.ptsize(tex::FontSize::normalsize));
+			oui::Color{ .3f, .9f, .1f }, con.ptsize(_font_size));
 	}
 	void Text::render(tex::Context& con, oui::Vector offset) const
 	{

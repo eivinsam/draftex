@@ -799,12 +799,8 @@ namespace menu
 
 }
 
-#include "tex_bib.h"
-
 int main()
 {
-	auto bib = tex::Bib(FileMapping("test.bib").data);
-
 	oui::debug::println("sizeof Node: ", sizeof(tex::Node));
 
 	Draftex state;

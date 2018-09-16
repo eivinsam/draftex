@@ -20,6 +20,8 @@ namespace tex
 			string name;
 
 			std::vector<Tag> tags;
+
+			const string* tag(string_view name) const;
 		};
 
 		std::vector<Entry> _entries;

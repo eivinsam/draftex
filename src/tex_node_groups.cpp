@@ -51,6 +51,20 @@ namespace tex
 		}
 	};
 
+	class Emph : public Group
+	{
+	public:
+		Emph(string) { }
+
+		bool terminatedBy(string_view) const final { return false; }
+
+		Box& updateLayout(Context& con) final
+		{
+			auto old_type = con.font_type.push(FontType::italic);
+			return Group::updateLayout(con);
+		}
+	};
+
 	class Bibliography : public Group
 	{
 		std::optional<Bib> _data;
@@ -230,6 +244,8 @@ namespace tex
 	{
 		string _key;
 		Font _font;
+		Text* _this_or_prev_stop() noexcept override { return prevStop(); }
+		Text* _this_or_next_stop() noexcept override { return nextStop(); }
 	public:
 		Cite(string key) : Float(oui::Color{ 0.8, 1, 0.75 }), _key(key) { }
 
@@ -259,6 +275,8 @@ namespace tex
 			}
 			else
 				tokenizeText("[No bibliography]");
+
+			expand();
 
 
 			Float::updateLayout(con);
@@ -575,10 +593,11 @@ namespace tex
 
 	Owner<Group> Group::make(string name)
 	{
-		static constexpr frozen::unordered_map<string_view, Owner<Group>(*)(string), 12>
+		static constexpr frozen::unordered_map<string_view, Owner<Group>(*)(string), 13>
 			maker_lookup =
 		{
 		{ "%", make_group<Comment> },
+		{ "emph", make_group<Emph> },
 		{ "footnote", make_group<Footnote> },
 		{ "math", make_group<Math> },
 		{ "frac", make_group<Frac> },
@@ -677,6 +696,7 @@ namespace tex
 			cp->expand();
 			while (!cp->empty())
 				result->append(cp->front().detachFromGroup());
+			result->space_after = move(cp->space_after);
 			cp->detachFromGroup();
 		}
 		else
@@ -702,7 +722,7 @@ namespace tex
 
 	Node * Command::expand()
 	{
-		static constexpr frozen::unordered_map<string_view, CommandExpander, 8> cases =
+		static constexpr frozen::unordered_map<string_view, CommandExpander, 9> cases =
 		{
 		//{ "newcommand", &expand_aoa },
 		//{ "usepackage", &expand_coa },
@@ -714,7 +734,8 @@ namespace tex
 		{ "subsection", &expand_C },
 		{ "footnote", &expand_C },
 		{ "bibliography", &expand_C },
-		{ "cite", &expand_cite }
+		{ "cite", &expand_cite },
+		{ "emph", &expand_C }
 		};
 
 		auto cmd_case = cases.find(cmd);

@@ -21,6 +21,8 @@ using tex::int_size;
 
 using oui::utf8len;
 
+using namespace tex;
+
 #pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
 
 std::string readFile(const std::string& filename)
@@ -53,6 +55,114 @@ inline auto is_below(const tex::Node& node)
 	{
 		return other.absTop() >= node.absBottom();
 	};
+}
+
+template <class T>
+class Stack
+{
+	std::vector<T> _data;
+public:
+
+	bool empty() const { return _data.empty(); }
+
+	void push(T&& value) { _data.push_back(std::move(value)); }
+	void push(const T& value) { _data.push_back(value); }
+
+	T& peek() { return _data.back(); }
+	const T& peek() const { return _data.back(); }
+
+	T pop() { auto result = move(_data.back()); _data.pop_back(); return result; }
+
+	void clear() { _data.clear(); }
+};
+
+template <class T, class D = std::default_delete<T>>
+using uptr = std::unique_ptr<T, D>;
+
+class Reaction
+{
+public:
+	virtual ~Reaction() { }
+	virtual uptr<Reaction> perform() = 0;
+};
+
+template <class T>
+Owner<T> claim(T* ptr) { return intrusive::refcount::claim(ptr); }
+
+
+template <class A>
+class Do : public Reaction, public A
+{
+public:
+	template <class... Args>
+	Do(Args&&... args) : A{ std::forward<Args>(args)... } { }
+
+	uptr<Reaction> perform() final { return A::perform(); }
+};
+
+template <class A, class... Args>
+uptr<Do<A>> make_action(Args&&... a)
+{
+	return std::make_unique<Do<A>>(std::forward<Args>(a)...);
+}
+
+struct RemoveText
+{
+	Owner<Text> node;
+	int offset;
+	int length;
+
+	uptr<Reaction> perform();
+};
+struct InsertText
+{
+	Owner<Text> node;
+	int offset;
+	string text;
+
+	uptr<Reaction> perform();
+};
+uptr<Reaction> RemoveText::perform()
+{
+	auto redo = make_action<InsertText>(node, offset, node->text.substr(offset, length));
+	node->text.erase(offset, length);
+	node->change();
+	return redo;
+}
+uptr<Reaction> InsertText::perform()
+{
+	auto redo = make_action<RemoveText>(node, offset, text.size());
+	node->text.insert(offset, text);
+	node->change();
+	return redo;
+}
+
+struct RemoveSpace
+{
+	Owner<Node> node;
+
+	uptr<Reaction> perform();
+};
+struct InsertSpace
+{
+	Owner<Node> node;
+	string space;
+
+	uptr<Reaction> perform();
+};
+uptr<Reaction> RemoveSpace::perform()
+{
+	auto redo = make_action<InsertSpace>(node, node->space_after);
+	node->space_after = "";
+	node->change();
+	return redo;
+}
+uptr<Reaction> InsertSpace::perform()
+{
+	auto redo = make_action<RemoveSpace>(node);
+	node->space_after = space;
+	node->change();
+	return redo;
 }
 
 struct Caret
@@ -302,7 +412,7 @@ struct Caret
 		}
 	}
 
-	void eraseSelection()
+	uptr<Reaction> eraseSelection()
 	{
 		Expects(hasSelection());
 
@@ -310,14 +420,14 @@ struct Caret
 		{
 			if (offset_start > offset)
 				std::swap(offset_start, offset);
-			node->text.erase(offset_start, offset - offset_start);
+			auto result = Do<RemoveText>(claim(node), offset_start, offset).perform();
 			offset = offset_start;
-			node->change();
-			return;
+			return result;
 		}
+		return {};
 	}
 
-	void eraseNext()
+	uptr<Reaction> eraseNext()
 	{
 		target_x = no_target;
 
@@ -326,26 +436,21 @@ struct Caret
 
 		if (offset < maxOffset())
 		{
-			node->change();
-			node->text.erase(offset, utf8len(node->text[offset]));
-			if (node->text.empty())
-			{
-				//handle_empty();
-			}
-			return;
+			return Do<RemoveText>(claim(node), offset, utf8len(node->text[offset])).perform();
 		}
+		uptr<Reaction> result;
 		if (node->space_after.empty())
 		{
-			if (node->group.next())
-			{
-				Expects(!text(*node->group.next()));
-				node->group.next()->removeFromGroup();
-			}
-			else
-				return;
+			return result;
+			//if (!node->group.next())
+			//	return {};
+			//Expects(!text(*node->group.next()));
+			//node->group.next()->removeFromGroup();
 		}
 		else
-			node->space_after = "";
+		{
+			result = Do<RemoveSpace>(claim(node)).perform();
+		}
 
 		if (auto tnext = tex::as<tex::Text>(node->group.next()))
 		{
@@ -354,8 +459,9 @@ struct Caret
 			tnext->removeFromGroup();
 			node->change();
 		}
+		return result;
 	}
-	void erasePrev()
+	uptr<Reaction> erasePrev()
 	{
 		target_x = no_target;
 
@@ -365,18 +471,21 @@ struct Caret
 		if (offset > 0)
 		{
 			prev();
-			eraseNext();
-			return;
+			return eraseNext();
 		}
+		uptr<Reaction> result;
 		if (auto prev = node->group.prev())
 		{
 			if (prev->space_after.empty())
 			{
-				Expects(!text(*node->group.prev()));
-				node->group.prev()->removeFromGroup();
+				return result;
+				//Expects(!text(*node->group.prev()));
+				//node->group.prev()->removeFromGroup();
 			}
 			else
-				prev->space_after = "";
+			{
+				result = Do<RemoveSpace>(claim(prev)).perform();
+			}
 
 			if (auto pt = tex::as<tex::Text>(prev))
 			{
@@ -388,25 +497,26 @@ struct Caret
 				node->change();
 			}
 		}
-		else if (auto par = tex::as<tex::Par>(node->group()))
-		{
-			if (auto prev_par = tex::as<tex::Par>(par->group.prev()))
-			{
-				while (!par->empty())
-					prev_par->append(par->front().detachFromGroup());
-				prev_par->space_after = move(par->space_after);
-				par->removeFromGroup();
-				prev_par->change();
-				if (auto prevt = tex::as<tex::Text>(node->group.prev());
-					prevt && prevt->space_after.empty())
-				{
-					offset = prevt->text.size();
-					prevt->text.append(move(node->text));
-					prevt->space_after = move(node->space_after);
-					std::exchange(node, prevt)->removeFromGroup();
-				}
-			}
-		}
+		return result;
+		//else if (auto par = tex::as<tex::Par>(node->group()))
+		//{
+		//	if (auto prev_par = tex::as<tex::Par>(par->group.prev()))
+		//	{
+		//		while (!par->empty())
+		//			prev_par->append(par->front().detachFromGroup());
+		//		prev_par->space_after = move(par->space_after);
+		//		par->removeFromGroup();
+		//		prev_par->change();
+		//		if (auto prevt = tex::as<tex::Text>(node->group.prev());
+		//			prevt && prevt->space_after.empty())
+		//		{
+		//			offset = prevt->text.size();
+		//			prevt->text.append(move(node->text));
+		//			prevt->space_after = move(node->space_after);
+		//			std::exchange(node, prevt)->removeFromGroup();
+		//		}
+		//	}
+		//}
 	}
 
 	void insertSpace()
@@ -504,13 +614,26 @@ namespace menu
 	extern const Option main[4];
 }
 
+class History
+{
+	Stack<uptr<Reaction>> _undo;
+	Stack<uptr<Reaction>> _redo;
+public:
+
+	void add(uptr<Reaction> a) { _undo.push(move(a)); _redo.clear(); }
+
+	void undo() { if (!_undo.empty()) _redo.push(_undo.pop()->perform()); }
+	void redo() { if (!_redo.empty()) _undo.push(_redo.pop()->perform()); }
+};
+
 struct Draftex
 {
 	oui::Window window;
 	tex::Context context;
-	bool shift_down = false;
 
 	tex::Owner<tex::Group> tokens;
+
+	History history;
 
 	decltype(xpr::those.of(menu::main)) options = { nullptr, nullptr };
 	Caret caret{ nullptr, 0 };
@@ -560,19 +683,18 @@ struct Draftex
 
 			switch (key)
 			{
-			case Key::shift: shift_down = true; break;
 			case Key::home:  caret.home(); break;
 			case Key::end:   caret.end();  break;
 			case Key::right: caret.next(); break;
 			case Key::left:  caret.prev(); break;
 			case Key::up:     caret.up(context); break;
 			case Key::down: caret.down(context); break;
-			case Key::backspace: caret.erasePrev(); break;
-			case Key::del:       caret.eraseNext(); break;
+			case Key::backspace: history.add(caret.erasePrev()); break;
+			case Key::del:       history.add(caret.eraseNext()); break;
 			case Key::space:     caret.insertSpace(); break;
 			case Key::enter:     caret.breakParagraph(); break;
 			case Key::tab:
-				shift_down ? 
+				oui::pressed(Key::shift) ? 
 					caret.prevStop() : 
 					caret.nextStop();
 				break;
@@ -580,19 +702,26 @@ struct Draftex
 				if (!is_repeat) 
 					toggle_menu();
 				break;
+			case Key::z:
+				if (oui::pressed(Key::ctrl))
+				{
+					oui::pressed(Key::shift) ?
+						history.redo() :
+						history.undo();
+					ignore_char = true;
+				}
+				break;
 			default:
 				oui::debug::println("key ", static_cast<int>(key));
 				return;
 			}
-			if (!shift_down)
+			if (!oui::pressed(Key::shift))
 				caret.resetStart();
 			window.redraw();
 		};
-		oui::input.keyup = [this](oui::Key key)
-		{
-			if (key == oui::Key::shift)
-				shift_down = false;
-		};
+		//oui::input.keyup = [this](oui::Key key)
+		//{
+		//};
 		oui::input.character = [this](int charcode)
 		{
 			if (charcode <= ' ')
@@ -605,7 +734,11 @@ struct Draftex
 				return;
 			}
 
-			caret.offset += caret.node->insert(caret.offset, oui::utf8(charcode));
+			auto text = oui::utf8(charcode);
+
+			history.add(Do<InsertText>(claim(caret.node), caret.offset, text).perform());
+
+			caret.offset += text.length();
 			caret.target_x = Caret::no_target;
 			caret.resetStart();
 			window.redraw();

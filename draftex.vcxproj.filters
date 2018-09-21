@@ -36,6 +36,12 @@
     <ClCompile Include="src\file_mapping.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\edit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\caret.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="tex.natvis" />
@@ -82,6 +88,12 @@
     </ClInclude>
     <ClInclude Include="include\tex_context.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\edit.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\caret.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

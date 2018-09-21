@@ -118,7 +118,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\caret.cpp" />
     <ClCompile Include="src\draftex.cpp" />
+    <ClCompile Include="src\edit.cpp" />
     <ClCompile Include="src\file_mapping.cpp" />
     <ClCompile Include="src\small_string.cpp" />
     <ClCompile Include="src\tex_bib.cpp" />
@@ -147,8 +149,10 @@
     <ClInclude Include="include\tex_node.h" />
     <ClInclude Include="include\tex_paragraph.h" />
     <ClInclude Include="include\tex_util.h" />
+    <ClInclude Include="src\edit.h" />
     <ClInclude Include="src\frozen_with_string_view.h" />
     <ClInclude Include="src\file_mapping.h" />
+    <ClInclude Include="src\caret.h" />
     <ClInclude Include="src\tex_bib.h" />
     <ClInclude Include="src\tex_node_internal.h" />
   </ItemGroup>

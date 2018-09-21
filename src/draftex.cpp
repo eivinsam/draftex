@@ -79,7 +79,20 @@ class History
 	Stack<uptr<Reaction>> _redo;
 public:
 
-	void add(uptr<Reaction> a) { _undo.push(move(a)); _redo.clear(); }
+	void add(uptr<Reaction> a)
+	{ 
+		uptr<Reaction> combo;
+		if (!_undo.empty())
+			combo = combine(*a, *_undo.peek());
+		if (combo)
+		{
+			(void)_undo.pop();
+			_undo.push(move(combo));
+		}
+		else
+			_undo.push(move(a)); 
+		_redo.clear(); 
+	}
 
 	void undo() { if (!_undo.empty()) _redo.push(_undo.pop()->perform()); }
 	void redo() { if (!_redo.empty()) _undo.push(_redo.pop()->perform()); }

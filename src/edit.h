@@ -24,12 +24,15 @@ public:
 template <class T, class D = std::default_delete<T>>
 using uptr = std::unique_ptr<T, D>;
 
+
 class Reaction
 {
 public:
 	virtual ~Reaction() { }
 	virtual uptr<Reaction> perform() = 0;
 };
+
+uptr<Reaction> combine(const Reaction& first, const Reaction& second);
 
 template <class T>
 tex::Owner<T> claim(T* ptr) { return intrusive::refcount::claim(ptr); }
@@ -73,3 +76,4 @@ struct InsertSpace
 	tex::Owner<tex::Node> node;
 	tex::string space;
 };
+

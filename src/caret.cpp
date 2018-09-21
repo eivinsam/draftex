@@ -279,6 +279,7 @@ uptr<Reaction> Caret::erasePrev()
 	if (offset > 0)
 	{
 		prev();
+		resetStart();
 		return eraseNext();
 	}
 	uptr<Reaction> result;

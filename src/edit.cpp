@@ -2,6 +2,8 @@
 
 #include <typeindex>
 
+using std::move;
+
 using namespace tex;
 
 struct pair_hasher
@@ -15,36 +17,72 @@ struct pair_hasher
 	}
 };
 
-uptr<Reaction> Do<RemoveText>::perform()
-{
-	auto redo = make_action<InsertText>(node, offset, node->text.substr(offset, length));
-	node->text.erase(offset, length);
-	node->change();
-	return redo;
-}
-uptr<Reaction> Do<InsertText>::perform()
-{
-	auto redo = make_action<RemoveText>(node, offset, text.size());
-	node->text.insert(offset, text);
-	node->change();
-	return redo;
+using Result = Reaction::Result;
+
+template <class Result, class Proc>
+Result prog1(Result&& result, Proc&& proc) 
+{ 
+	std::forward<Proc>(proc)(); 
+	return std::forward<Result>(result); 
 }
 
-uptr<Reaction> Do<RemoveSpace>::perform()
+Result Do<RemoveText>::perform()
 {
-	auto redo = make_action<InsertSpace>(node, node->space_after);
-	node->space_after = "";
-	node->change();
-	return redo;
+	return
+	{ 
+		make_action<InsertText>(node, offset, node->extract(offset, length)), 
+	{ node.get(), offset } 
+	};
 }
-uptr<Reaction> Do<InsertSpace>::perform()
+Result Do<InsertText>::perform()
 {
-	auto redo = make_action<RemoveSpace>(node);
-	node->space_after = space;
-	node->change();
-	return redo;
+	return 
+	{
+		make_action<RemoveText>(node, offset, node->insert(offset, text)),
+	{ node.get(), offset + text.size() }
+	};
 }
 
+
+Result Do<SplitText>::perform()
+{
+	const auto fwd = caret_move == Caret::Move::forward;
+	Text* next = node->insertAfterThis(Text::make(node->extract(offset)));
+	node->change();
+	node->group.next()->space_after = std::exchange(node->space_after, move(space));
+	return 
+	{
+		make_action<MergeText>(node, claim(next), caret_move),
+	{ fwd ? next : node.get(), fwd ? 0 : node->text.size() }
+	};
+}
+Result Do<MergeText>::perform()
+{
+	first->change();
+	second->change();
+	first->text.append(second->text);
+	std::swap(first->space_after, second->space_after);
+	second->removeFromGroup();
+	return 
+	{
+		make_action<UnmergeText>(first, second, caret_move),
+	{ first.get(), first->text.size() - second->text.size() }
+	};
+}
+Result Do<UnmergeText>::perform()
+{
+	const auto fwd = caret_move == Caret::Move::forward;
+	first->change();
+	second->change();
+	first->text.resize(first->text.size() - second->text.size());
+	std::swap(first->space_after, second->space_after);
+	first->insertAfterThis(second);
+	return
+	{
+		make_action<MergeText>(first, second, caret_move),
+	{ fwd ? second.get() : first.get(), fwd ? 0 : first->text.size() }
+	};
+}
 
 static uptr<Reaction> text_insert_combiner(const Do<InsertText>& a, const Do<InsertText>& b)
 {
@@ -75,12 +113,8 @@ struct dull_resolver<uptr<Reaction>(*)(const A&, const B&)>
 template <class F> using First = typename dull_resolver<F>::First;
 template <class F> using Second = typename dull_resolver<F>::Second;
 
-template <class F>
-struct Dull;
-
-
 template <auto f>
-static std::pair<type_pair, Combiner> dull()
+static constexpr std::pair<type_pair, Combiner> dull() noexcept
 {
 	using F = decltype(f);
 	using resolver = dull_resolver<F>;

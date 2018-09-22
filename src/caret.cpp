@@ -1,10 +1,11 @@
-#include "caret.h"
+#include "edit.h"
 
 using std::move;
 
 using oui::utf8len;
 
-using tex::int_size;
+using namespace tex;
+
 
 
 void Caret::render(tex::Context & con)
@@ -227,9 +228,7 @@ uptr<Reaction> Caret::eraseSelection()
 	{
 		if (offset_start > offset)
 			std::swap(offset_start, offset);
-		auto result = Do<RemoveText>(claim(node), offset_start, offset).perform();
-		offset = offset_start;
-		return result;
+		return perform<RemoveText>(claim(node), offset_start, offset);
 	}
 	return {};
 }
@@ -243,7 +242,7 @@ uptr<Reaction> Caret::eraseNext()
 
 	if (offset < maxOffset())
 	{
-		return Do<RemoveText>(claim(node), offset, utf8len(node->text[offset])).perform();
+		return perform<RemoveText>(claim(node), offset, utf8len(node->text[offset]));
 	}
 	uptr<Reaction> result;
 	if (node->space_after.empty())
@@ -254,17 +253,9 @@ uptr<Reaction> Caret::eraseNext()
 		//Expects(!text(*node->group.next()));
 		//node->group.next()->removeFromGroup();
 	}
-	else
+	else if (auto nextt = as<Text>(node->group.next()))
 	{
-		result = Do<RemoveSpace>(claim(node)).perform();
-	}
-
-	if (auto tnext = tex::as<tex::Text>(node->group.next()))
-	{
-		node->text.append(move(tnext->text));
-		node->space_after = move(tnext->space_after);
-		tnext->removeFromGroup();
-		node->change();
+		return perform<MergeText>(claim(node), claim(nextt), Move::backward);
 	}
 	return result;
 }
@@ -291,19 +282,9 @@ uptr<Reaction> Caret::erasePrev()
 			//Expects(!text(*node->group.prev()));
 			//node->group.prev()->removeFromGroup();
 		}
-		else
+		else if (auto prevt = as<Text>(prev))
 		{
-			result = Do<RemoveSpace>(claim(prev)).perform();
-		}
-
-		if (auto pt = tex::as<tex::Text>(prev))
-		{
-			offset = pt->text.size();
-			pt->text.append(move(node->text));
-			pt->space_after = move(node->space_after);
-			node->removeFromGroup();
-			node = pt;
-			node->change();
+			return perform<MergeText>(claim(prevt), claim(node), Move::forward);
 		}
 	}
 	return result;
@@ -328,23 +309,21 @@ uptr<Reaction> Caret::erasePrev()
 	//}
 }
 
-void Caret::insertSpace()
+uptr<Reaction> Caret::insertSpace()
 {
 	if (hasSelection())
-		eraseSelection();
+		return {}; // eraseSelection();
 
-	if (offset == 0 && (!node->group.prev() || !node->group.prev()->space_after.empty()))
-		return;
-	node->insertSpace(offset);
-	node = node->nextText();
-	offset = 0;
-	resetStart();
+	if (offset <= 0 || offset >= node->text.size())
+		return {};
+
+	return perform<SplitText>(claim(node), offset, " ", Move::forward);
 }
 
 void Caret::breakParagraph()
 {
 	if (hasSelection())
-		eraseSelection();
+		return; // eraseSelection();
 
 	Expects(node);
 	if (typeid(*node->group()) != typeid(tex::Par))

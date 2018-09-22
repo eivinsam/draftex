@@ -5,7 +5,7 @@
 
 #include "file_mapping.h"
 
-#include "caret.h"
+#include "edit.h"
 
 using std::move;
 
@@ -29,22 +29,6 @@ std::string readFile(const std::string& filename)
 	return result;
 }
 
-
-
-inline auto is_above(const tex::Node& node)
-{ 
-	return [&node](const tex::Node& other)
-	{ 
-		return other.absBottom() <= node.absTop(); 
-	};
-}
-inline auto is_below(const tex::Node& node)
-{
-	return [&node](const tex::Node& other)
-	{
-		return other.absTop() >= node.absBottom();
-	};
-}
 
 
 
@@ -81,6 +65,8 @@ public:
 
 	void add(uptr<Reaction> a)
 	{ 
+		if (!a)
+			return;
 		uptr<Reaction> combo;
 		if (!_undo.empty())
 			combo = combine(*a, *_undo.peek());
@@ -94,8 +80,24 @@ public:
 		_redo.clear(); 
 	}
 
-	void undo() { if (!_undo.empty()) _redo.push(_undo.pop()->perform()); }
-	void redo() { if (!_redo.empty()) _undo.push(_redo.pop()->perform()); }
+	void undo(Caret& caret) 
+	{ 
+		if (!_undo.empty())
+		{
+			auto[redo, new_caret] = _undo.pop()->perform();
+			_redo.push(move(redo));
+			caret = new_caret;
+		}
+	}
+	void redo(Caret& caret) 
+	{ 
+		if (!_redo.empty())
+		{
+			auto[undo, new_caret] = _redo.pop()->perform();
+			_undo.push(move(undo));
+			caret = new_caret;
+		}
+	}
 };
 
 struct Draftex
@@ -163,7 +165,7 @@ struct Draftex
 			case Key::down: caret.down(context); break;
 			case Key::backspace: history.add(caret.erasePrev()); break;
 			case Key::del:       history.add(caret.eraseNext()); break;
-			case Key::space:     caret.insertSpace(); break;
+			case Key::space:     history.add(caret.insertSpace()); break;
 			case Key::enter:     caret.breakParagraph(); break;
 			case Key::tab:
 				oui::pressed(Key::shift) ? 
@@ -178,8 +180,8 @@ struct Draftex
 				if (oui::pressed(Key::ctrl))
 				{
 					oui::pressed(Key::shift) ?
-						history.redo() :
-						history.undo();
+						history.redo(caret) :
+						history.undo(caret);
 					ignore_char = true;
 				}
 				break;
@@ -208,11 +210,8 @@ struct Draftex
 
 			auto text = oui::utf8(charcode);
 
-			history.add(Do<InsertText>(claim(caret.node), caret.offset, text).perform());
+			history.add(caret.perform<InsertText>(claim(caret.node), caret.offset, text));
 
-			caret.offset += text.length();
-			caret.target_x = Caret::no_target;
-			caret.resetStart();
 			window.redraw();
 			return;
 		};

@@ -211,6 +211,14 @@ namespace tex
 		return int_size(new_text);
 	}
 
+	string Text::extract(int offset, int length)
+	{
+		change();
+		string result = text.substr(offset, length);
+		text.erase(offset, length);
+		return result;
+	}
+
 
 
 

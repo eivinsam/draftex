@@ -299,6 +299,8 @@ namespace tex
 		void insertSpace(int offset);
 		int insert(int offset, std::string_view text);
 
+		string extract(int offset, int length = -1);
+
 		Box& updateLayout(Context& con) final;
 		void render(tex::Context& con, oui::Vector offset) const final;
 

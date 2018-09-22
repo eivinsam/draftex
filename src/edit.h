@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tex_node.h"
+#include "caret.h"
 
 template <class T>
 class Stack
@@ -21,15 +21,17 @@ public:
 	void clear() { _data.clear(); }
 };
 
-template <class T, class D = std::default_delete<T>>
-using uptr = std::unique_ptr<T, D>;
-
-
 class Reaction
 {
 public:
+	struct Result
+	{
+		uptr<Reaction> undo;
+		Caret caret;
+	};
+
 	virtual ~Reaction() { }
-	virtual uptr<Reaction> perform() = 0;
+	virtual Result perform() = 0;
 };
 
 uptr<Reaction> combine(const Reaction& first, const Reaction& second);
@@ -45,13 +47,21 @@ public:
 	template <class... Args>
 	Do(Args&&... args) : A{ std::forward<Args>(args)... } { }
 
-	uptr<Reaction> perform() final;
+	[[nodiscard]] Result perform() final;
 };
 
 template <class A, class... Args>
 uptr<Do<A>> make_action(Args&&... a)
 {
 	return std::make_unique<Do<A>>(std::forward<Args>(a)...);
+}
+
+template <class R, class... Args>
+uptr<Reaction> Caret::perform(Args&&... args)
+{
+	auto[undo, caret] = Do<R>{ std::forward<Args>(args)... }.perform();
+	*this = caret;
+	return undo;
 }
 
 struct RemoveText
@@ -67,13 +77,23 @@ struct InsertText
 	tex::string text;
 };
 
-struct RemoveSpace
+struct MergeText
 {
-	tex::Owner<tex::Node> node;
+	tex::Owner<tex::Text> first;
+	tex::Owner<tex::Text> second;
+	Caret::Move caret_move;
 };
-struct InsertSpace
+struct SplitText
 {
-	tex::Owner<tex::Node> node;
+	tex::Owner<tex::Text> node;
+	int offset;
 	tex::string space;
+	Caret::Move caret_move;
+};
+struct UnmergeText
+{
+	tex::Owner<tex::Text> first;
+	tex::Owner<tex::Text> second;
+	Caret::Move caret_move;
 };
 

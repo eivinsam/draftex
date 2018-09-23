@@ -4,19 +4,19 @@
 
 namespace tex
 {
-	static inline void skip(string_view& in)
+	static constexpr inline void skip(string_view& in) noexcept
 	{
 		in.remove_prefix(1);
 	}
 
-	static inline char pop(string_view& in)
+	static constexpr inline char pop(string_view& in) noexcept
 	{
-		char result = in.front();
+		const char result = in.front();
 		in.remove_prefix(1);
 		return result;
 	}
 
-	static inline bool is_in_token(char ch)
+	static inline bool is_in_token(char ch) noexcept
 	{
 		return isalnum(ch) || ch == '_';
 	}
@@ -27,7 +27,7 @@ namespace tex
 	}
 
 
-	static inline void throw_on_empty(std::string_view& in)
+	static constexpr inline void throw_on_empty(const std::string_view& in)
 	{
 		if (in.empty())
 			throw IllFormed("unexpected end of bibtex data");
@@ -119,6 +119,12 @@ namespace tex
 			throw IllFormed("unexpected character while looking for comma of end of entry");
 		}
 	}
+
+	constexpr struct
+	{
+		constexpr bool operator()(const Bib::Entry& a, const Bib::Entry& b) noexcept { return a.name < b.name; }
+		constexpr bool operator()(const Bib::Entry& a, string_view name) noexcept { return a.name < name; }
+	} by_name;
 		
 	Bib::Bib(string_view in)
 	{
@@ -127,8 +133,7 @@ namespace tex
 			for (;; skip(in))
 				if (in.empty())
 				{
-					std::sort(_entries.begin(), _entries.end(), 
-						[](const Entry& a, const Entry& b) { return a.name < b.name; });
+					std::sort(_entries.begin(), _entries.end(), by_name);
 					return;
 				}
 				else if (in.front() == '@')
@@ -157,14 +162,13 @@ namespace tex
 
 	const Bib::Entry* Bib::operator[](string_view name) const
 	{
-		auto lb = std::lower_bound(_entries.begin(), _entries.end(), name, 
-			[](const Entry& e, const string_view& name) { return e.name < name;  });
+		auto lb = std::lower_bound(_entries.begin(), _entries.end(), name, by_name);
 		if (lb != _entries.end() && lb->name == name)
 			return std::addressof(*lb);
 		else
 			return nullptr;
 	}
-	const string* Bib::Entry::tag(string_view tag_name) const
+	const string* Bib::Entry::tag(string_view tag_name) const noexcept
 	{
 		for (auto&& e : tags)
 			if (e.name == tag_name)

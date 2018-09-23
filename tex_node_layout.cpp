@@ -29,10 +29,10 @@ namespace tex
 	{
 		using iterator = Paragraph::iterator;
 		Context& _con;
-		int space_count;
-		float max_above;
-		float max_below;
-		float width_left;
+		int space_count = 0;
+		float max_above = 0;
+		float max_below = 0;
+		float width_left = 0;
 		Vector pen;
 		xpr::Range<iterator, iterator> rest;
 		iterator it;
@@ -42,8 +42,8 @@ namespace tex
 		LineBulider(Context& con, Vector pen, iterator par_begin, iterator par_end) :
 			_con(con), pen(pen), rest(par_begin, par_end) { }
 
-		bool done() const { return rest.empty(); }
-		float height() const { return pen.y; }
+		constexpr bool    done() const noexcept { return rest.empty(); }
+		constexpr float height() const noexcept { return pen.y; }
 
 		auto currentLine()
 		{
@@ -64,7 +64,7 @@ namespace tex
 			rest.first = it;
 		}
 	private:
-		void reset(float start_x, float width)
+		void reset(float start_x, float width) noexcept
 		{
 			space_count = 0;
 			max_above = 0;
@@ -128,7 +128,7 @@ namespace tex
 		return builder.height();
 	}
 
-	float layoutParagraph(Context& con, Group* p, float indent, float width)
+	float layoutParagraph(Context& con, nonull<const Group*> p, float indent, float width)
 	{
 		Paragraph par;
 
@@ -195,7 +195,7 @@ namespace tex
 		_box.before = _box.after = 0;
 		for (auto&& e : *this)
 		{
-			auto& ebox = e.updateLayout(con);
+			const auto& ebox = e.updateLayout(con);
 			e._box.offset = { _box.after, 0 };
 			_box.above = std::max(_box.above, ebox.above);
 			_box.below = std::max(_box.below, ebox.below);
@@ -203,7 +203,7 @@ namespace tex
 		}
 		return _box;
 	}
-	void Par::partype(Type t) 
+	void Par::partype(Type t) noexcept
 	{ 
 		if (_type == t)
 			return;

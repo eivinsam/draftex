@@ -44,6 +44,81 @@ namespace intrusive
 {
 	using std::move;
 
+	constexpr struct {} nocheck = {};
+
+	template <class From, class To>
+	using if_convertible_t = std::enable_if_t<std::is_convertible_v<From, To>>;
+
+	template <class T>
+	class nonull
+	{
+		template <class S>
+		friend class nonull;
+		T _ptr;
+
+
+		constexpr nonull(T ptr, decltype(nocheck)) : _ptr(move(ptr)) { }
+	public:
+		nonull() = delete;
+		template <class S, class = if_convertible_t<S, T>>
+		constexpr nonull(S&& ptr) : _ptr(std::forward<S>(ptr)) { Expects(_ptr != nullptr); }
+		template <class S>
+		constexpr nonull(nonull<S> other) : _ptr(move(other._ptr)) { }
+
+		friend constexpr bool operator==(const nonull& a, const nonull& b) { return a._ptr == b._ptr; }
+		friend constexpr bool operator!=(const nonull& a, const nonull& b) { return a._ptr != b._ptr; }
+		template <class S> friend constexpr bool operator==(const nonull& a, S b) { return a._ptr == b; }
+		template <class S> friend constexpr bool operator!=(const nonull& a, S b) { return a._ptr != b; }
+		template <class S> friend constexpr bool operator==(S a, const nonull& b) { return a == b._ptr; }
+		template <class S> friend constexpr bool operator!=(S a, const nonull& b) { return a != b._ptr; }
+
+		constexpr auto get() const { return nonull<decltype(_ptr.get())>{ _ptr.get(), nocheck }; }
+		
+		constexpr decltype(auto) operator->() const { return _ptr.operator->(); }
+		constexpr decltype(auto) operator*()  const { return _ptr.operator*(); }
+
+		template <class S, class = if_convertible_t<S, T>> constexpr operator S() & { return _ptr; }
+		template <class S, class = if_convertible_t<S, T>> constexpr operator S() && { return move(_ptr); }
+		template <class S, class = if_convertible_t<S, T>> constexpr operator S() const& { return _ptr; }
+
+		explicit constexpr operator bool() const { return _ptr != nullptr; }
+	};
+
+	template <class T>
+	class nonull<T*>
+	{
+		template <class S>
+		friend class nonull;
+		T* _ptr;
+		constexpr nonull(T* ptr, decltype(nocheck)) : _ptr(ptr) { }
+	public:
+		nonull() = delete;
+		template <class S>
+		constexpr nonull(S* ptr) : _ptr{ ptr } { Expects(_ptr != nullptr); }
+		template <class S>
+		constexpr nonull(nonull<S*> other) : _ptr{ other._ptr } { }
+
+		friend constexpr bool operator==(const nonull& a, const nonull& b) { return a._ptr == b._ptr; }
+		friend constexpr bool operator!=(const nonull& a, const nonull& b) { return a._ptr != b._ptr; }
+		template <class S> friend constexpr bool operator==(const nonull& a, S b) { return a._ptr == b; }
+		template <class S> friend constexpr bool operator!=(const nonull& a, S b) { return a._ptr != b; }
+		template <class S> friend constexpr bool operator==(S a, const nonull& b) { return a == b._ptr; }
+		template <class S> friend constexpr bool operator!=(S a, const nonull& b) { return a != b._ptr; }
+
+		constexpr decltype(auto) operator->() const { return _ptr; }
+		constexpr decltype(auto) operator*()  const { return *_ptr; }
+
+		template <class S>
+		constexpr operator S*() const { return _ptr; }
+
+		explicit constexpr operator bool() const { return _ptr != nullptr; }
+	};
+	template <class T>
+	nonull(T&&)->nonull<std::remove_reference_t<T>>;
+
+
+#pragma warning(push)
+#pragma warning(disable: 26432 26495)
 	struct raw
 	{
 		template <class T>
@@ -54,16 +129,18 @@ namespace intrusive
 		public:
 			constexpr ptr() = default;
 			constexpr ptr(T* p) : _ptr(p) { }
-			constexpr ptr(const ptr&) = default;
-			constexpr ptr(ptr&& other) : _ptr(std::exchange(other._ptr, nullptr)) { }
+			constexpr ptr(ptr&& other) noexcept : _ptr(std::exchange(other._ptr, nullptr)) { }
+			constexpr ptr(const ptr& other) noexcept : _ptr(other._ptr) { }
+			template <class S>
+			constexpr ptr(nonull<S*> p) : _ptr(p) { }
 
-			constexpr ptr& operator=(const ptr&) = default;
-			constexpr ptr& operator=(ptr&& other) {	_ptr = std::exchange(other._ptr, nullptr); }
+			constexpr ptr& operator=(ptr&& other) noexcept { _ptr = std::exchange(other._ptr, nullptr); }
+			constexpr ptr& operator=(const ptr& other) noexcept { _ptr = other._ptr; }
 
 			constexpr T* get() const { return _ptr; }
 
-			T* operator->() const { return get(); }
-			T& operator*() const { return *get(); }
+			constexpr T* operator->() const { return get(); }
+			constexpr T& operator*() const { return *get(); }
 
 			friend constexpr bool operator==(const ptr& a, const ptr& b) { return a._ptr == b._ptr; }
 			friend constexpr bool operator!=(const ptr& a, const ptr& b) { return a._ptr != b._ptr; }
@@ -88,15 +165,15 @@ namespace intrusive
 		refcount() : _count(0) { }
 
 		template <class T>
-		class ptr : public raw::ptr<T>
+		class ptr
 		{
-			using raw::ptr<T>::_ptr;
-
 			friend class refcount;
 			template <class S>
 			friend class ptr;
 
-			void _count_down_maybe_delete()
+			T* _ptr = nullptr;
+
+			void _count_down_maybe_delete() noexcept
 			{
 				if (_ptr->_count.fetch_sub(1) == 1)
 				{
@@ -108,19 +185,20 @@ namespace intrusive
 			}
 
 		public:
-			constexpr ptr() = default;
+			constexpr ptr() noexcept = default;
 			~ptr()
 			{
 				if (_ptr)
 					_count_down_maybe_delete();
 			}
-			ptr(nullptr_t) : raw::ptr<T>(nullptr) { }
-			ptr(ptr&& other) : raw::ptr<T>(other._ptr) { other._ptr = nullptr; }
-			ptr(const ptr& other) : raw::ptr<T>(other._ptr) { if (_ptr) _ptr->_count += 1; }
-			template <class S> ptr(ptr<S>&& other) : raw::ptr<T>(other._ptr) { other._ptr = nullptr; }
-			template <class S> ptr(const ptr<S>& other) : raw::ptr<T>(other._ptr) { if (_ptr) _ptr->_count += 1; }
+			ptr(nullptr_t) noexcept : _ptr(nullptr) { }
+			constexpr ptr(ptr&& other) noexcept : _ptr(std::exchange(other._ptr, nullptr)) { }
+			     ptr(const ptr& other) noexcept : _ptr(other._ptr) { if (_ptr) _ptr->_count += 1; }
+			template <class S> constexpr ptr(ptr<S>&& other) noexcept : _ptr(std::exchange(other._ptr, nullptr)) { }
+			template <class S>      ptr(const ptr<S>& other) noexcept : _ptr(other) { if (_ptr) _ptr->_count += 1; }
+			template <class S>      ptr(const nonull<ptr<S>>& other) noexcept : ptr(other) { }
 
-			ptr& operator=(ptr&& other)
+			ptr& operator=(ptr&& other) noexcept
 			{
 				if (_ptr)
 					_count_down_maybe_delete();
@@ -128,7 +206,7 @@ namespace intrusive
 				other._ptr = nullptr;
 				return *this;
 			}
-			ptr& operator=(const ptr& other)
+			ptr& operator=(const ptr& other) noexcept
 			{
 				if (_ptr)
 					_count_down_maybe_delete();
@@ -138,13 +216,26 @@ namespace intrusive
 				return *this;
 			}
 
-			template <class S>
-			ptr& operator=(S&& other)
-			{
-				return operator=(ptr(std::forward<S>(other)));
-			}
-		};
+			constexpr T* get() const { return _ptr; }
 
+			constexpr T* operator->() const { return get(); }
+			constexpr T& operator*() const { return *get(); }
+
+			friend constexpr bool operator==(const ptr& a, const ptr& b) { return a._ptr == b._ptr; }
+			friend constexpr bool operator!=(const ptr& a, const ptr& b) { return a._ptr != b._ptr; }
+
+			template <class S> friend constexpr bool operator==(const ptr& a, S b) { return a._ptr == b; }
+			template <class S> friend constexpr bool operator!=(const ptr& a, S b) { return a._ptr != b; }
+
+			template <class S> friend constexpr bool operator==(S a, const ptr& b) { return a == b._ptr; }
+			template <class S> friend constexpr bool operator!=(S a, const ptr& b) { return a != b._ptr; }
+
+			explicit constexpr operator bool() const { return _ptr != nullptr; }
+		};
+#pragma warning(pop)
+
+#pragma warning(push)
+#pragma warning(disable: 26409)
 		template <class T, class... Args>
 		static auto make(Args&&... args)
 		{
@@ -156,8 +247,9 @@ namespace intrusive
 #endif
 			return result;
 		}
+#pragma warning(pop)
 		template <class T>
-		static auto claim(T* plain_ptr)
+		static auto claim(T* plain_ptr) noexcept
 		{
 			const auto prev_count = plain_ptr->_count.fetch_add(1);
 			// outside of make() the count will only be zero when the object has not been made 
@@ -182,8 +274,8 @@ namespace intrusive
 		refcount::ptr<T> _next;
 		raw::ptr<T> _prev;
 	public:
-		T* next() const { return _next.get(); }
-		T* prev() const { return _prev.get(); }
+		constexpr T* next() const { return _next.get(); }
+		constexpr T* prev() const { return _prev.get(); }
 	};
 
 	template <class T, class P>
@@ -194,8 +286,8 @@ namespace intrusive
 		raw::ptr<P> _parent;
 	public:
 
-		P* operator()() const { return _parent.get(); }
-		P* operator->() const { return _parent.get(); }
+		constexpr P* operator()() const { return _parent.get(); }
+		constexpr P* operator->() const { return _parent.get(); }
 	};
 
 
@@ -208,8 +300,8 @@ namespace intrusive
 		refcount::ptr<T> _first;
 		raw::ptr<T> _last;
 		template <class Ptr, class = decltype(std::declval<Ptr>().get())>
-		static E* _e(const Ptr& p) { return &(p.get()->*EM); }
-		static E* _e(T* p) { return &(p->*EM); }
+		static constexpr E* _e(const Ptr& p) noexcept { Expects(p != nullptr);  return &((*p).*EM); }
+		static constexpr E* _e(nonull<T*> p) noexcept { return &((*p).*EM); }
 	public:
 		constexpr list() = default;
 		~list()
@@ -217,10 +309,12 @@ namespace intrusive
 			while (_last)
 				pop_back();
 		}
+		list(list&&) = default;
 		list(const list&) = delete;
+		list& operator=(list&&) = default;
 		list& operator=(const list&) = delete;
 
-		void pop_back()
+		void pop_back() noexcept
 		{
 			auto le = _e(_last);
 			if constexpr (!P_void)
@@ -230,19 +324,19 @@ namespace intrusive
 		}
 
 		template <class S>
-		S* append(refcount::ptr<S> e)
+		nonull<S*> append(nonull<refcount::ptr<S>> e) noexcept
 		{
 			const auto raw_e = e.get();
 			if (!_last)
 			{
 				_first = move(e);
-				_last = _first;
+				_last = _first.get();
 			}
 			else
 			{
 				const auto old_last = _last;
 				_e(old_last)->_next = move(e);
-				_last = _e(old_last)->_next;
+				_last = _e(old_last)->_next.get();
 				_e(_last)->_prev = old_last;
 			}
 			if constexpr (!P_void)
@@ -252,11 +346,12 @@ namespace intrusive
 			}
 			return raw_e;
 		}
+		template <class S>
+		nonull<S*> append(refcount::ptr<S> e) noexcept { return append(nonull{ move(e) }); }
 
 		template <class S>
-		S* insert_before(T* next, refcount::ptr<S> e)
+		nonull<S*> insert_before(nonull<T*> next, nonull<refcount::ptr<S>> e) noexcept
 		{
-			Expects(next != nullptr);
 			const auto raw_e = e.get();
 			const auto ee = _e(e);
 			if (const auto next_prev = _e(next)->_prev)
@@ -279,14 +374,14 @@ namespace intrusive
 		}
 
 		template <class S>
-		S* insert_after(T* prev, refcount::ptr<S> e)
+		nonull<S*> insert_after(nonull<T*> prev, nonull<refcount::ptr<S>> e) noexcept
 		{
 			return _e(prev)->_next ?
 				insert_before(_e(prev)->_next.get(), move(e)) :
 				append(move(e));
 		}
 
-		refcount::ptr<T> detach(T* e)
+		nonull<refcount::ptr<T>> detach(nonull<T*> e) noexcept
 		{
 			const auto ee = _e(e);
 			if constexpr (P_void)
@@ -311,7 +406,7 @@ namespace intrusive
 			return result;
 		}
 
-		void remove(T* e)
+		void remove(T* e) noexcept
 		{
 			(void)detach(e);
 		}
@@ -327,11 +422,11 @@ namespace intrusive
 			T* _p;
 			constexpr iterator(T* p) : _p(p) { }
 		public:
-			iterator& operator++() { _p = _e(_p)->_next.get(); }
-			iterator operator++(int) { auto copy = *this; ++*this; return copy; }
+			iterator& operator++() noexcept { _p = _e(_p)->_next.get(); return *this; }
+			iterator operator++(int) noexcept { auto copy = *this; ++*this; return copy; }
 
-			T* operator->() const { return _p; }
-			T& operator*() const { return *_p; }
+			constexpr T* operator->() const { return _p; }
+			constexpr T& operator*() const { return *_p; }
 
 			constexpr bool operator==(sentinel) const { return _p == nullptr; }
 			constexpr bool operator!=(sentinel) const { return _p != nullptr; }
@@ -348,10 +443,10 @@ namespace intrusive
 		};
 
 
-		iterator begin() const { return { _first.get() }; }
-		sentinel end() const { return {}; };
+		constexpr iterator begin() const { return { _first.get() }; }
+		constexpr sentinel end() const { return {}; };
 
-		iterator rbegin() const { return { _last.get() }; }
-		sentinel rend() const { return {}; }
+		constexpr iterator rbegin() const { return { _last.get() }; }
+		constexpr sentinel rend() const { return {}; }
 	};
 }

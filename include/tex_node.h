@@ -13,6 +13,7 @@ namespace tex
 	class Paragraph;
 	class InputReader;
 
+	using intrusive::nonull;
 	
 	class Node : public intrusive::refcount
 	{
@@ -38,30 +39,32 @@ namespace tex
 
 		enum class Type : char { text, group, command };
 
-		Owner<Node> replaceWith(Owner<Node> p);
-		Owner<Node> detachFromGroup();
-		void removeFromGroup();
-		template <class T> T* insertBeforeThis(Owner<T> p);
-		template <class T> T* insertAfterThis(Owner<T> p);
+		nonull<Owner<Node>> replaceWith(nonull<Owner<Node>> p) noexcept;
+		nonull<Owner<Node>> detachFromGroup() noexcept;
+		void removeFromGroup() noexcept;
+		template <class T> nonull<T*> insertBeforeThis(nonull<Owner<T>> p) noexcept;
+		template <class T> nonull<T*> insertAfterThis(nonull<Owner<T>> p)  noexcept;
+		template <class T> nonull<T*> insertBeforeThis(Owner<T> p) noexcept{ return insertBeforeThis(nonull{ move(p) }); }
+		template <class T> nonull<T*> insertAfterThis(Owner<T> p)  noexcept{ return insertAfterThis(nonull{ move(p) }); }
 
-		std::vector<Node*> parents();
+		std::vector<nonull<Node*>> parents();
 
-		void layoutOffset(Vector offset) { _box.offset = offset; }
-		const Box& layoutBox()  const { return _box; }
-		virtual const Box& contentBox() const { return _box; }
+		constexpr void layoutOffset(Vector offset) noexcept { _box.offset = offset; }
+		        const Box& layoutBox()  const noexcept { return _box; }
+		virtual const Box& contentBox() const noexcept { return _box; }
 
-		Vector absOffset() const;
-		float absLeft()   const { return absOffset().x - contentBox().before; }
-		float absRight()  const { return absOffset().x + contentBox().after; }
-		float absTop()    const { return absOffset().y - contentBox().above; }
-		float absBottom() const { return absOffset().y + contentBox().below; }
-		Rectangle absBox() const
+		Vector absOffset() const noexcept;
+		float absLeft()   const noexcept { return absOffset().x - contentBox().before; }
+		float absRight()  const noexcept { return absOffset().x + contentBox().after; }
+		float absTop()    const noexcept { return absOffset().y - contentBox().above; }
+		float absBottom() const noexcept { return absOffset().y + contentBox().below; }
+		Rectangle absBox() const noexcept
 		{
 			auto& cbox = contentBox();
 			const auto off = absOffset();
 			return { Point(-cbox.before, -cbox.above) + off, Point(cbox.after, cbox.below) + off };
 		}
-		void widen(float w) { _box.after += w; }
+		constexpr void widen(float w) noexcept { _box.after += w; }
 
 		Node() = default;
 		virtual ~Node() = default;
@@ -80,13 +83,13 @@ namespace tex
 		virtual void popArgument(Group& dst);
 		virtual Node* getArgument() { return group.next()->getArgument(); }
 
-		virtual void enforceRules() { };
+		virtual void enforceRules() noexcept { };
 
 
 		virtual Type type() const noexcept = 0;
 		virtual Flow flow() const noexcept = 0;
 
-		virtual std::optional<string> asEnd() const { return {}; }
+		virtual std::optional<string> asEnd() const noexcept { return {}; }
 
 		Text* prevText() noexcept;
 		Text* nextText() noexcept;
@@ -104,11 +107,10 @@ namespace tex
 		virtual void render(Context& con, Vector offset) const = 0;
 
 		virtual void serialize(std::ostream& out) const = 0;
-		void serialize(std::ostream&& out) { serialize(out); }
 	};
-	inline bool text(const Node& n) { return n.type() == Node::Type::text; }
-	inline bool text(const Node* n) { return n && text(*n); }
-	inline bool nullOrText(const Node* n) { return !n || text(*n); }
+	inline bool text(const Node& n) noexcept { return n.type() == Node::Type::text; }
+	inline bool text(const Node* n) noexcept { return n && text(*n); }
+	inline bool nullOrText(const Node* n) noexcept { return !n || text(*n); }
 	template <class T>
 	inline bool space(const Owner<T>& n) { return n && space(*n); }
 	template <class T>
@@ -140,7 +142,7 @@ namespace tex
 		virtual Text* _exit_this_or_prev_stop() noexcept { return prevStop(); }
 
 	protected:
-		void _enforce_child_rules() { for (auto&& e : *this) e.enforceRules(); }
+		void _enforce_child_rules() noexcept { for (auto&& e : *this) e.enforceRules(); }
 	public:
 		Group() = default;
 
@@ -150,19 +152,22 @@ namespace tex
 		Flow flow() const noexcept override { return Flow::line; }
 
 
-		static Owner<Group> make(string name);
+		static Owner<Group> make(string name) noexcept;
 
 		virtual void tokenize(InputReader& in, Mode mode);
 		void tokenizeText(string_view);
-		virtual bool terminatedBy(std::string_view token) const = 0;
+		virtual bool terminatedBy(std::string_view token) const noexcept = 0;
 
+#pragma warning(push)
+#pragma warning(disable: 26440)
 		Node* expand() override;
 		void popArgument(Group& dst) final { dst.append(group->detach(this)); }
+#pragma warning(pop)
 		Node* getArgument() noexcept final { return this; }
 
-		void enforceRules() override;
+		void enforceRules() noexcept override;
 
-		bool contains(Node* n) const
+		constexpr bool contains(Node* n) const
 		{
 			for (; n != nullptr; n = n->group())
 				if (n == this)
@@ -170,29 +175,28 @@ namespace tex
 			return false;
 		}
 
-		Node& front() const { return *begin(); }
-		Node& back()  const { return *rbegin(); }
+		constexpr Node& front() const { return *begin(); }
+		constexpr Node& back()  const { return *rbegin(); }
 
 		bool collect(Paragraph& out) override;
 		Box& updateLayout(Context& con) override;
 		void render(Context& con, Vector offset) const override;
 
 		void serialize(std::ostream& out) const override;
-		void serialize(std::ostream&& out) { serialize(out); }
 	};
 
-	inline Owner<Node> Node::replaceWith(Owner<Node> p) 
+	inline nonull<Owner<Node>> Node::replaceWith(nonull<Owner<Node>> p) noexcept
 	{ 
 		insertBeforeThis(move(p));
 		return detachFromGroup();
 	}
 
-	inline Owner<Node> Node::detachFromGroup() { return group->detach(this); }
-	inline void Node::removeFromGroup() { group->remove(this); }
+	inline nonull<Owner<Node>> Node::detachFromGroup() noexcept { return group->detach(this); }
+	inline void Node::removeFromGroup() noexcept { group->remove(this); }
 	template<class T>
-	inline T * Node::insertBeforeThis(Owner<T> p) { return group->insert_before(this, move(p)); }
+	inline nonull<T*> Node::insertBeforeThis(nonull<Owner<T>> p) noexcept { return group->insert_before(this, move(p)); }
 	template<class T>
-	inline T * Node::insertAfterThis(Owner<T> p) { return group->insert_after(this, move(p)); }
+	inline nonull<T*> Node::insertAfterThis(nonull<Owner<T>> p) noexcept { return group->insert_after(this, move(p)); }
 	inline Text* Node::prevText() noexcept
 	{
 		return
@@ -221,7 +225,7 @@ namespace tex
 			group() ? group->_exit_this_or_next_stop() :
 			nullptr;
 	}
-	inline Vector Node::absOffset() const
+	inline Vector Node::absOffset() const noexcept
 	{ 
 		Vector result = contentBox().offset;
 		for (const Group* n = group(); n; n = n->group())
@@ -235,7 +239,7 @@ namespace tex
 
 	class Command : public Node
 	{
-		FontSize _font_size;
+		FontSize _font_size = FontSize::normalsize;
 	public:
 		string cmd;
 
@@ -250,11 +254,11 @@ namespace tex
 			return result;
 		}
 
-		Node* expand() final;
-		void popArgument(Group& dst) final { dst.append(group->detach(this)); }
+		Node* expand() noexcept final;
+		void popArgument(Group& dst) noexcept final { dst.append(group->detach(this)); }
 		Node* getArgument() noexcept final { return this; }
 
-		std::optional<string> asEnd() const final
+		std::optional<string> asEnd() const noexcept final
 		{
 			if (cmd.size() > 4 && std::string_view(cmd).substr(0,4) == "end ")
 				return cmd.substr(4);
@@ -267,7 +271,6 @@ namespace tex
 		void render(tex::Context& con, Vector offset) const final;
 
 		void serialize(std::ostream& out) const override { out << '\\' << cmd; }
-		void serialize(std::ostream&& out) { serialize(out); }
 	};
 
 	class Text : public Node
@@ -285,8 +288,8 @@ namespace tex
 		Type type() const noexcept final { return Type::text; }
 		Flow flow() const noexcept final { return Flow::line; }
 
-		static auto make() { return Node::make<Text>(); }
-		static auto make(string text)
+		static auto make() noexcept { return Node::make<Text>(); }
+		static auto make(string text) noexcept
 		{
 			auto result = make();
 			result->text = std::move(text);
@@ -305,7 +308,6 @@ namespace tex
 		void render(tex::Context& con, oui::Vector offset) const final;
 
 		void serialize(std::ostream& out) const override { out << text << space_after; }
-		void serialize(std::ostream&& out) { serialize(out); }
 	};
 
 	class Line : public intrusive::refcount, public intrusive::list<Text, Line, &Text::line>
@@ -313,14 +315,14 @@ namespace tex
 		intrusive::refcount::ptr<Line> _next;
 		intrusive::raw::ptr<Line> _prev;
 	public:
-		Line* next() const { return _next.get(); }
-		Line* prev() const { return _prev.get(); }
+		constexpr Line* next() const { return _next.get(); }
+		constexpr Line* prev() const { return _prev.get(); }
 
-		friend void push(Owner<Line>& head, Owner<Line> value)
+		friend void push(Owner<Line>& head, Owner<Line> value) noexcept
 		{
 			if (head)
 			{
-				head->_prev = value;
+				head->_prev = value.get();
 				value->_next = move(head);
 			}
 			head = move(value);
@@ -333,15 +335,16 @@ namespace tex
 	{
 	public:
 		enum class Type : unsigned char { simple, title, author, section, subsection };
-		static friend std::string_view name(Type t)
+		static constexpr friend std::string_view name(Type t)
 		{
-			static const char* cmd_name[] =
+			using namespace std::string_view_literals;
+			constexpr std::array<const string_view, 5> cmd_name =
 			{
-				"",
-				"\\title",
-				"\\author",
-				"\\section",
-				"\\subsection"
+				""sv,
+				"\\title"sv,
+				"\\author"sv,
+				"\\section"sv,
+				"\\subsection"sv
 			};
 			return gsl::at(cmd_name, static_cast<std::underlying_type_t<Par::Type>>(t));
 		}
@@ -358,21 +361,21 @@ namespace tex
 
 		Par(string token);
 
-		void enforceRules() final { _enforce_child_rules(); }
+		void enforceRules() noexcept final { _enforce_child_rules(); }
 
-		bool terminatedBy(std::string_view) const final { return false; }
+		bool terminatedBy(std::string_view) const noexcept final { return false; }
 
-		void partype(Type t);
-		Type partype() { return _type; }
+		void partype(Type t) noexcept;
+		constexpr Type partype() noexcept { return _type; }
 
-		bool collect(Paragraph&) final { return false; }
+		bool collect(Paragraph&) noexcept final { return false; }
 
 		Box& updateLayout(Context& con) override;
 		void render(Context& con, Vector offset) const final;
 		void serialize(std::ostream& out) const final;
 	};
 
-	std::vector<Node*> interval(Node& a, Node& b);
+	std::vector<nonull<Node*>> interval(Node& a, Node& b);
 
 	Owner<Group> tokenize(std::string_view in);
 }

@@ -8,7 +8,7 @@ class Stack
 	std::vector<T> _data;
 public:
 
-	bool empty() const { return _data.empty(); }
+	bool empty() const noexcept { return _data.empty(); }
 
 	void push(T&& value) { _data.push_back(std::move(value)); }
 	void push(const T& value) { _data.push_back(value); }
@@ -18,7 +18,7 @@ public:
 
 	T pop() { auto result = move(_data.back()); _data.pop_back(); return result; }
 
-	void clear() { _data.clear(); }
+	void clear() noexcept { _data.clear(); }
 };
 
 class Reaction

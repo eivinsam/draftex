@@ -15,9 +15,9 @@ namespace tex
 	{
 		string_view in;
 
-		Owner<Node> _tokenize_single(Group& parent, Mode mode, OnEnd on_end);
+		Owner<Node> _tokenize_single(const Group& parent, Mode mode, OnEnd on_end);
 	public:
-		InputReader(string_view in) : in(in) { }
+		constexpr InputReader(string_view in) noexcept : in(in) { }
 
 		constexpr explicit operator bool() const { return !in.empty(); }
 		constexpr char operator*() const { return in.front(); }
@@ -42,7 +42,7 @@ namespace tex
 			return result;
 		}
 
-		Owner<Node> tokenize_single(Group& parent, Mode mode, OnEnd on_end)
+		Owner<Node> tokenize_single(const Group& parent, Mode mode, OnEnd on_end)
 		{
 			auto result = _tokenize_single(parent, mode, on_end);
 			if (result)

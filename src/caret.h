@@ -41,26 +41,27 @@ struct Caret
 	template <class R, class... Args>
 	uptr<Reaction> perform(Args&&... args);
 
-	int maxOffset() const { Expects(node != nullptr); return node->text.size(); }
+	int maxOffset() const noexcept { Expects(node != nullptr); return node->text.size(); }
 
 
-	static float offsetXof(tex::Context& con, const tex::Text* n, int o)
+	static float offsetXof(tex::Context& con, const tex::Text& n, int o)
 	{
-		return con.fontData(n->font)->offset(subview(n->text, 0, o), con.ptsize(n->font));
+		return con.fontData(n.font)->offset(subview(n.text, 0, o), con.ptsize(n.font));
 	}
 
 	float offsetX(tex::Context& con) const
 	{
-		return offsetXof(con, node, offset);
+		Expects(node != nullptr);
+		return offsetXof(con, *node, offset);
 	}
 
 	void render(tex::Context& con);
 
-	int repairOffset(int off);
+	int repairOffset(int off) noexcept;
 
 	void check_for_deletion(tex::Text& n);
 
-	void prepare(Move /*move*/)
+	void prepare(Move /*move*/) noexcept
 	{
 	}
 
@@ -85,6 +86,6 @@ struct Caret
 
 	void breakParagraph();
 
-	void nextStop();
-	void prevStop();
+	void nextStop() noexcept;
+	void prevStop() noexcept;
 };

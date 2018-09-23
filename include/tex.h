@@ -29,8 +29,7 @@ namespace tex
 	public:
 
 		template <class... Args>
-		IllFormed(Args&&... args) noexcept 
-		{
+		IllFormed(Args&&... args) 		{
 			_message.reserve((std::size(args) + ...));
 			(_message.append(args), ...);
 		}
@@ -63,9 +62,13 @@ namespace tex
 	{
 		FontType type;
 		FontSize size;
+
+		constexpr Font() : type(FontType::roman), size(FontSize::normalsize) { }
+		constexpr Font(FontType t, FontSize s = FontSize::normalsize) : type(t), size(s) { }
+		constexpr Font(FontSize s, FontType t = FontType::roman)      : type(t), size(s) { }
 	};
 
-	inline float ptsize(FontSize size, float key) 
+	inline float ptsize(FontSize size, float key) noexcept
 	{ 
 		return key * pow(2.0f, static_cast<char>(size) / 5.0f);
 	}
@@ -74,10 +77,10 @@ namespace tex
 	{
 	public:
 		oui::Vector offset;
-		float before;
-		float above;
-		float after;
-		float below;
+		float before = 0;
+		float above  = 0;
+		float after  = 0;
+		float below  = 0;
 
 		constexpr float left() const { return offset.x - before; }
 		constexpr float top() const { return offset.y - above; }

@@ -40,27 +40,28 @@ namespace tex
 				friend class Param;
 				T* _loc;
 				T _value;
-				Old(T* loc) : _loc(loc), _value(std::move(*loc)) { }
+				constexpr Old(T* loc) noexcept : _loc(loc), _value(std::move(*loc)) { }
 			public:
 				Old(const Old&&) = delete;
-				Old(Old&& other) : _loc(other._loc), _value(std::move(other._value)) { other._loc = nullptr; }
+				constexpr Old(Old&& other) noexcept : _loc(other._loc), _value(std::move(other._value)) { other._loc = nullptr; }
+				Old(const Old&) = delete;
 				Old& operator=(Old&&) = delete;
 				Old& operator=(const Old&) = delete;
 
 				~Old() { if (_loc) *_loc = std::move(_value); }
 			};
 
-			const T* operator->() const { return &_value; }
+			constexpr const T* operator->() const noexcept { return &_value; }
 
-			operator const T&() const { return _value; }
+			constexpr operator const T&() const noexcept { return _value; }
 
-			template <class S> friend bool operator==(const Param& a, const S& b) { return a._value == b; }
-			template <class S> friend bool operator!=(const Param& a, const S& b) { return a._value != b; }
+			template <class S> constexpr friend bool operator==(const Param& a, const S& b) noexcept { return a._value == b; }
+			template <class S> constexpr friend bool operator!=(const Param& a, const S& b) noexcept { return a._value != b; }
 
-			template <class S> friend bool operator==(const S& a, const Param& b) { return a == b._value; }
-			template <class S> friend bool operator!=(const S& a, const Param& b) { return a != b._value; }
+			template <class S> constexpr friend bool operator==(const S& a, const Param& b) noexcept { return a == b._value; }
+			template <class S> constexpr friend bool operator!=(const S& a, const Param& b) noexcept { return a != b._value; }
 
-			Old push(T new_value) { Old backup(&_value); _value = std::move(new_value); return backup; }
+			Old push(T new_value) noexcept { Old backup(&_value); _value = std::move(new_value); return backup; }
 		};
 
 
@@ -81,7 +82,7 @@ namespace tex
 		short subsection = 0;
 		short footnote = 0;
 
-		float float_width;
+		float float_width = 0;
 		//Vector float_margin;
 		//Vector float_pen;
 
@@ -92,7 +93,7 @@ namespace tex
 			_w = &window;
 		}
 
-		Font font() const { return { font_type, font_size }; }
+		constexpr Font font() const noexcept { return { font_type, font_size }; }
 
 		gsl::not_null<oui::VectorFont*> 
 			fontData(FontType f)
@@ -113,9 +114,9 @@ namespace tex
 
 		oui::Window& window() const noexcept { return *_w; }
 
-		float ptsize(FontSize size) const { return tex::ptsize(size, keysize); }
-		float ptsize(Font f) const { return ptsize(f.size); }
-		float ptsize() const { return ptsize(font_size); }
+		float ptsize(FontSize size) const noexcept { return tex::ptsize(size, keysize); }
+		float ptsize(Font f) const noexcept { return ptsize(f.size); }
+		float ptsize() const noexcept { return ptsize(font_size); }
 	};
 
 }

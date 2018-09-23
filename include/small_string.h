@@ -4,6 +4,9 @@
 #include <ostream>
 #include <gsl-lite.hpp>
 
+#pragma warning(push)
+#pragma warning(disable: 26485 26481 26409 26401)
+
 struct static_tests;
 
 class SmallString
@@ -45,7 +48,7 @@ class SmallString
 	{
 		Expects(new_size >= 0);
 		if (new_size < _buffer_size)
-			return static_cast<unsigned char>(new_size);
+			return gsl::narrow<unsigned char>(new_size);
 		Expects(new_size < (3 << 29));
 		for (unsigned char i = 5; ; ++i)
 			if ((2 << i) > new_size)
@@ -60,7 +63,7 @@ class SmallString
 	void _set_size(int new_size)
 	{
 		if (_small)
-			_small.size = gsl::narrow_cast<unsigned char>(new_size);
+			_small.size = gsl::narrow<unsigned char>(new_size);
 		else
 			_large.size = new_size;
 	}
@@ -79,28 +82,28 @@ public:
 
 	SmallString() : _small{ 0 } { }
 
-	auto data() { return _small ? _small.data : _large.data; }
-	auto data() const { return _small ? _small.data : _large.data; }
-	int  size() const { return _small ? _small.size : _large.size; }
-	bool empty() const { return size() == 0; }
+	constexpr auto data()       noexcept { return _small ? _small.data : _large.data; }
+	constexpr auto data() const noexcept { return _small ? _small.data : _large.data; }
+	constexpr int  size() const noexcept { return _small ? _small.size : _large.size; }
+	constexpr bool empty() const noexcept { return size() == 0; }
 
-	auto& operator[](int i)       { return data()[i]; }
-	auto& operator[](int i) const { return data()[i]; }
+	constexpr auto& operator[](int i)       noexcept { return data()[i]; }
+	constexpr auto& operator[](int i) const noexcept { return data()[i]; }
 
-	auto begin()       { return data(); }
-	auto begin() const { return data(); }
-	auto end()       { return _small ? _small.data + _small.size : _large.data + _large.size; }
-	auto end() const { return _small ? _small.data + _small.size : _large.data + _large.size; }
+	constexpr auto begin()       noexcept { return data(); }
+	constexpr auto begin() const noexcept { return data(); }
+	constexpr auto end()       noexcept { return _small ? _small.data + _small.size : _large.data + _large.size; }
+	constexpr auto end() const noexcept { return _small ? _small.data + _small.size : _large.data + _large.size; }
 
-	auto& front()       { return data()[0]; }
-	auto& front() const { return data()[0]; }
+	constexpr auto& front()       noexcept { return data()[0]; }
+	constexpr auto& front() const noexcept { return data()[0]; }
 
-	auto& back()       { return data()[size() - 1]; }
-	auto& back() const { return data()[size() - 1]; }
+	constexpr auto& back()       noexcept { return data()[size() - 1]; }
+	constexpr auto& back() const noexcept { return data()[size() - 1]; }
 
-	const char* c_str() const { return data(); }
+	constexpr const char* c_str() const noexcept { return data(); }
 
-	operator std::string_view() const
+	constexpr operator std::string_view() const noexcept
 	{
 		return _small ?
 			view{ _small.data, _small.size } :
@@ -111,7 +114,7 @@ public:
 	SmallString(const char* text) : SmallString(view(text)) { }
 	SmallString(const std::string& text) : SmallString(view(text)) { }
 
-	SmallString(SmallString&& other) : _small(other._small)
+	constexpr SmallString(SmallString&& other) noexcept : _small(other._small)
 	{
 		other._small.size = 0;
 		other._small.data[0] = 0;
@@ -119,7 +122,7 @@ public:
 	SmallString(const SmallString& other) : SmallString(view(other)) { }
 	~SmallString() { if (_large) delete _large.data; }
 
-	SmallString& operator=(SmallString&& other)
+	SmallString& operator=(SmallString&& other) noexcept
 	{
 		this->~SmallString();
 		new (this) SmallString(std::move(other));
@@ -149,11 +152,12 @@ public:
 		const auto new_size = size() + 1;
 		reserve(new_size);
 		auto e = end();
+		Ensures(e != nullptr);
 		*e = ch; ++e; *e = 0;
 		_set_size(new_size);
 	}
 
-	void erase(int index, int count = -1);
+	void erase(int index, int count = -1) noexcept;
 
 	SmallString substr(int pos, int count = -1) const
 	{
@@ -184,29 +188,14 @@ public:
 	}
 
 
-	template <class S, class T> friend if_str<S, if_str<T, bool>> operator==(S&& a, T&& b) { return fwd<S>(a) == fwd<T>(b); }
-	template <class S, class T> friend if_str<S, if_str<T, bool>> operator!=(S&& a, T&& b) { return fwd<S>(a) != fwd<T>(b); }
-	template <class S, class T> friend if_str<S, if_str<T, bool>> operator< (S&& a, T&& b) { return fwd<S>(a) <  fwd<T>(b); }
-	template <class S, class T> friend if_str<S, if_str<T, bool>> operator<=(S&& a, T&& b) { return fwd<S>(a) <= fwd<T>(b); }
-	template <class S, class T> friend if_str<S, if_str<T, bool>> operator>=(S&& a, T&& b) { return fwd<S>(a) >= fwd<T>(b); }
-	template <class S, class T> friend if_str<S, if_str<T, bool>> operator> (S&& a, T&& b) { return fwd<S>(a)  > fwd<T>(b); }
-
-	//bool operator==(const SmallString& other) const { return view(*this) == view(other); }
-	//bool operator!=(const SmallString& other) const { return view(*this) != view(other); }
-	//
-	//bool operator< (const SmallString& other) const { return view(*this) <  view(other); }
-	//bool operator<=(const SmallString& other) const { return view(*this) <= view(other); }
-	//bool operator>=(const SmallString& other) const { return view(*this) >= view(other); }
-	//bool operator> (const SmallString& other) const { return view(*this)  > view(other); }
-
-	//friend bool operator==(view lhs, const SmallString& rhs) { return lhs == view(rhs); }
-	//friend bool operator!=(view lhs, const SmallString& rhs) { return lhs != view(rhs); }
-	//
-	//friend bool operator< (view lhs, const SmallString& rhs) { return lhs <  view(rhs); }
-	//friend bool operator<=(view lhs, const SmallString& rhs) { return lhs <= view(rhs); }
-	//friend bool operator>=(view lhs, const SmallString& rhs) { return lhs >= view(rhs); }
-	//friend bool operator> (view lhs, const SmallString& rhs) { return lhs  > view(rhs); }
+	template <class S, class T> friend constexpr if_str<S, if_str<T, bool>> operator==(S&& a, T&& b) noexcept { return fwd<S>(a) == fwd<T>(b); }
+	template <class S, class T> friend constexpr if_str<S, if_str<T, bool>> operator!=(S&& a, T&& b) noexcept { return fwd<S>(a) != fwd<T>(b); }
+	template <class S, class T> friend constexpr if_str<S, if_str<T, bool>> operator< (S&& a, T&& b) noexcept { return fwd<S>(a) <  fwd<T>(b); }
+	template <class S, class T> friend constexpr if_str<S, if_str<T, bool>> operator<=(S&& a, T&& b) noexcept { return fwd<S>(a) <= fwd<T>(b); }
+	template <class S, class T> friend constexpr if_str<S, if_str<T, bool>> operator>=(S&& a, T&& b) noexcept { return fwd<S>(a) >= fwd<T>(b); }
+	template <class S, class T> friend constexpr if_str<S, if_str<T, bool>> operator> (S&& a, T&& b) noexcept { return fwd<S>(a)  > fwd<T>(b); }
 };
 
+#pragma warning(pop)
 
 inline std::ostream& operator<<(std::ostream& out, const SmallString& text) { return out << std::string_view(text); }

@@ -139,8 +139,8 @@ static constexpr std::pair<type_pair, Combiner> dull() noexcept
 
 static std::unordered_map<type_pair, Combiner, pair_hasher> combiner_lookup = 
 {
-	dull<text_insert_combiner>(),
-	dull<text_remove_combiner>()
+	dull<&text_insert_combiner>(),
+	dull<&text_remove_combiner>()
 };
 
 uptr<Reaction> combine(const Reaction& first, const Reaction& second)

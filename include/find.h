@@ -16,7 +16,7 @@ static constexpr struct
 	}
 } default_value;
 template <class C, class K, class V>
-V find(C&& map, const K& key, const Default<V>& default_value)
+V find(C&& map, const K& key, const Default<V>& default_value) noexcept
 {
 	if (const auto found = map.find(key);
 		found != map.end())

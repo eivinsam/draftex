@@ -1,5 +1,7 @@
 #include <small_string.h>
 
+#pragma warning(disable: 26409 26485 26403 26446 26472 26481 26482)
+
 SmallString::SmallString(view text)
 {
 	_large.cap = _calc_cap(text.size());
@@ -36,6 +38,7 @@ void SmallString::resize(const int new_size, const char fill)
 	}
 	reserve(new_size);
 	const auto dst = data();
+	Expects(dst != nullptr);
 	for (auto i = size(); i < new_size; ++i)
 		dst[i] = fill;
 	_set_size(new_size);
@@ -52,6 +55,7 @@ void SmallString::insert(int offset, view text)
 	if (offset < size())
 	{
 		const auto old_end = end();
+		Expects(old_end != nullptr);
 		const auto new_end = old_end + text_size;
 		const auto N = size() - offset;
 
@@ -72,7 +76,7 @@ void SmallString::insert(int offset, view text)
 	}
 }
 
-void SmallString::erase(int index, int count)
+void SmallString::erase(int index, int count) noexcept
 {
 	Expects(index >= 0 && index < size());
 	if (count == 0)
@@ -80,8 +84,10 @@ void SmallString::erase(int index, int count)
 	if (count < 0 || index + count > size())
 		count = size() - index;
 
-	const auto dst = data() + index;
-	const auto src = dst + count;
+	char* const dst = data() + index;
+	Expects(dst != nullptr);
+	const char* const src = dst + count;
+	Expects(src != nullptr);
 	const auto N = size() - (index + count);
 
 	for (int i = 0; i <= N; ++i)

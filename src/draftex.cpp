@@ -230,7 +230,8 @@ struct Draftex
 	void save()
 	{
 		take_option();
-		tokens->serialize(std::ofstream("test.out"));
+		std::ofstream out("test.out");
+		tokens->serialize(out);
 	}
 	void insert_group(std::string_view group_type)
 	{
@@ -317,7 +318,7 @@ struct Draftex
 		{
 			tokens->enforceRules();
 			auto set_width = context.width.push(window.area().width());
-			auto& tbox = tokens->updateLayout(context);
+			const auto& tbox = tokens->updateLayout(context);
 			tokens->layoutOffset({ window.area().width()*tbox.before/tbox.width(), 0 });
 			tokens->commit();
 			check_title();
@@ -345,7 +346,7 @@ struct Draftex
 			oui::set(oui::Blend::normal);
 			oui::set(oui::Color{ 1,1,1,0.3f });
 			oui::fill(window.area());
-			auto optfont = context.fontData(tex::FontType::sans);
+			const auto optfont = context.fontData(tex::FontType::sans);
 
 			const float h = 24;
 
@@ -354,7 +355,7 @@ struct Draftex
 			for (auto&& opt : options)
 			{
 				optfont->drawLine(pen, opt.name, oui::colors::black, h);
-				oui::Point underline_tlc
+				const oui::Point underline_tlc
 				{
 					pen.x + optfont->offset(opt.name.substr(0, opt.highlight), h),
 					pen.y + h * 0.85f

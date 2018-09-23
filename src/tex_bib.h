@@ -21,7 +21,7 @@ namespace tex
 
 			std::vector<Tag> tags;
 
-			const string* tag(string_view name) const;
+			const string* tag(string_view name) const noexcept;
 		};
 
 		std::vector<Entry> _entries;

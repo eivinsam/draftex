@@ -11,7 +11,7 @@ using oui::popCodepoint;
 
 namespace tex
 {
-	Owner<Node> InputReader::_tokenize_single(Group& parent, Mode mode, OnEnd on_end)
+	Owner<Node> InputReader::_tokenize_single(const Group& parent, Mode mode, OnEnd on_end)
 	{
 		switch (**this)
 		{
@@ -49,7 +49,7 @@ namespace tex
 		case '%':
 		{
 			auto result = Group::make("%");
-			auto next_newline = in.find_first_of("\r\n");
+			const auto next_newline = in.find_first_of("\r\n");
 			if (next_newline >= in.size())
 				result->tokenize(*this, mode);
 			else
@@ -103,20 +103,20 @@ namespace tex
 
 	namespace align = oui::align;
 
-	std::vector<Node*> Node::parents()
+	std::vector<nonull<Node*>> Node::parents()
 	{
-		std::vector<Node*> result;
+		std::vector<nonull<Node*>> result;
 		for (auto p = this; p; p = p->group())
 			result.push_back(p);
 		return result;
 	}
 
-	std::vector<Node*> interval(Node& a, Node& b)
+	std::vector<nonull<Node*>> interval(Node& a, Node& b)
 	{
 		auto ap = a.parents();
 		auto bp = b.parents();
 
-		std::vector<Node*> result;
+		std::vector<nonull<Node*>> result;
 		if (&a == &b)
 		{
 			result.push_back(&a);
@@ -147,17 +147,11 @@ namespace tex
 				result.push_back(s);
 		// add nodes between ia and ib
 		for (auto s = (*ia)->group.next(); s != *ib; s = s->group.next())
-		{
-			Expects(s);
 			result.push_back(s);
-		}
 		// then add nodes from b branch
 		for (++ib; ib != bp.rend(); ++ib)
 			for (auto s = &(*ib)->group->front(); s != *ib; s = s->group.next())
-			{
-				Expects(s);
 				result.push_back(s);
-			}
 		result.push_back(bp.front()); // including b
 
 		return result;
@@ -274,7 +268,7 @@ namespace tex
 		return this;
 	}
 
-	void Group::enforceRules()
+	void Group::enforceRules() noexcept
 	{
 		if (group())
 		{

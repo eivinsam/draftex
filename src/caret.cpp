@@ -6,16 +6,19 @@ using oui::utf8len;
 
 using namespace tex;
 
-
+#pragma warning(disable: 26446)
 
 void Caret::render(tex::Context & con)
 {
 	if (!con.window().focus())
 		return;
 
-	auto render_one = [&con](tex::Text* n, int o)
+	Expects(node != nullptr);
+	Expects(node_start != nullptr);
+
+	const auto render_one = [&con](tex::Text& n, int o)
 	{
-		auto box = n->absBox();
+		auto box = n.absBox();
 		box.min.x += offsetXof(con, n, o) - 1;
 		box.max.x = box.min.x + 2;
 		oui::fill(box);
@@ -24,17 +27,17 @@ void Caret::render(tex::Context & con)
 
 	oui::set(oui::Blend::multiply);
 	oui::set(oui::colors::black);
-	render_one(node, offset);
+	render_one(*node, offset);
 
 
 	oui::set(oui::Color{ 0.9,1,0.5 });
 
 	const auto xe = offsetX(con);
-	const auto xs = offsetXof(con, node_start, offset_start);
+	const auto xs = offsetXof(con, *node_start, offset_start);
 
 	if (node == node_start)
 	{
-		auto box = node->absBox();
+		const auto box = node->absBox();
 
 		oui::fill({ { box.min.x + xs, box.min.y },{ box.min.x + xe, box.max.y } });
 
@@ -58,7 +61,7 @@ void Caret::render(tex::Context & con)
 		oui::fill((*it)->absBox());
 }
 
-int Caret::repairOffset(int off)
+int Caret::repairOffset(int off) noexcept
 {
 	Expects(node && off < node->text.size());
 	while (off > 0 && utf8len(node->text[off]) == 0)
@@ -68,7 +71,7 @@ int Caret::repairOffset(int off)
 
 void Caret::check_for_deletion(tex::Text & n)
 {
-	const auto rem_node = [](tex::Node& n)
+	const auto rem_node = [](tex::Node& n) noexcept
 	{
 		if (auto prev = n.group.prev();
 			prev && prev->space_after.empty())
@@ -84,7 +87,7 @@ void Caret::check_for_deletion(tex::Text & n)
 	{
 		auto g = n.group();
 		rem_node(n);
-		while (g->empty())
+		while (g && g->empty())
 			rem_node(*std::exchange(g, g->group()));
 	}
 
@@ -160,8 +163,8 @@ void Caret::findClosestOnLine(tex::Context & con, tex::Line * line)
 	float closest_d = std::numeric_limits<float>::infinity();
 	for (auto&& e : *line)
 	{
-		auto abs_box = e.absBox();
-		float d = std::min(std::abs(target_x - abs_box.min.x), std::abs(target_x - abs_box.max.x));
+		const auto abs_box = e.absBox();
+		const float d = std::min(std::abs(target_x - abs_box.min.x), std::abs(target_x - abs_box.max.x));
 		if (closest_d > d)
 		{
 			closest_d = d;
@@ -325,14 +328,14 @@ void Caret::breakParagraph()
 	if (hasSelection())
 		return; // eraseSelection();
 
-	Expects(node);
+	Expects(node != nullptr);
 	if (typeid(*node->group()) != typeid(tex::Par))
 		return;
 	if (offset == 0 && !node->group->contains(node->prevText()))
 		return;
 
 	node->group()->change();
-	auto new_par = node->group()->insertAfterThis(tex::Group::make("par"));
+	const auto new_par = node->group()->insertAfterThis(tex::Group::make("par"));
 	auto old_node = node;
 
 	if (offset <= 0)
@@ -357,7 +360,7 @@ void Caret::breakParagraph()
 	resetStart();
 }
 
-void Caret::nextStop()
+void Caret::nextStop() noexcept
 {
 	if (auto new_node = node->nextStop())
 	{
@@ -367,7 +370,7 @@ void Caret::nextStop()
 	resetStart();
 }
 
-void Caret::prevStop()
+void Caret::prevStop() noexcept
 {
 	if (auto new_node = node->prevStop())
 	{

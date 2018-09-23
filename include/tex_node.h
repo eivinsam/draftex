@@ -21,9 +21,6 @@ namespace tex
 
 		bool _changed = true;
 	protected:
-		virtual Text* _this_or_prev_text() noexcept { return prevText(); }
-		virtual Text* _this_or_next_text() noexcept { return nextText(); }
-
 		virtual Text* _this_or_next_stop() noexcept { return nextStop(); }
 		virtual Text* _this_or_prev_stop() noexcept { return prevStop(); }
 
@@ -75,7 +72,7 @@ namespace tex
 		Node& operator=(const Node&) = delete;
 
 		constexpr bool changed() const { return _changed; }
-		void change() noexcept;
+		void markChange() noexcept;
 		virtual void commit() noexcept { _changed = false; }
 
 
@@ -91,6 +88,8 @@ namespace tex
 
 		virtual std::optional<string> asEnd() const noexcept { return {}; }
 
+		virtual Text* prevTextInclusive() noexcept { return prevText(); }
+		virtual Text* nextTextInclusive() noexcept { return nextText(); }
 		Text* prevText() noexcept;
 		Text* nextText() noexcept;
 
@@ -131,8 +130,6 @@ namespace tex
 	{
 		friend class Node;
 
-		Text* _this_or_prev_text() noexcept override { return !empty() ? rbegin()->_this_or_prev_text() : prevText(); }
-		Text* _this_or_next_text() noexcept override { return !empty() ?  begin()->_this_or_next_text() : nextText(); }
 		virtual Text* _exit_this_or_next_text() noexcept { return nextText(); }
 		virtual Text* _exit_this_or_prev_text() noexcept { return prevText(); }
 
@@ -151,6 +148,8 @@ namespace tex
 		Type type() const noexcept final { return Type::group; }
 		Flow flow() const noexcept override { return Flow::line; }
 
+		Text* prevTextInclusive() noexcept override { return !empty() ? rbegin()->prevTextInclusive() : prevText(); }
+		Text* nextTextInclusive() noexcept override { return !empty() ?  begin()->nextTextInclusive() : nextText(); }
 
 		static Owner<Group> make(string name) noexcept;
 
@@ -200,14 +199,14 @@ namespace tex
 	inline Text* Node::prevText() noexcept
 	{
 		return
-			group.prev() ? group.prev()->_this_or_prev_text() :
+			group.prev() ? group.prev()->prevTextInclusive() :
 			group() ? group->_exit_this_or_prev_text() :
 			nullptr;
 	}
 	inline Text* Node::nextText() noexcept
 	{
 		return
-			group.next() ? group.next()->_this_or_next_text() :
+			group.next() ? group.next()->nextTextInclusive() :
 			group() ? group->_exit_this_or_next_text() :
 			nullptr;
 	}
@@ -275,8 +274,8 @@ namespace tex
 
 	class Text : public Node
 	{
-		Text* _this_or_prev_text() noexcept final { return this; };
-		Text* _this_or_next_text() noexcept final { return this; };
+		Text* prevTextInclusive() noexcept final { return this; };
+		Text* nextTextInclusive() noexcept final { return this; };
 
 	public:
 		string text;
@@ -293,6 +292,13 @@ namespace tex
 		{
 			auto result = make();
 			result->text = std::move(text);
+			return result;
+		}
+		static auto make(string text, string space) noexcept
+		{
+			auto result = make();
+			result->text = std::move(text);
+			result->space_after = std::move(space);
 			return result;
 		}
 

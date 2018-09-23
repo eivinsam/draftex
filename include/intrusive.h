@@ -195,7 +195,7 @@ namespace intrusive
 			constexpr ptr(ptr&& other) noexcept : _ptr(std::exchange(other._ptr, nullptr)) { }
 			     ptr(const ptr& other) noexcept : _ptr(other._ptr) { if (_ptr) _ptr->_count += 1; }
 			template <class S> constexpr ptr(ptr<S>&& other) noexcept : _ptr(std::exchange(other._ptr, nullptr)) { }
-			template <class S>      ptr(const ptr<S>& other) noexcept : _ptr(other) { if (_ptr) _ptr->_count += 1; }
+			template <class S>      ptr(const ptr<S>& other) noexcept : _ptr(other._ptr) { if (_ptr) _ptr->_count += 1; }
 			template <class S>      ptr(const nonull<ptr<S>>& other) noexcept : ptr(other) { }
 
 			ptr& operator=(ptr&& other) noexcept

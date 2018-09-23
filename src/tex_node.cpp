@@ -167,7 +167,7 @@ namespace tex
 
 
 
-	void Node::change() noexcept
+	void Node::markChange() noexcept
 	{
 		for (Node* n = this; n != nullptr; n = n->group())
 			n->_changed = true;
@@ -181,7 +181,7 @@ namespace tex
 
 	void Text::insertSpace(int offset)
 	{
-		change();
+		markChange();
 		if (offset >= text.size())
 		{
 			if (!space_after.empty())
@@ -200,14 +200,14 @@ namespace tex
 
 	int Text::insert(int offset, std::string_view new_text)
 	{
-		change();
+		markChange();
 		text.insert(offset, new_text);
 		return int_size(new_text);
 	}
 
 	string Text::extract(int offset, int length)
 	{
-		change();
+		markChange();
 		string result = text.substr(offset, length);
 		text.erase(offset, length);
 		return result;

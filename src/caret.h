@@ -59,23 +59,21 @@ struct Caret
 
 	int repairOffset(int off) noexcept;
 
-	void check_for_deletion(tex::Text& n);
-
 	void prepare(Move /*move*/) noexcept
 	{
 	}
 
-	void next();
-	void prev();
+	[[nodiscard]] uptr<Reaction> next();
+	[[nodiscard]] uptr<Reaction> prev();
 
 	void findPlace(tex::Context& con);
 
 	void findClosestOnLine(tex::Context& con, tex::Line* line);
 
-	void up(tex::Context& con);
-	void down(tex::Context& con);
-	void home();
-	void end();
+	[[nodiscard]] uptr<Reaction> up(tex::Context& con);
+	[[nodiscard]] uptr<Reaction> down(tex::Context& con);
+	[[nodiscard]] uptr<Reaction> home();
+	[[nodiscard]] uptr<Reaction> end();
 
 	[[nodiscard]] uptr<Reaction> eraseSelection();
 

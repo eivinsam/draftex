@@ -34,6 +34,8 @@ public:
 	virtual Result perform() = 0;
 };
 
+struct Annihilation : Reaction { Result perform() final { return {}; } };
+
 uptr<Reaction> combine(const Reaction& first, const Reaction& second);
 
 template <class T>
@@ -69,12 +71,14 @@ struct RemoveText
 	tex::Owner<tex::Text> node;
 	int offset;
 	int length;
+	Caret::Move caret_move;
 };
 struct InsertText
 {
 	tex::Owner<tex::Text> node;
 	int offset;
 	tex::string text;
+	Caret::Move caret_move;
 };
 
 struct MergeText
@@ -95,5 +99,15 @@ struct UnmergeText
 	tex::Owner<tex::Text> first;
 	tex::Owner<tex::Text> second;
 	Caret::Move caret_move;
+};
+
+struct InsertNode
+{
+	tex::Owner<tex::Node> node;
+	tex::Owner<tex::Node> prev_to_be;
+};
+struct RemoveNode
+{
+	tex::Owner<tex::Node> node;
 };
 

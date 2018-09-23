@@ -210,7 +210,7 @@ namespace tex
 
 		_type = t; 
 
-		change(); 
+		markChange(); 
 	}
 	Box& Par::updateLayout(Context & con)
 	{

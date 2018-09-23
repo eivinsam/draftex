@@ -95,8 +95,6 @@ namespace tex
 		Text* _exit_this_or_next_text() noexcept override { return nullptr; }
 		Text* _exit_this_or_prev_text() noexcept override { return nullptr; }
 
-		Text* _this_or_prev_text() noexcept override { return prevText(); };
-		Text* _this_or_next_text() noexcept override { return nextText(); };
 		Text* _exit_this_or_next_stop() noexcept override { return nextText(); }
 		Text* _exit_this_or_prev_stop() noexcept override { return prevText(); }
 
@@ -117,6 +115,8 @@ namespace tex
 		Float(const oui::Color& color) noexcept : _color(color) { }
 	public:
 
+		Text* prevTextInclusive() noexcept override { return prevText(); };
+		Text* nextTextInclusive() noexcept override { return nextText(); };
 
 		constexpr void floatOffset(Vector offset) noexcept { _float_box.offset = offset; }
 

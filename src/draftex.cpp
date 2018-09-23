@@ -70,10 +70,12 @@ public:
 		uptr<Reaction> combo;
 		if (!_undo.empty())
 			combo = combine(*a, *_undo.peek());
+
 		if (combo)
 		{
 			(void)_undo.pop();
-			_undo.push(move(combo));
+			if (!as<Annihilation>(combo.get()))
+				_undo.push(move(combo));
 		}
 		else
 			_undo.push(move(a)); 
@@ -131,7 +133,7 @@ struct Draftex
 				break;
 			}
 
-		window.resize = [this](auto&&) { tokens->change(); };
+		window.resize = [this](auto&&) { tokens->markChange(); };
 		oui::input.keydown = [this](oui::Key key, auto prev_state)
 		{
 			const bool is_repeat = prev_state == oui::PrevKeyState::down;
@@ -153,16 +155,31 @@ struct Draftex
 					}
 					return;
 				}
-			
 
 			switch (key)
 			{
-			case Key::home:  caret.home(); break;
-			case Key::end:   caret.end();  break;
-			case Key::right: caret.next(); break;
-			case Key::left:  caret.prev(); break;
-			case Key::up:     caret.up(context); break;
-			case Key::down: caret.down(context); break;
+			case Key::alt: case Key::f10:
+				if (!is_repeat)
+					toggle_menu();
+				return;
+			case Key::escape:
+				if (!is_repeat && !options.empty())
+					toggle_menu();
+				return;
+			default:
+				if (!options.empty())
+					return;
+				break;
+			}
+
+			switch (key)
+			{
+			case Key::home:  history.add(caret.home());        break;
+			case Key::end:   history.add(caret.end());         break;
+			case Key::right: history.add(caret.next());        break;
+			case Key::left:  history.add(caret.prev());        break;
+			case Key::up:    history.add(caret.up(context));   break;
+			case Key::down:  history.add(caret.down(context)); break;
 			case Key::backspace: history.add(caret.erasePrev()); break;
 			case Key::del:       history.add(caret.eraseNext()); break;
 			case Key::space:     history.add(caret.insertSpace()); break;
@@ -171,10 +188,6 @@ struct Draftex
 				oui::pressed(Key::shift) ? 
 					caret.prevStop() : 
 					caret.nextStop();
-				break;
-			case Key::alt: case Key::f10:
-				if (!is_repeat) 
-					toggle_menu();
 				break;
 			case Key::z:
 				if (oui::pressed(Key::ctrl))
@@ -191,6 +204,7 @@ struct Draftex
 			}
 			if (!oui::pressed(Key::shift))
 				caret.resetStart();
+
 			window.redraw();
 		};
 		//oui::input.keyup = [this](oui::Key key)
@@ -316,7 +330,6 @@ struct Draftex
 		context.keysize = 9 * window.dpi() / 72.0f;
 		if (tokens->changed())
 		{
-			tokens->enforceRules();
 			auto set_width = context.width.push(window.area().width());
 			const auto& tbox = tokens->updateLayout(context);
 			tokens->layoutOffset({ window.area().width()*tbox.before/tbox.width(), 0 });

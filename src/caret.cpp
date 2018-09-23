@@ -69,68 +69,55 @@ int Caret::repairOffset(int off) noexcept
 	return off;
 }
 
-void Caret::check_for_deletion(tex::Text & n)
+
+uptr<Reaction> delete_if_redundant(Text& node)
 {
-	const auto rem_node = [](tex::Node& n) noexcept
-	{
-		if (auto prev = n.group.prev();
-			prev && prev->space_after.empty())
-			prev->space_after = std::move(n.space_after);
-		n.group->change();
-		n.removeFromGroup();
-	};
+	if (!node.text.empty() ||
+		!text(node.group.prev()) ||
+		!text(node.group.next()))
+		return {};
 
-	if (&n == node)
-		return;
-
-	if (n.text.empty())
-	{
-		auto g = n.group();
-		rem_node(n);
-		while (g && g->empty())
-			rem_node(*std::exchange(g, g->group()));
-	}
-
+	return Do<RemoveNode>(claim(&node)).perform().undo;
 }
 
-void Caret::next()
+uptr<Reaction> Caret::next()
 {
 	if (!node)
-		return;
+		return {};
 	prepare(Move::forward);
 	target_x = no_target;
 
 	if (offset < node->text.size())
 	{
 		offset += utf8len(node->text[offset]);
-		return;
+		return {};
 	}
 	if (auto next_text = node->nextText())
 	{
-		check_for_deletion(*std::exchange(node, next_text));
 		offset = 0;
-		return;
+		return delete_if_redundant(*std::exchange(node, next_text));
 	}
+	return {};
 }
 
-void Caret::prev()
+uptr<Reaction> Caret::prev()
 {
 	if (!node)
-		return;
+		return {};
 	prepare(Move::backward);
 	target_x = no_target;
 
 	if (offset > 0)
 	{
 		offset = repairOffset(offset - 1);
-		return;
+		return {};
 	}
 	if (auto prev_text = node->prevText())
 	{
-		check_for_deletion(*std::exchange(node, prev_text));
-		offset = node->text.size();
-		return;
+		offset = prev_text->text.size();
+		return delete_if_redundant(*std::exchange(node, prev_text));
 	}
+	return {};
 }
 
 void Caret::findPlace(tex::Context & con)
@@ -158,8 +145,6 @@ void Caret::findClosestOnLine(tex::Context & con, tex::Line * line)
 	if (!line)
 		return;
 
-	auto& original_node = *node;
-
 	float closest_d = std::numeric_limits<float>::infinity();
 	for (auto&& e : *line)
 	{
@@ -171,56 +156,81 @@ void Caret::findClosestOnLine(tex::Context & con, tex::Line * line)
 			node = &e;
 		}
 	}
-	check_for_deletion(original_node);
 	return findPlace(con);
 }
 
-void Caret::up(tex::Context & con)
+uptr<Reaction> Caret::up(tex::Context & con)
 {
 	if (!node)
-		return;
+		return {};
 	prepare(Move::backward);
 
+	const auto old_node = node;
+
 	if (isnan(target_x))
 		target_x = node->absLeft() + offsetX(con);
-	if (node->line())
-		findClosestOnLine(con, node->line->next());
+	if (!node->line())
+		return {};
+
+	const auto nextl = node->line->next();
+	if (!nextl)
+		return {};
+
+	findClosestOnLine(con, nextl);
+	return delete_if_redundant(*old_node);
 }
 
-void Caret::down(tex::Context & con)
+uptr<Reaction> Caret::down(tex::Context & con)
 {
 	if (!node)
-		return;
+		return {};
 	prepare(Move::forward);
+
+	const auto old_node = node;
 
 	if (isnan(target_x))
 		target_x = node->absLeft() + offsetX(con);
-	if (node->line())
-		findClosestOnLine(con, node->line->prev());
+	if (!node->line())
+		return {};
+
+	const auto prevl = node->line->prev();
+	if (!prevl)
+		return {};
+
+	findClosestOnLine(con, prevl);
+	return delete_if_redundant(*old_node);
 }
 
-void Caret::home()
+uptr<Reaction> Caret::home()
 {
 	prepare(Move::backward);
 	target_x = no_target;
 
-	if (node->line())
-	{
-		check_for_deletion(*std::exchange(node, &*node->line->begin()));
-		offset = 0;
-	}
+	if (!node->line())
+		return {};
+
+	const auto old_node = node;
+	node = &*node->line->begin();
+	offset = 0;
+
+	return node == old_node ? nullptr : 
+		delete_if_redundant(*old_node);
 }
 
-void Caret::end()
+uptr<Reaction> Caret::end()
 {
 	prepare(Move::forward);
 	target_x = no_target;
 
-	if (node->line())
-	{
-		check_for_deletion(*std::exchange(node, &*node->line->rbegin()));
-		offset = node->text.size();
-	}
+	if (!node->line())
+		return {};
+
+	const auto old_node = node;
+	node = &*node->line->rbegin();
+	offset = node->text.size();
+
+	return node == old_node ? nullptr :
+		delete_if_redundant(*old_node);
 }
 
 uptr<Reaction> Caret::eraseSelection()
@@ -231,7 +241,7 @@ uptr<Reaction> Caret::eraseSelection()
 	{
 		if (offset_start > offset)
 			std::swap(offset_start, offset);
-		return perform<RemoveText>(claim(node), offset_start, offset);
+		return perform<RemoveText>(claim(node), offset_start, offset, Move::forward);
 	}
 	return {};
 }
@@ -245,7 +255,7 @@ uptr<Reaction> Caret::eraseNext()
 
 	if (offset < maxOffset())
 	{
-		return perform<RemoveText>(claim(node), offset, utf8len(node->text[offset]));
+		return perform<RemoveText>(claim(node), offset, utf8len(node->text[offset]), Move::backward);
 	}
 	uptr<Reaction> result;
 	if (node->space_after.empty())
@@ -272,9 +282,8 @@ uptr<Reaction> Caret::erasePrev()
 
 	if (offset > 0)
 	{
-		prev();
-		resetStart();
-		return eraseNext();
+		offset = repairOffset(offset-1);
+		return perform<RemoveText>(claim(node), offset, utf8len(node->text[offset]), Move::forward);
 	}
 	uptr<Reaction> result;
 	if (auto prev = node->group.prev())
@@ -299,7 +308,7 @@ uptr<Reaction> Caret::erasePrev()
 	//			prev_par->append(par->front().detachFromGroup());
 	//		prev_par->space_after = move(par->space_after);
 	//		par->removeFromGroup();
-	//		prev_par->change();
+	//		prev_par->markChange();
 	//		if (auto prevt = tex::as<tex::Text>(node->group.prev());
 	//			prevt && prevt->space_after.empty())
 	//		{
@@ -316,9 +325,10 @@ uptr<Reaction> Caret::insertSpace()
 {
 	if (hasSelection())
 		return {}; // eraseSelection();
-
-	if (offset <= 0 || offset >= node->text.size())
+	if (offset <= 0) 
 		return {};
+	if (offset >= node->text.size())
+		return perform<InsertNode>(Text::make("", " "), claim(node));
 
 	return perform<SplitText>(claim(node), offset, " ", Move::forward);
 }
@@ -334,7 +344,7 @@ void Caret::breakParagraph()
 	if (offset == 0 && !node->group->contains(node->prevText()))
 		return;
 
-	node->group()->change();
+	node->group()->markChange();
 	const auto new_par = node->group()->insertAfterThis(tex::Group::make("par"));
 	auto old_node = node;
 

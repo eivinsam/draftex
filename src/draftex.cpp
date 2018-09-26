@@ -128,11 +128,7 @@ struct Draftex
 		for (auto&& e : *tokens)
 			if (auto group = tex::as<tex::Group>(&e); group && group->terminatedBy("document"))
 			{
-				if (group->group.prev())
-					caret.node = group->group.prev()->nextText();
-				else
-					caret.node = group->group->nextText();
-				caret.resetStart();
+				caret = { group->nextTextInclusive(), 0 };
 				break;
 			}
 

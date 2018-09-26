@@ -179,6 +179,17 @@ namespace tex
 			child.commit();
 	}
 
+	bool Group::apply(const std::function<bool(Node&)>& f)
+	{
+		if (f(*this))
+		{
+			for (auto&& e : *this)
+				e.apply(f);
+			return true;
+		}
+		return false;
+	}
+
 	void Text::insertSpace(int offset)
 	{
 		markChange();

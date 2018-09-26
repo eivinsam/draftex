@@ -75,6 +75,7 @@ namespace tex
 		void markChange() noexcept;
 		virtual void commit() noexcept { _changed = false; }
 
+		virtual bool apply(const std::function<bool(Node&)>& f) { return f(*this); }
 
 		virtual Node* expand() { return this; }
 		virtual void popArgument(Group& dst);
@@ -141,6 +142,8 @@ namespace tex
 		Group() = default;
 
 		void commit() noexcept final;
+
+		bool apply(const std::function<bool(Node&)>& f) override;
 
 		Type type() const noexcept final { return Type::group; }
 		Flow flow() const noexcept override { return Flow::line; }
@@ -383,4 +386,6 @@ namespace tex
 	std::vector<nonull<const Node*>> interval(const Node& a, const Node& b);
 
 	Owner<Group> tokenize(std::string_view in);
+
+	bool refreshCites(Node&);
 }

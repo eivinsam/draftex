@@ -122,6 +122,7 @@ struct Draftex
 		tokens = tex::tokenize(FileMapping("test.tex").data);
 		tokens->expand();
 		tokens->enforceRules();
+		tokens->apply(refreshCites);
 		check_title();
 
 		for (auto&& e : *tokens)

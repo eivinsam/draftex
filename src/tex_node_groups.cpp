@@ -250,35 +250,40 @@ namespace tex
 		Cite(string key) : Float(oui::Color{ 0.8, 1, 0.75 }), _key(key) { }
 
 		bool terminatedBy(std::string_view) const noexcept final { return false; }
+		
+		const string& key() const { return _key; }
+		
+		void key(string key)
+		{
+			_key = key;
+			while (!empty())
+				pop_back();
+
+			if (auto bib = bibliography())
+			{
+				if (auto match = bib->entry(_key))
+				{
+					if (auto author = match->tag("author"))
+						tokenizeText(*author + " ");
+					else
+						tokenizeText("[No author field] ");
+
+					if (auto title = match->tag("title"))
+						tokenizeText(*title);
+					else
+						tokenizeText("[No title field]");
+				}
+				else
+					tokenizeText("[No match in bibilography]");
+			}
+			else
+				tokenizeText("[No bibliography]");
+
+			expand();
+		}
 
 		Box& updateLayout(Context& con) const final
 		{
-			//while (!empty())
-			//	pop_back();
-			//
-			//if (auto bib = bibliography())
-			//{
-			//	if (auto match = bib->entry(_key))
-			//	{
-			//		if (auto author = match->tag("author"))
-			//			tokenizeText(*author + " ");
-			//		else
-			//			tokenizeText("[No author field] ");
-			//
-			//		if (auto title = match->tag("title"))
-			//			tokenizeText(*title);
-			//		else
-			//			tokenizeText("[No title field]");
-			//	}
-			//	else
-			//		tokenizeText("[No match in bibilography]");
-			//}
-			//else
-			//	tokenizeText("[No bibliography]");
-			//
-			//expand();
-
-
 			Float::updateLayout(con);
 
 			_font = { con.font_type, con.font_size };
@@ -295,6 +300,16 @@ namespace tex
 		}
 
 	};
+	bool refreshCites(Node& n)
+	{
+		if (auto cite = as<Cite>(&n))
+		{
+			cite->key(cite->key());
+			return false;
+		}
+		else
+			return true;
+	}
 
 	class Math : public Group
 	{

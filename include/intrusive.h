@@ -160,7 +160,7 @@ namespace intrusive
 		template <class T>
 		friend class ptr;
 
-		std::atomic_short _count;
+		mutable std::atomic_short _count;
 	public:
 		refcount() : _count(0) { }
 
@@ -194,9 +194,15 @@ namespace intrusive
 			ptr(nullptr_t) noexcept : _ptr(nullptr) { }
 			constexpr ptr(ptr&& other) noexcept : _ptr(std::exchange(other._ptr, nullptr)) { }
 			     ptr(const ptr& other) noexcept : _ptr(other._ptr) { if (_ptr) _ptr->_count += 1; }
-			template <class S> constexpr ptr(ptr<S>&& other) noexcept : _ptr(std::exchange(other._ptr, nullptr)) { }
-			template <class S>      ptr(const ptr<S>& other) noexcept : _ptr(other._ptr) { if (_ptr) _ptr->_count += 1; }
-			template <class S>      ptr(const nonull<ptr<S>>& other) noexcept : ptr(other) { }
+			
+			template <class S, class = if_convertible_t<S*, T*>>
+			constexpr ptr(ptr<S>&& other) noexcept : _ptr(std::exchange(other._ptr, nullptr)) { }
+			
+			template <class S, class = if_convertible_t<S*, T*>>
+			ptr(const ptr<S>& other) noexcept : _ptr(other._ptr) { if (_ptr) _ptr->_count += 1; }
+			
+			template <class S, class = if_convertible_t<S*, T*>>
+			ptr(const nonull<ptr<S>>& other) noexcept : _ptr(other.get()) { _ptr->_count += 1; }
 
 			ptr& operator=(ptr&& other) noexcept
 			{
@@ -271,11 +277,14 @@ namespace intrusive
 	{
 		template <class, class, auto>
 		friend class list;
-		refcount::ptr<T> _next;
-		raw::ptr<T> _prev;
+		mutable refcount::ptr<T> _next;
+		mutable raw::ptr<T> _prev;
 	public:
-		constexpr T* next() const { return _next.get(); }
-		constexpr T* prev() const { return _prev.get(); }
+		constexpr T* next() { return _next.get(); }
+		constexpr T* prev() { return _prev.get(); }
+
+		constexpr const T* next() const { return _next.get(); }
+		constexpr const T* prev() const { return _prev.get(); }
 	};
 
 	template <class T, class P>
@@ -283,17 +292,23 @@ namespace intrusive
 	{
 		template <class, class, auto>
 		friend class list;
-		raw::ptr<P> _parent;
+		mutable raw::ptr<P> _parent;
 	public:
 
-		constexpr P* operator()() const { return _parent.get(); }
-		constexpr P* operator->() const { return _parent.get(); }
+		constexpr P* operator()() { return _parent.get(); }
+		constexpr P* operator->() { return _parent.get(); }
+
+		constexpr const P* operator()() const { return _parent.get(); }
+		constexpr const P* operator->() const { return _parent.get(); }
 	};
 
+	template <class T> inline T* as_mutable(const T* a) { return const_cast<T*>(a); }
+	template <class T> inline T& as_mutable(const T& a) { return const_cast<T&>(a); }
 
 	template <class T, class P, auto EM>
 	class list
 	{
+		using const_list = list<std::add_const_t<T>, P, EM>;
 		static constexpr bool P_void = std::is_same_v<P, void>;
 		using E = std::remove_reference_t<decltype(std::declval<T*>()->*EM)>;
 
@@ -414,10 +429,12 @@ namespace intrusive
 		constexpr bool empty() const { return _first == nullptr; }
 
 		struct sentinel {};
+		struct reverse_sentinel {};
 
 		class iterator
 		{
 			friend class list;
+			friend class const_list;
 		protected:
 			T* _p;
 			constexpr iterator(T* p) : _p(p) { }
@@ -435,6 +452,7 @@ namespace intrusive
 		class reverse_iterator : public iterator
 		{
 			friend class list;
+			friend class const_list;
 
 			using iterator::iterator;
 			using iterator::_p;
@@ -443,10 +461,14 @@ namespace intrusive
 		};
 
 
-		constexpr iterator begin() const { return { _first.get() }; }
-		constexpr sentinel end() const { return {}; };
+		constexpr iterator begin() { return { _first.get() }; }
+		constexpr sentinel end()   { return {}; };
+		constexpr typename const_list::iterator begin() const { return { _first.get() }; }
+		constexpr typename const_list::sentinel end()   const { return {}; }
 
-		constexpr iterator rbegin() const { return { _last.get() }; }
-		constexpr sentinel rend() const { return {}; }
+		constexpr reverse_iterator rbegin() { return { _last.get() }; }
+		constexpr reverse_sentinel rend()   { return {}; }
+		constexpr typename const_list::reverse_iterator rbegin() const { return { _first.get() }; }
+		constexpr typename const_list::reverse_sentinel rend()   const { return {}; }
 	};
 }

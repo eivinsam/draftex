@@ -7,26 +7,30 @@ static constexpr auto subview(std::string_view text, size_t off, size_t count) {
 template <class T, class D = std::default_delete<T>>
 using uptr = std::unique_ptr<T, D>;
 
-class Reaction;
-
+namespace edit
+{
+	class Action;
+}
 
 struct Caret
 {
+	using Action = edit::Action;
+
 	static constexpr float no_target = std::numeric_limits<float>::quiet_NaN();
 
 	enum class Move : char { none, backward, forward };
 
-	tex::Text* node = nullptr;
-	tex::Text* node_start = nullptr;
+	const tex::Text* node = nullptr;
+	const tex::Text* node_start = nullptr;
 	int offset = 0;
 	int offset_start = 0;
 	float target_x = no_target;
 
 	constexpr Caret() = default;
-	constexpr Caret(tex::Text* node, int offset) : 
+	constexpr Caret(const tex::Text* node, int offset) : 
 		node(node), node_start(node), 
 		offset(offset), offset_start(offset) { }
-	constexpr Caret(tex::Text* node_end, int offset_end, tex::Text* node_start, int offset_start) :
+	constexpr Caret(const tex::Text* node_end, int offset_end, const tex::Text* node_start, int offset_start) :
 		node(node_end), node_start(node_start),
 		offset(offset_end), offset_start(offset_start) { }
 
@@ -39,7 +43,7 @@ struct Caret
 	}
 
 	template <class R, class... Args>
-	uptr<Reaction> perform(Args&&... args);
+	uptr<Action> perform(Args&&... args);
 
 	int maxOffset() const noexcept { Expects(node != nullptr); return node->text.size(); }
 
@@ -63,24 +67,24 @@ struct Caret
 	{
 	}
 
-	[[nodiscard]] uptr<Reaction> next();
-	[[nodiscard]] uptr<Reaction> prev();
+	[[nodiscard]] uptr<Action> next();
+	[[nodiscard]] uptr<Action> prev();
 
 	void findPlace(tex::Context& con);
 
 	void findClosestOnLine(tex::Context& con, tex::Line* line);
 
-	[[nodiscard]] uptr<Reaction> up(tex::Context& con);
-	[[nodiscard]] uptr<Reaction> down(tex::Context& con);
-	[[nodiscard]] uptr<Reaction> home();
-	[[nodiscard]] uptr<Reaction> end();
+	[[nodiscard]] uptr<Action> up(tex::Context& con);
+	[[nodiscard]] uptr<Action> down(tex::Context& con);
+	[[nodiscard]] uptr<Action> home();
+	[[nodiscard]] uptr<Action> end();
 
-	[[nodiscard]] uptr<Reaction> eraseSelection();
+	[[nodiscard]] uptr<Action> eraseSelection();
 
-	[[nodiscard]] uptr<Reaction> eraseNext();
-	[[nodiscard]] uptr<Reaction> erasePrev();
+	[[nodiscard]] uptr<Action> eraseNext();
+	[[nodiscard]] uptr<Action> erasePrev();
 
-	[[nodiscard]] uptr<Reaction> insertSpace();
+	[[nodiscard]] uptr<Action> insertSpace();
 
 	void breakParagraph();
 

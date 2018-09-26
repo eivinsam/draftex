@@ -10,10 +10,10 @@ namespace tex
 
 	class Paragraph
 	{
-		std::vector<Node*> _nodes;
+		std::vector<const Node*> _nodes;
 	public:
 		void clear() noexcept { _nodes.clear(); }
-		void push_back(Node* node) { _nodes.push_back(node); }
+		void push_back(const Node* node) { _nodes.push_back(node); }
 
 		// returns the resulting height
 		float updateLayout(Context& con, Vector pen, float indent, float width);
@@ -30,8 +30,8 @@ namespace tex
 			iterator & operator++() { ++_it; return *this; }
 			iterator & operator--() { --_it; return *this; }
 
-			Node* operator->() { return *_it; }
-			Node& operator*() { return **_it; }
+			const Node* operator->() { return *_it; }
+			const Node& operator*() { return **_it; }
 
 			bool operator==(const iterator& other) const { return _it == other._it; }
 			bool operator!=(const iterator& other) const { return _it != other._it; }

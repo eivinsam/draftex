@@ -76,7 +76,7 @@ namespace tex
 		void collectLine()
 		{
 			push(_con.lines, intrusive::refcount::make<Line>());
-			Node* last = nullptr;
+			const Node* last = nullptr;
 			for (it = rest.begin(); it != rest.end(); ++it)
 			{
 				auto& lbox = it->layoutBox();
@@ -157,18 +157,18 @@ namespace tex
 		return pen.y;
 	}
 
-	bool Node::collect(Paragraph& out)
+	bool Node::collect(Paragraph& out) const
 	{
 		out.push_back(this);
 		return true;
 	}
-	bool Group::collect(Paragraph& out)
+	bool Group::collect(Paragraph& out) const
 	{
 		out.push_back(this);
 		return true;
 	}
 
-	Box& Command::updateLayout(Context& con)
+	Box& Command::updateLayout(Context& con) const
 	{
 		_font_size = con.font_size;
 		const auto em = con.ptsize(_font_size);
@@ -177,7 +177,7 @@ namespace tex
 		_box.height(em, align::center);
 		return _box;
 	}
-	Box& Text::updateLayout(Context& con)
+	Box& Text::updateLayout(Context& con) const 
 	{
 		mode = con.mode;
 		font = con.font();
@@ -190,7 +190,7 @@ namespace tex
 	}
 
 
-	Box& Group::updateLayout(Context& con)
+	Box& Group::updateLayout(Context& con) const
 	{
 		_box.before = _box.after = 0;
 		for (auto&& e : *this)
@@ -212,7 +212,7 @@ namespace tex
 
 		markChange(); 
 	}
-	Box& Par::updateLayout(Context & con)
+	Box& Par::updateLayout(Context & con) const
 	{
 		static const Font styles[] = 
 		{

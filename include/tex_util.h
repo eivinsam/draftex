@@ -14,6 +14,12 @@ namespace tex
 	template <class T>
 	using Owner = intrusive::refcount::ptr<T>;
 
+	template <class T>
+	tex::Owner<T> claim(T* ptr) { return intrusive::refcount::claim(ptr); }
+	template <class T>
+	auto claim_mutable(T* ptr) { return intrusive::refcount::claim(intrusive::as_mutable(ptr)); }
+
+
 	template <class To, class From>
 	inline auto as(From* from) noexcept
 	{

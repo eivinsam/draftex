@@ -103,20 +103,20 @@ namespace tex
 
 	namespace align = oui::align;
 
-	std::vector<nonull<Node*>> Node::parents()
+	std::vector<nonull<const Node*>> Node::parents() const
 	{
-		std::vector<nonull<Node*>> result;
+		std::vector<nonull<const Node*>> result;
 		for (auto p = this; p; p = p->group())
 			result.push_back(p);
 		return result;
 	}
 
-	std::vector<nonull<Node*>> interval(Node& a, Node& b)
+	std::vector<nonull<const Node*>> interval(const Node& a, const Node& b)
 	{
 		auto ap = a.parents();
 		auto bp = b.parents();
 
-		std::vector<nonull<Node*>> result;
+		std::vector<nonull<const Node*>> result;
 		if (&a == &b)
 		{
 			result.push_back(&a);

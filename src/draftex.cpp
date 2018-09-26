@@ -59,22 +59,22 @@ namespace menu
 
 class History
 {
-	Stack<uptr<Reaction>> _undo;
-	Stack<uptr<Reaction>> _redo;
+	edit::Stack<uptr<edit::Action>> _undo;
+	edit::Stack<uptr<edit::Action>> _redo;
 public:
 
-	void add(uptr<Reaction> a)
+	void add(uptr<edit::Action> a)
 	{ 
 		if (!a)
 			return;
-		uptr<Reaction> combo;
+		uptr<edit::Action> combo;
 		if (!_undo.empty())
-			combo = combine(*a, *_undo.peek());
-
+			combo = edit::combine(*a, *_undo.peek());
+		
 		if (combo)
 		{
 			(void)_undo.pop();
-			if (!as<Annihilation>(combo.get()))
+			if (!as<edit::Annihilation>(combo.get()))
 				_undo.push(move(combo));
 		}
 		else
@@ -101,6 +101,8 @@ public:
 		}
 	}
 };
+
+using intrusive::as_mutable;
 
 struct Draftex
 {
@@ -224,7 +226,7 @@ struct Draftex
 
 			auto text = oui::utf8(charcode);
 
-			history.add(caret.perform<InsertText>(claim(caret.node), caret.offset, text));
+			history.add(caret.perform<edit::InsertText>(claim_mutable(caret.node), caret.offset, text, Caret::Move::forward));
 
 			window.redraw();
 			return;
@@ -247,27 +249,27 @@ struct Draftex
 		std::ofstream out("test.out");
 		tokens->serialize(out);
 	}
-	void insert_group(std::string_view group_type)
+	void insert_group(std::string_view /*group_type*/)
 	{
-		auto result = tex::Group::make(group_type);
-		if (caret.offset >= caret.node->text.size())
-		{
-			caret.offset = 0;
-			caret.node = caret.node
-				->insertAfterThis(move(result))
-				->append(tex::Text::make());
-			return;
-		}
-		if (caret.offset > 0)
-		{
-			auto prev_node = caret.node;
-			caret.node = caret.node->insertAfterThis(tex::Text::make(caret.node->text.substr(caret.offset)));
-			prev_node->text.resize(caret.offset);
-			caret.offset = 0;
-		}
-		caret.node = caret.node
-			->insertBeforeThis(move(result))
-			->append(tex::Text::make());
+		//auto result = tex::Group::make(group_type);
+		//if (caret.offset >= caret.node->text.size())
+		//{
+		//	caret.offset = 0;
+		//	caret.node = caret.node
+		//		->insertAfterThis(move(result))
+		//		->append(tex::Text::make());
+		//	return;
+		//}
+		//if (caret.offset > 0)
+		//{
+		//	auto prev_node = caret.node;
+		//	caret.node = caret.node->insertAfterThis(tex::Text::make(caret.node->text.substr(caret.offset)));
+		//	prev_node->text.resize(caret.offset);
+		//	caret.offset = 0;
+		//}
+		//caret.node = caret.node
+		//	->insertBeforeThis(move(result))
+		//	->append(tex::Text::make());
 	}
 
 	void insert_math()
@@ -279,15 +281,15 @@ struct Draftex
 		insert_group("%");
 	}
 
-	void change_par(tex::Par::Type new_type)
+	void change_par(tex::Par::Type /*new_type*/)
 	{
-		for (const tex::Node* n = caret.node; ; n = n->group())
-			if (auto par = tex::as<tex::Par>(n->group()))
-			{
-				par->partype(new_type);
-				return;
-			}
-		//TODO: maybe warn if no para parent found?
+		//for (tex::Node* n = caret.node; ; n = n->group())
+		//	if (auto par = tex::as<tex::Par>(n->group()))
+		//	{
+		//		par->partype(new_type);
+		//		return;
+		//	}
+		////TODO: maybe warn if no para parent found?
 	}
 	template <tex::Par::Type NewType>
 	void change_par()

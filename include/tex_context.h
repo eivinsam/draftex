@@ -66,7 +66,7 @@ namespace tex
 
 
 
-		std::vector<Float*> floats;
+		std::vector<const Float*> floats;
 
 		Param<Mode> mode;
 		Param<FontType> font_type;

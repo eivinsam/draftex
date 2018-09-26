@@ -12,7 +12,7 @@ namespace tex
 	public:
 		Curly(string) { }
 
-		bool collect(Paragraph& out) override
+		bool collect(Paragraph& out) const override
 		{
 			for (auto&& e : *this)
 				out.push_back(&e);
@@ -22,7 +22,7 @@ namespace tex
 		void enforceRules() noexcept final { _enforce_child_rules(); }
 		bool terminatedBy(string_view token) const noexcept final { return token == "}"; }
 
-		Box& updateLayout(Context& con) final
+		Box& updateLayout(Context& con) const final
 		{
 			_box.before = _box.after = 0;
 			_box.above = _box.below = 0;
@@ -58,7 +58,7 @@ namespace tex
 
 		bool terminatedBy(string_view) const noexcept final { return false; }
 
-		Box& updateLayout(Context& con) final
+		Box& updateLayout(Context& con) const final
 		{
 			auto old_type = con.font_type.push(FontType::italic);
 			return Group::updateLayout(con);
@@ -67,13 +67,13 @@ namespace tex
 
 	class Bibliography : public Group
 	{
-		std::optional<Bib> _data;
+		mutable std::optional<Bib> _data;
 	public:
 		Bibliography(string) noexcept { }
 
 		bool terminatedBy(std::string_view) const noexcept final { return false; }
 
-		const Bib::Entry* entry(string_view key)
+		const Bib::Entry* entry(string_view key) const
 		{
 			if (!_data)
 			{
@@ -88,24 +88,24 @@ namespace tex
 
 	class Float : public Group
 	{
-		Box _float_box;
-		Owner<Line> _lines;
+		mutable Box _float_box;
+		mutable Owner<Line> _lines;
 		oui::Color _color;
 	protected:
-		Text* _exit_this_or_next_text() noexcept override { return nullptr; }
-		Text* _exit_this_or_prev_text() noexcept override { return nullptr; }
+		const Text* _exit_this_or_next_text() const noexcept override { return nullptr; }
+		const Text* _exit_this_or_prev_text() const noexcept override { return nullptr; }
 
-		Text* _exit_this_or_next_stop() noexcept override { return nextText(); }
-		Text* _exit_this_or_prev_stop() noexcept override { return prevText(); }
+		const Text* _exit_this_or_next_stop() const noexcept override { return nextText(); }
+		const Text* _exit_this_or_prev_stop() const noexcept override { return prevText(); }
 
-		Text* _this_or_prev_stop() noexcept override 
+		const Text* _this_or_prev_stop() const noexcept override 
 		{ 
 			Expects(!empty()); 
 			auto text = as<Text>(&back());
 			Ensures(text != nullptr);
 			return text;
 		};
-		Text* _this_or_next_stop() noexcept override 
+		const Text* _this_or_next_stop() const noexcept override 
 		{ 
 			Expects(!empty()); 
 			auto text = as<Text>(&front());
@@ -115,14 +115,14 @@ namespace tex
 		Float(const oui::Color& color) noexcept : _color(color) { }
 	public:
 
-		Text* prevTextInclusive() noexcept override { return prevText(); };
-		Text* nextTextInclusive() noexcept override { return nextText(); };
+		const Text* prevTextInclusive() const noexcept override { return prevText(); };
+		const Text* nextTextInclusive() const noexcept override { return nextText(); };
 
-		constexpr void floatOffset(Vector offset) noexcept { _float_box.offset = offset; }
+		constexpr void floatOffset(Vector offset) const noexcept { _float_box.offset = offset; }
 
 		const Box& contentBox() const noexcept override { return _float_box; }
 
-		Box& updateLayout(Context& con) override
+		Box& updateLayout(Context& con) const override
 		{
 			con.floats.push_back(this);
 
@@ -197,8 +197,8 @@ namespace tex
 
 	class Footnote : public Float
 	{
-		string _id;
-		Font _font;
+		mutable string _id;
+		mutable Font _font;
 	public:
 		Footnote(string) : Float(oui::colors::white) { }//Float({ 0.92, 0.98, 1 }) { }
 
@@ -209,7 +209,7 @@ namespace tex
 			Float::enforceRules();
 		}
 
-		Box& updateLayout(Context& con) final
+		Box& updateLayout(Context& con) const final
 		{
 			Float::updateLayout(con);
 
@@ -243,40 +243,40 @@ namespace tex
 	class Cite : public Float
 	{
 		string _key;
-		Font _font;
-		Text* _this_or_prev_stop() noexcept override { return prevStop(); }
-		Text* _this_or_next_stop() noexcept override { return nextStop(); }
+		mutable Font _font;
+		const Text* _this_or_prev_stop() const noexcept override { return prevStop(); }
+		const Text* _this_or_next_stop() const noexcept override { return nextStop(); }
 	public:
 		Cite(string key) : Float(oui::Color{ 0.8, 1, 0.75 }), _key(key) { }
 
 		bool terminatedBy(std::string_view) const noexcept final { return false; }
 
-		Box& updateLayout(Context& con) final
+		Box& updateLayout(Context& con) const final
 		{
-			while (!empty())
-				pop_back();
-
-			if (auto bib = bibliography())
-			{
-				if (auto match = bib->entry(_key))
-				{
-					if (auto author = match->tag("author"))
-						tokenizeText(*author + " ");
-					else
-						tokenizeText("[No author field] ");
-
-					if (auto title = match->tag("title"))
-						tokenizeText(*title);
-					else
-						tokenizeText("[No title field]");
-				}
-				else
-					tokenizeText("[No match in bibilography]");
-			}
-			else
-				tokenizeText("[No bibliography]");
-
-			expand();
+			//while (!empty())
+			//	pop_back();
+			//
+			//if (auto bib = bibliography())
+			//{
+			//	if (auto match = bib->entry(_key))
+			//	{
+			//		if (auto author = match->tag("author"))
+			//			tokenizeText(*author + " ");
+			//		else
+			//			tokenizeText("[No author field] ");
+			//
+			//		if (auto title = match->tag("title"))
+			//			tokenizeText(*title);
+			//		else
+			//			tokenizeText("[No title field]");
+			//	}
+			//	else
+			//		tokenizeText("[No match in bibilography]");
+			//}
+			//else
+			//	tokenizeText("[No bibliography]");
+			//
+			//expand();
 
 
 			Float::updateLayout(con);
@@ -303,7 +303,7 @@ namespace tex
 
 		bool terminatedBy(string_view token) const noexcept final { return token == "$"; }
 
-		Box& updateLayout(Context& con) final
+		Box& updateLayout(Context& con) const final
 		{
 			auto old_mode = con.mode.push(Mode::math);
 			auto old_type = con.font_type.push(FontType::italic);
@@ -350,7 +350,7 @@ namespace tex
 	public:
 		using CommandGroup::CommandGroup;
 
-		Box& updateLayout(Context& con) final
+		Box& updateLayout(Context& con) const final
 		{
 			Expects(con.mode == Mode::math);
 			const auto p = nonull(front().getArgument());
@@ -381,7 +381,7 @@ namespace tex
 	class VerticalGroup : public Group
 	{
 	protected:
-		Box& _vertical_layout(Context& con)
+		Box& _vertical_layout(Context& con) const
 		{
 			float height = 0;
 			for (auto&& sub : *this)
@@ -403,7 +403,7 @@ namespace tex
 
 		Flow flow() const noexcept final { return Flow::vertical; }
 
-		Box& updateLayout(Context& con) override
+		Box& updateLayout(Context& con) const override
 		{
 			_box.width(con.width, align::center);
 			_box.above = _box.below = 0;
@@ -414,7 +414,7 @@ namespace tex
 
 	class Root : public VerticalGroup
 	{
-		std::vector<oui::Vector> _line_max;
+		mutable std::vector<oui::Vector> _line_max;
 	public:
 		using VerticalGroup::VerticalGroup;
 
@@ -422,7 +422,7 @@ namespace tex
 
 		Bibliography* bibliography() const noexcept final { return nullptr; }
 
-		Box& updateLayout(Context& con) final
+		Box& updateLayout(Context& con) const final
 		{
 			_line_max.clear();
 			con.floats.clear();
@@ -556,7 +556,7 @@ namespace tex
 
 		bool terminatedBy(string_view token) const noexcept final { return token == "document"; }
 
-		Bibliography* bibliography() const noexcept final
+		const Bibliography* bibliography() const noexcept final
 		{
 			for (auto&& e : *this)
 				if (auto p = as<Par>(&e))
@@ -566,9 +566,9 @@ namespace tex
 			return nullptr;
 		}
 
-		bool collect(Paragraph&) noexcept final { return false; }
+		bool collect(Paragraph&) const noexcept final { return false; }
 
-		Box& updateLayout(Context& con) override
+		Box& updateLayout(Context& con) const override
 		{
 			auto old_type = con.font_type.push(FontType::roman);
 			auto old_width = con.width.push(std::min<float>(con.width, con.ptsize() * 24.0f));
@@ -653,10 +653,10 @@ namespace tex
 	}
 
 
-	using CommandExpander = Owner<Group>(*)(const Command*);
+	using CommandExpander = Owner<Group>(*)(Command*);
 
 	// pops mandatory, optional and then mandatory argument, no expansion
-	Owner<Group> expand_aoa(const Command* src)
+	Owner<Group> expand_aoa(Command* src)
 	{
 		Owner<Group> result = Group::make(src->cmd);
 		tryPopArgument(src->group.next(), *result);
@@ -666,7 +666,7 @@ namespace tex
 		return result;
 	}
 	// pops command plus and optional and a mandatory argument, no expansion
-	Owner<Group> expand_coa(const Command* src)
+	Owner<Group> expand_coa(Command* src)
 	{
 		auto result = Group::make(src->cmd);
 		result->append(Command::make(std::move(src->cmd)));
@@ -677,14 +677,14 @@ namespace tex
 	}
 
 	// pops one argument and expands it
-	Owner<Group> expand_A(const Command* src)
+	Owner<Group> expand_A(Command* src)
 	{
 		auto result = Group::make(src->cmd);
 		tryPopArgument(src->group.next(), *result); result->back().expand();
 		return result;
 	}
 	// pops two arguments, expanding both
-	Owner<Group> expand_AA(const Command* src)
+	Owner<Group> expand_AA(Command* src)
 	{
 		auto result = Group::make(src->cmd);
 		tryPopArgument(src->group.next(), *result); result->back().expand();
@@ -693,7 +693,7 @@ namespace tex
 	}
 
 	// demand one curly after, and expand it
-	Owner<Group> expand_C(const Command* src)
+	Owner<Group> expand_C(Command* src)
 	{
 		auto result = Group::make(src->cmd);
 		if (auto cp = as<Curly>(src->group.next()))
@@ -709,7 +709,7 @@ namespace tex
 		return result;
 	}
 
-	Owner<Group> expand_cite(const Command* src)
+	Owner<Group> expand_cite(Command* src)
 	{
 		if (auto cp = as<Curly>(src->group.next()))
 		{

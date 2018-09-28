@@ -100,6 +100,18 @@ namespace edit
 	{
 		tex::Owner<tex::Node> node;
 	};
+
+	struct SplitPar
+	{
+		tex::Owner<tex::Text> node;
+		int offset;
+		tex::Owner<tex::Par> new_par;
+	};
+	struct UnsplitPar
+	{
+		tex::Owner<tex::Text> first_end;
+		tex::Owner<tex::Par> second;
+	};
 }
 template <class R, class... Args>
 uptr<edit::Action> Caret::perform(Args&&... args)

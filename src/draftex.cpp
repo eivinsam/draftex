@@ -182,7 +182,7 @@ struct Draftex
 			case Key::backspace: history.add(caret.erasePrev()); break;
 			case Key::del:       history.add(caret.eraseNext()); break;
 			case Key::space:     history.add(caret.insertSpace()); break;
-			case Key::enter:     caret.breakParagraph(); break;
+			case Key::enter:     history.add(caret.breakParagraph()); break;
 			case Key::tab:
 				oui::pressed(Key::shift) ? 
 					caret.prevStop() : 

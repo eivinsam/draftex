@@ -114,6 +114,51 @@ namespace edit
 		};
 	}
 
+	Result Do<SplitPar>::perform()
+	{
+		const auto par = as<Par>(node->group());
+		Expects(par != nullptr);
+		if (!new_par)
+		{
+			new_par = intrusive::refcount::make<Par>("par");
+			new_par->append(Text::make("", "\n\n"));
+		}
+		auto new_node = as<Text>(&new_par->front());
+		Expects(new_node != nullptr);
+		new_node->text = node->extract(offset);
+		std::swap(new_node->space_after, node->space_after);
+		while (auto next = node->group.next())
+			new_par->append(next->detachFromGroup());
+		par->insertAfterThis(new_par);
+
+		node->markChange();
+		new_node->markChange();
+		return
+		{
+			make_action<UnsplitPar>(node, new_par),
+			start(new_node)
+		};
+	}
+	Result Do<UnsplitPar>::perform()
+	{
+		auto first = as<Par>(first_end->group());
+		auto second_start = as<Text>(&second->front());
+		Expects(first != nullptr && second_start != nullptr);
+		std::swap(first_end->space_after, second_start->space_after);
+		const int offset = first_end->text.size();
+		first_end->text.append(second_start->extract(0));
+		while (second_start->group.next())
+			first->append(second_start->group.next()->detachFromGroup());
+
+		first_end->markChange();
+		second->removeFromGroup();
+		return
+		{
+			make_action<SplitPar>(first_end, offset, second),
+		{ first_end.get(), offset }
+		};
+	}
+
 
 	static uptr<Action> text_insert_combiner(const Do<InsertText>& a, const Do<InsertText>& b)
 	{

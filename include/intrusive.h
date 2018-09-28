@@ -342,6 +342,13 @@ namespace intrusive
 		nonull<S*> append(nonull<refcount::ptr<S>> e) noexcept
 		{
 			const auto raw_e = e.get();
+			const auto ee = _e(raw_e);
+			if constexpr (!P_void)
+			{
+				Expects(ee->_parent == nullptr);
+			}
+			Expects(ee->_prev == nullptr);
+			Expects(ee->_next == nullptr);
 			if (!_last)
 			{
 				_first = move(e);
@@ -356,7 +363,6 @@ namespace intrusive
 			}
 			if constexpr (!P_void)
 			{
-				Expects(_e(_last)->_parent == nullptr);
 				_e(_last)->_parent = static_cast<P*>(this);
 			}
 			return raw_e;
@@ -468,7 +474,7 @@ namespace intrusive
 
 		constexpr reverse_iterator rbegin() { return { _last.get() }; }
 		constexpr reverse_sentinel rend()   { return {}; }
-		constexpr typename const_list::reverse_iterator rbegin() const { return { _first.get() }; }
+		constexpr typename const_list::reverse_iterator rbegin() const { return { _last.get() }; }
 		constexpr typename const_list::reverse_sentinel rend()   const { return {}; }
 	};
 }

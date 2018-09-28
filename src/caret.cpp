@@ -300,27 +300,17 @@ uptr<Action> Caret::erasePrev()
 		{
 			return perform<MergeText>(claim_mutable(prevt), claim_mutable(node), Move::forward);
 		}
+		else
+			return result;
 	}
-	return result;
-	//else if (auto par = tex::as<tex::Par>(node->group()))
-	//{
-	//	if (auto prev_par = tex::as<tex::Par>(par->group.prev()))
-	//	{
-	//		while (!par->empty())
-	//			prev_par->append(par->front().detachFromGroup());
-	//		prev_par->space_after = move(par->space_after);
-	//		par->removeFromGroup();
-	//		prev_par->markChange();
-	//		if (auto prevt = tex::as<tex::Text>(node->group.prev());
-	//			prevt && prevt->space_after.empty())
-	//		{
-	//			offset = prevt->text.size();
-	//			prevt->text.append(move(node->text));
-	//			prevt->space_after = move(node->space_after);
-	//			std::exchange(node, prevt)->removeFromGroup();
-	//		}
-	//	}
-	//}
+	auto par = as<Par>(node->group());
+	if (!par) return {};
+	auto prev_par = as<Par>(par->group.prev());
+	if (!prev_par) return {};
+	auto prev_end = as<Text>(&prev_par->back());
+	Expects(prev_end != nullptr);
+
+	return perform<UnsplitPar>(claim_mutable(prev_end), claim_mutable(par));
 }
 
 uptr<Action> Caret::insertSpace()
@@ -335,41 +325,17 @@ uptr<Action> Caret::insertSpace()
 	return perform<SplitText>(claim_mutable(node), offset, " ", Move::forward);
 }
 
-void Caret::breakParagraph()
+[[nodiscard]] uptr<Action> Caret::breakParagraph()
 {
-	//if (hasSelection())
-	//	return; // eraseSelection();
-	//
-	//Expects(node != nullptr);
-	//if (typeid(*node->group()) != typeid(tex::Par))
-	//	return;
-	//if (offset == 0 && !node->group->contains(node->prevText()))
-	//	return;
-	//
-	//node->group()->markChange();
-	//const auto new_par = node->group()->insertAfterThis(tex::Group::make("par"));
-	//auto old_node = node;
-	//
-	//if (offset <= 0)
-	//{
-	//	old_node = tex::as<tex::Text>(node->group.prev());
-	//	if (!old_node)
-	//		old_node = node->insertBeforeThis(tex::Text::make());
-	//	new_par->append(node->detachFromGroup());
-	//}
-	//else if (offset >= node->text.size())
-	//	node = new_par->append(tex::Text::make());
-	//else
-	//{
-	//	node = new_par->append(tex::Text::make(node->text.substr(offset)));
-	//	node->space_after = move(old_node->space_after);
-	//	old_node->text.resize(offset);
-	//}
-	//while (old_node->group.next())
-	//	new_par->append(old_node->group.next()->detachFromGroup());
-	//
-	//offset = 0;
-	//resetStart();
+	if (hasSelection())
+		return {}; // eraseSelection();
+	
+	if (typeid(*node->group()) != typeid(tex::Par))
+		return {};
+	if (offset == 0 && !node->group->contains(node->prevText()))
+		return {};
+	
+	return perform<SplitPar>(claim_mutable(node), offset);
 }
 
 void Caret::nextStop() noexcept

@@ -86,7 +86,7 @@ struct Caret
 
 	[[nodiscard]] uptr<Action> insertSpace();
 
-	void breakParagraph();
+	[[nodiscard]] uptr<Action> breakParagraph();
 
 	void nextStop() noexcept;
 	void prevStop() noexcept;

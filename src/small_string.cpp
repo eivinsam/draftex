@@ -78,7 +78,9 @@ void SmallString::insert(int offset, view text)
 
 void SmallString::erase(int index, int count) noexcept
 {
-	Expects(index >= 0 && index < size());
+	if (index >= size())
+		return;
+	Expects(index >= 0);
 	if (count == 0)
 		return;
 	if (count < 0 || index + count > size())

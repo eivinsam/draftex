@@ -112,6 +112,14 @@ namespace edit
 		tex::Owner<tex::Text> first_end;
 		tex::Owner<tex::Par> second;
 	};
+
+	struct ChangeParType
+	{
+		const tex::Text* node;
+		int offset;
+		tex::Owner<tex::Par> par;
+		tex::Par::Type new_type;
+	};
 }
 template <class R, class... Args>
 uptr<edit::Action> Caret::perform(Args&&... args)

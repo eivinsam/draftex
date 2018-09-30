@@ -114,7 +114,7 @@ struct Draftex
 	History history;
 
 	decltype(xpr::those.of(menu::main)) options = { nullptr, nullptr };
-	Caret caret{ nullptr, 0 };
+	Caret caret;
 	volatile bool ignore_char = false;
 
 	Draftex() : window{ { "draftex", 1280, 720, 8 } }, context(window)
@@ -128,7 +128,7 @@ struct Draftex
 		for (auto&& e : *tokens)
 			if (auto group = tex::as<tex::Group>(&e); group && group->terminatedBy("document"))
 			{
-				caret = { group->nextTextInclusive(), 0 };
+				caret = start(group->nextTextInclusive());
 				break;
 			}
 
@@ -223,7 +223,9 @@ struct Draftex
 
 			auto text = oui::utf8(charcode);
 
-			history.add(caret.perform<edit::InsertText>(claim_mutable(caret.node), caret.offset, text, Caret::Move::forward));
+			history.add(caret.perform<edit::InsertText>(
+				claim_mutable(caret.current.node), caret.current.offset, 
+				text, Caret::Move::forward));
 
 			window.redraw();
 			return;
@@ -336,7 +338,7 @@ struct Draftex
 			check_title();
 		}
 
-		const auto caret_box = caret.node->absBox();
+		const auto caret_box = caret.current.node->absBox();
 		const auto shift = oui::Vector{ 0, window.area().height()*0.5f - caret_box.center().y };
 	
 		oui::shift(shift);

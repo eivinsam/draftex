@@ -259,13 +259,7 @@ namespace tex
 		void popArgument(Group& dst) noexcept final { dst.append(group->detach(this)); }
 		const Node* getArgument() const noexcept final { return this; }
 
-		std::optional<string> asEnd() const noexcept final
-		{
-			if (cmd.text().size() > 4 && string_view(cmd.text()).substr(0,4) == "end ")
-				return cmd.text().substr(4);
-			else
-				return {};
-		}
+		std::optional<string> asEnd() const noexcept final;
 
 		Box& updateLayout(Context& con) const final;
 
@@ -321,15 +315,7 @@ namespace tex
 		constexpr Line* next() const { return _next.get(); }
 		constexpr Line* prev() const { return _prev.get(); }
 
-		friend void push(Owner<Line>& head, Owner<Line> value) noexcept
-		{
-			if (head)
-			{
-				head->_prev = value.get();
-				value->_next = move(head);
-			}
-			head = move(value);
-		}
+		friend void push(Owner<Line>& head, Owner<Line> value) noexcept;
 	};
 
 
@@ -338,19 +324,7 @@ namespace tex
 	{
 	public:
 		enum class Type : unsigned char { simple, title, author, section, subsection };
-		static constexpr friend std::string_view name(Type t)
-		{
-			using namespace std::string_view_literals;
-			constexpr std::array<const string_view, 5> cmd_name =
-			{
-				""sv,
-				"\\title"sv,
-				"\\author"sv,
-				"\\section"sv,
-				"\\subsection"sv
-			};
-			return gsl::at(cmd_name, static_cast<std::underlying_type_t<Par::Type>>(t));
-		}
+		friend std::string_view name(Type t);
 	private:
 		static constexpr auto _code(Type t) { return static_cast<unsigned char>(t); }
 

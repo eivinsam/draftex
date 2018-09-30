@@ -1,4 +1,5 @@
 #include "edit.h"
+#include "..\include\tex_position.h"
 
 using std::move;
 
@@ -10,18 +11,19 @@ using namespace edit;
 
 #pragma warning(disable: 26446)
 
+
 void Caret::render(tex::Context & con)
 {
 	if (!con.window().focus())
 		return;
 
-	Expects(node != nullptr);
-	Expects(node_start != nullptr);
+	Expects(current.valid());
+	Expects(start.valid());
 
-	const auto render_one = [&con](const tex::Text& n, int o)
+	const auto render_one = [&con](const Position& p)
 	{
-		auto box = n.absBox();
-		box.min.x += offsetXof(con, n, o) - 1;
+		auto box = p.node->absBox();
+		box.min.x += p.xOffset(con) - 1;
 		box.max.x = box.min.x + 2;
 		oui::fill(box);
 	};
@@ -29,32 +31,35 @@ void Caret::render(tex::Context & con)
 
 	oui::set(oui::Blend::multiply);
 	oui::set(oui::colors::black);
-	render_one(*node, offset);
+	render_one(current);
 
+	if (not hasSelection())
+		return;
 
 	oui::set(oui::Color{ 0.9,1,0.5 });
 
-	const auto xe = offsetX(con);
-	const auto xs = offsetXof(con, *node_start, offset_start);
+	const auto xe = current.xOffset(con);
+	const auto xs =   start.xOffset(con);
 
-	if (node == node_start)
+	auto to_mark = interval(*start.node, *current.node);
+	const auto fwd = to_mark.front() == start.node;
+	if (start.node == current.node)
 	{
-		const auto box = node->absBox();
+		auto box = current.node->absBox();
 
-		oui::fill({ { box.min.x + xs, box.min.y },{ box.min.x + xe, box.max.y } });
+		(fwd ? box.max.x : box.min.x) = box.min.x + xe;
+		(fwd ? box.min.x : box.max.x) = box.min.x + xs;
+		oui::fill(box);
 
 		return;
 	}
-
-	auto to_mark = interval(*node_start, *node);
 	Expects(to_mark.size() >= 2);
-	const auto fwd = to_mark.front() == node_start;
 
 	{
-		auto box = node->absBox();
+		auto box = current.node->absBox();
 		(fwd ? box.max.x : box.min.x) = box.min.x + xe;
 		oui::fill(box);
-		box = node_start->absBox();
+		box = start.node->absBox();
 		(fwd ? box.min.x : box.max.x) = box.min.x + xs;
 		oui::fill(box);
 	}
@@ -62,15 +67,6 @@ void Caret::render(tex::Context & con)
 	for (auto it = ++to_mark.begin(), end = --to_mark.end(); it != end; ++it)
 		oui::fill((*it)->absBox());
 }
-
-int Caret::repairOffset(int off) noexcept
-{
-	Expects(node && off < int_size(node->text()));
-	while (off > 0 && utf8len(node->text()[off]) == 0)
-		--off;
-	return off;
-}
-
 
 uptr<Action> delete_if_redundant(const Text& node)
 {
@@ -84,62 +80,52 @@ uptr<Action> delete_if_redundant(const Text& node)
 
 uptr<Action> Caret::next()
 {
-	if (!node)
-		return {};
+	Expects(current.valid());
 	prepare(Move::forward);
 	target_x = no_target;
 
-	if (offset < int_size(node->text()))
-	{
-		offset += utf8len(node->text()[offset]);
+	const auto old_node = current.node;
+	current.advance();
+	
+	if (current.node == old_node)
 		return {};
-	}
-	if (auto next_text = node->nextText())
-	{
-		offset = 0;
-		return delete_if_redundant(*std::exchange(node, next_text));
-	}
-	return {};
+	else
+		return delete_if_redundant(*old_node);
 }
 
 uptr<Action> Caret::prev()
 {
-	if (!node)
-		return {};
+	Expects(current.valid());
 	prepare(Move::backward);
 	target_x = no_target;
 
-	if (offset > 0)
-	{
-		offset = repairOffset(offset - 1);
+	const auto old_node = current.node;
+	current.recede();
+
+	if (current.node == old_node)
 		return {};
-	}
-	if (auto prev_text = node->prevText())
-	{
-		offset = prev_text->text().size();
-		return delete_if_redundant(*std::exchange(node, prev_text));
-	}
-	return {};
+	else
+		return delete_if_redundant(*old_node);
 }
 
 void Caret::findPlace(tex::Context & con)
 {
-	const auto font = con.fontData(node->font);
-	auto&& textdata = node->text();
-	auto prev_x = node->absLeft();
+	const auto font = con.fontData(current.node->font);
+	auto&& textdata = current.node->text();
+	auto prev_x = current.node->absLeft();
 
 	for (int i = 0, len = 1; i < int_size(textdata); i += len)
 	{
-		len = utf8len(node->text()[i]);
-		const auto x = prev_x + font->offset(textdata.substr(i, len), con.ptsize(node->font));
+		len = utf8len(current.node->text()[i]);
+		const auto x = prev_x + font->offset(textdata.substr(i, len), con.ptsize(current.node->font));
 		if (x >= target_x)
 		{
-			offset = x - target_x > target_x - prev_x ? i : i + len;
+			current.offset = x - target_x > target_x - prev_x ? i : i + len;
 			return;
 		}
 		prev_x = x;
 	}
-	offset = int_size(textdata);
+	current.offset = int_size(textdata);
 }
 
 void Caret::findClosestOnLine(tex::Context & con, tex::Line * line)
@@ -155,7 +141,7 @@ void Caret::findClosestOnLine(tex::Context & con, tex::Line * line)
 		if (closest_d > d)
 		{
 			closest_d = d;
-			node = &e;
+			current.node = &e;
 		}
 	}
 	return findPlace(con);
@@ -163,18 +149,17 @@ void Caret::findClosestOnLine(tex::Context & con, tex::Line * line)
 
 uptr<Action> Caret::up(tex::Context & con)
 {
-	if (!node)
-		return {};
+	Expects(current.valid());
 	prepare(Move::backward);
 
-	const auto old_node = node;
+	const auto old_node = current.node;
 
 	if (isnan(target_x))
-		target_x = node->absLeft() + offsetX(con);
-	if (!node->line())
+		target_x = current.node->absLeft() + current.xOffset(con);
+	if (!current.node->line())
 		return {};
 
-	const auto nextl = node->line->next();
+	const auto nextl = current.node->line->next();
 	if (!nextl)
 		return {};
 
@@ -184,18 +169,17 @@ uptr<Action> Caret::up(tex::Context & con)
 
 uptr<Action> Caret::down(tex::Context & con)
 {
-	if (!node)
-		return {};
+	Expects(current.valid());
 	prepare(Move::forward);
 
-	const auto old_node = node;
+	const auto old_node = current.node;
 
 	if (isnan(target_x))
-		target_x = node->absLeft() + offsetX(con);
-	if (!node->line())
+		target_x = current.node->absLeft() + current.xOffset(con);
+	if (!current.node->line())
 		return {};
 
-	const auto prevl = node->line->prev();
+	const auto prevl = current.node->line->prev();
 	if (!prevl)
 		return {};
 
@@ -205,17 +189,17 @@ uptr<Action> Caret::down(tex::Context & con)
 
 uptr<Action> Caret::home()
 {
+	Expects(current.valid());
 	prepare(Move::backward);
 	target_x = no_target;
 
-	if (!node->line())
+	if (!current.node->line())
 		return {};
 
-	const auto old_node = node;
-	node = &*node->line->begin();
-	offset = 0;
+	const auto old_node = current.node;
+	current = tex::start(&*current.node->line->begin());
 
-	return node == old_node ? nullptr : 
+	return current.node == old_node ? nullptr : 
 		delete_if_redundant(*old_node);
 }
 
@@ -224,26 +208,34 @@ uptr<Action> Caret::end()
 	prepare(Move::forward);
 	target_x = no_target;
 
-	if (!node->line())
+	if (!current.node->line())
 		return {};
 
-	const auto old_node = node;
-	node = &*node->line->rbegin();
-	offset = node->text().size();
+	const auto old_node = current.node;
+	current = tex::end(&*current.node->line->rbegin());
 
-	return node == old_node ? nullptr :
+	return current.node == old_node ? nullptr :
 		delete_if_redundant(*old_node);
 }
 
-uptr<Action> Caret::eraseSelection()
+uptr<Action> Caret::eraseSelection(Move move)
 {
 	Expects(hasSelection());
 
-	if (node == node_start)
+	if (current.node == start.node)
 	{
-		if (offset_start > offset)
-			std::swap(offset_start, offset);
-		return perform<RemoveText>(claim_mutable(node), offset_start, offset, Move::forward);
+		if (start.offset > current.offset)
+			std::swap(start.offset, current.offset);
+		return perform<RemoveText>(claim_mutable(current.node), start.offset,
+								   current.offset - start.offset, move);
+	}
+	if (start == current.prev())
+	{
+		return perform<MergeText>(claim_mutable(start.node), claim_mutable(current.node), Move::forward);
+	}
+	if (start == current.next())
+	{
+		return perform<MergeText>(claim_mutable(current.node), claim_mutable(start.node), Move::backward);
 	}
 	return {};
 }
@@ -252,71 +244,69 @@ uptr<Action> Caret::eraseNext()
 {
 	target_x = no_target;
 
-	if (hasSelection())
-		return eraseSelection();
+	if (not hasSelection())
+		start = current.next();
+	return eraseSelection(Move::backward);
 
-	if (offset < maxOffset())
-	{
-		return perform<RemoveText>(claim_mutable(node), offset, utf8len(node->text()[offset]), Move::backward);
-	}
-	uptr<Action> result;
-	if (node->space().empty())
-	{
-		return result;
-		//if (!node->group.next())
-		//	return {};
-		//Expects(!text(*node->group.next()));
-		//node->group.next()->removeFromGroup();
-	}
-	else if (auto nextt = as<Text>(node->group.next()))
-	{
-		return perform<MergeText>(claim_mutable(node), claim_mutable(nextt), Move::backward);
-	}
-	return result;
+	//if (not current.atNodeEnd())
+	//{
+	//	return perform<RemoveText>(claim_mutable(current.node), current.offset, 
+	//							   current.characterLength(), Move::backward);
+	//}
+	//uptr<Action> result;
+	//if (current.node->space().empty())
+	//{
+	//	return result;
+	//	//if (!node->group.next())
+	//	//	return {};
+	//	//Expects(!text(*node->group.next()));
+	//	//node->group.next()->removeFromGroup();
+	//}
+	//else if (auto nextt = as<Text>(current.node->group.next()))
+	//{
+	//	return perform<MergeText>(claim_mutable(current.node), claim_mutable(nextt), Move::backward);
+	//}
+	//return result;
 }
 
 uptr<Action> Caret::erasePrev()
 {
 	target_x = no_target;
 
-	if (hasSelection())
-		return eraseSelection();
+	if (not hasSelection())
+		start = current.prev();
+	return eraseSelection(Move::forward);
 
-	if (offset > 0)
-	{
-		offset = repairOffset(offset-1);
-		return perform<RemoveText>(claim_mutable(node), offset, utf8len(node->text()[offset]), Move::forward);
-	}
-	uptr<Action> result;
-	if (auto prev = node->group.prev())
-	{
-		if (auto prevt = as<Text>(prev))
-		{
-			return perform<MergeText>(claim_mutable(prevt), claim_mutable(node), Move::forward);
-		}
-		else
-			return result;
-	}
-	auto par = as<Par>(node->group());
-	if (!par) return {};
-	auto prev_par = as<Par>(par->group.prev());
-	if (!prev_par) return {};
-	auto prev_end = as<Text>(&prev_par->back());
-	Expects(prev_end != nullptr);
-
-	return perform<UnsplitPar>(claim_mutable(prev_end), claim_mutable(par));
+	//uptr<Action> result;
+	//if (auto prev = node->group.prev())
+	//{
+	//	if (auto prevt = as<Text>(prev))
+	//	{
+	//		return perform<MergeText>(claim_mutable(prevt), claim_mutable(node), Move::forward);
+	//	}
+	//	else
+	//		return result;
+	//}
+	//auto par = as<Par>(node->group());
+	//if (!par) return {};
+	//auto prev_par = as<Par>(par->group.prev());
+	//if (!prev_par) return {};
+	//auto prev_end = as<Text>(&prev_par->back());
+	//Expects(prev_end != nullptr);
+	//
+	//return perform<UnsplitPar>(claim_mutable(prev_end), claim_mutable(par));
 }
 
 uptr<Action> Caret::insertSpace()
 {
 	if (hasSelection())
 		return {}; // eraseSelection();
-	if (offset <= 0) 
+	if (current.atNodeStart()) 
 		return {};
-	if (offset >= int_size(node->text()))
-		return perform<InsertNode>(Text::make(" "), claim_mutable(node));
+	if (current.atNodeEnd())
+		return perform<InsertNode>(Text::make(" "), claim_mutable(current.node));
 
-	return perform<SplitText>(claim_mutable(node), offset, " ", Move::forward);
+	return perform<SplitText>(claim_mutable(current.node), current.offset, " ", Move::forward);
 }
 
 [[nodiscard]] uptr<Action> Caret::breakParagraph()
@@ -324,30 +314,24 @@ uptr<Action> Caret::insertSpace()
 	if (hasSelection())
 		return {}; // eraseSelection();
 	
-	if (typeid(*node->group()) != typeid(tex::Par))
+	if (typeid(*current.node->group()) != typeid(tex::Par))
 		return {};
-	if (offset == 0 && !node->group->contains(node->prevText()))
+	if (current.atNodeStart() && !current.node->group->contains(current.node->prevText()))
 		return {};
 	
-	return perform<SplitPar>(claim_mutable(node), offset);
+	return perform<SplitPar>(claim_mutable(current.node), current.offset);
 }
 
 void Caret::nextStop() noexcept
 {
-	if (auto new_node = node->nextStop())
-	{
-		node = new_node;
-		offset = 0;
-	}
+	if (auto new_node = current.node->nextStop())
+		current = tex::start(new_node);
 	resetStart();
 }
 
 void Caret::prevStop() noexcept
 {
-	if (auto new_node = node->prevStop())
-	{
-		node = new_node;
-		offset = node->text().size();
-	}
+	if (auto new_node = current.node->prevStop())
+		current = tex::end(new_node);
 	resetStart();
 }

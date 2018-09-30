@@ -174,6 +174,14 @@ namespace tex
 		return true;
 	}
 
+	std::optional<string> Command::asEnd() const noexcept
+	{
+		if (cmd.text().size() > 4 && string_view(cmd.text()).substr(0, 4) == "end ")
+			return cmd.text().substr(4);
+		else
+			return {};
+	}
+
 	Box& Command::updateLayout(Context& con) const
 	{
 		_font_size = con.font_size;

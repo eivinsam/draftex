@@ -49,62 +49,67 @@ namespace tex
 
 	namespace details
 	{
-		template <class T, class Friend>
-		class Property
-		{
-			friend Friend;
-			T value;
 
-		public:
-		};
-		template <class T, class Friend>
-		class Property<T*, Friend>
-		{
-			friend Friend;
-			T* value = nullptr;
-
-			constexpr Property() = default;
-			constexpr Property(Property&&) = default;
-			constexpr Property(const Property&) = default;
-			constexpr Property& operator=(Property&&) = default;
-			constexpr Property& operator=(const Property&) = default;
-
-			constexpr Property(T* value) : value(value) { }
-			constexpr Property& operator=(T* new_value) { value = new_value; return *this; }
-		public:
-			constexpr       T* operator()() const { return value; }
-			explicit constexpr operator bool() const { return static_cast<bool>(value); }
-
-			constexpr T* operator->() const { return value; }
-			constexpr T& operator*() const { return *value; }
-
-			template <class S> constexpr bool operator==(S&& other) const { return value == other; }
-			template <class S> constexpr bool operator!=(S&& other) const { return value != other; }
-		};
-		template <class T, class Friend>
-		class Property<Owner<T>, Friend>
-		{
-			friend Friend;
-			Owner<T> value;
-
-			constexpr Property() = default;
-			constexpr Property(Property&&) = default;
-			constexpr Property(const Property&) = default;
-			constexpr Property& operator=(Property&&) = default;
-			constexpr Property& operator=(const Property&) = default;
-
-			constexpr Property(Owner<T> value) : value(std::move(value)) { }
-			constexpr Property& operator=(Owner<T> new_value) { value = std::move(new_value); return *this; }
-
-		public:
-			constexpr T* operator()() const { return value.get(); }
-			explicit constexpr operator bool() const { return static_cast<bool>(value); }
-
-			constexpr T* operator->() const { return value.get(); }
-			constexpr T& operator*() const { return *value; }
-
-			template <class S> constexpr bool operator==(S&& other) const { return value == other; }
-			template <class S> constexpr bool operator!=(S&& other) const { return value != other; }
-		};
+		//template <class T, class Friend>
+		//class Property
+		//{
+		//	friend Friend;
+		//	T value;
+		//public:
+		//
+		//	T& operator() noexcept { return value; }
+		//	const T& operator() const noexcept { return value; }
+		//
+		//
+		//};
+		//template <class T, class Friend>
+		//class Property<T*, Friend>
+		//{
+		//	friend Friend;
+		//	T* value = nullptr;
+		//
+		//	constexpr Property() = default;
+		//	constexpr Property(Property&&) = default;
+		//	constexpr Property(const Property&) = default;
+		//	constexpr Property& operator=(Property&&) = default;
+		//	constexpr Property& operator=(const Property&) = default;
+		//
+		//	constexpr Property(T* value) : value(value) { }
+		//	constexpr Property& operator=(T* new_value) { value = new_value; return *this; }
+		//public:
+		//	constexpr       T* operator()() const { return value; }
+		//	explicit constexpr operator bool() const { return static_cast<bool>(value); }
+		//
+		//	constexpr T* operator->() const { return value; }
+		//	constexpr T& operator*() const { return *value; }
+		//
+		//	template <class S> constexpr bool operator==(S&& other) const { return value == other; }
+		//	template <class S> constexpr bool operator!=(S&& other) const { return value != other; }
+		//};
+		//template <class T, class Friend>
+		//class Property<Owner<T>, Friend>
+		//{
+		//	friend Friend;
+		//	Owner<T> value;
+		//
+		//	constexpr Property() = default;
+		//	constexpr Property(Property&&) = default;
+		//	constexpr Property(const Property&) = default;
+		//	constexpr Property& operator=(Property&&) = default;
+		//	constexpr Property& operator=(const Property&) = default;
+		//
+		//	constexpr Property(Owner<T> value) : value(std::move(value)) { }
+		//	constexpr Property& operator=(Owner<T> new_value) { value = std::move(new_value); return *this; }
+		//
+		//public:
+		//	constexpr T* operator()() const { return value.get(); }
+		//	explicit constexpr operator bool() const { return static_cast<bool>(value); }
+		//
+		//	constexpr T* operator->() const { return value.get(); }
+		//	constexpr T& operator*() const { return *value; }
+		//
+		//	template <class S> constexpr bool operator==(S&& other) const { return value == other; }
+		//	template <class S> constexpr bool operator!=(S&& other) const { return value != other; }
+		//};
 	}
 }

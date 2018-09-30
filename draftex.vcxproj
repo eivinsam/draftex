@@ -123,6 +123,7 @@
     <ClCompile Include="src\edit.cpp" />
     <ClCompile Include="src\file_mapping.cpp" />
     <ClCompile Include="src\small_string.cpp" />
+    <ClCompile Include="src\tex_position.cpp" />
     <ClCompile Include="src\tex_bib.cpp" />
     <ClCompile Include="src\tex_node.cpp" />
     <ClCompile Include="src\tex_node_groups.cpp" />
@@ -148,6 +149,7 @@
     <ClInclude Include="include\tex_context.h" />
     <ClInclude Include="include\tex_node.h" />
     <ClInclude Include="include\tex_paragraph.h" />
+    <ClInclude Include="include\tex_position.h" />
     <ClInclude Include="include\tex_util.h" />
     <ClInclude Include="include\tex_word.h" />
     <ClInclude Include="src\edit.h" />

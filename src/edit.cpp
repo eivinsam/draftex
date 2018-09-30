@@ -6,8 +6,6 @@ using std::move;
 
 using namespace tex;
 
-Caret start(Text* node) noexcept { return { node, 0 }; }
-Caret end(Text* node) noexcept { return { node, node ? node->text().size() : 0 }; }
 
 struct pair_hasher
 {
@@ -38,7 +36,7 @@ namespace edit
 		return
 		{
 			make_action<InsertText>(node, offset, node->text().extract(offset, length), caret_move),
-		{ node.get(), offset }
+			Position{ node.get(), offset }
 		};
 	}
 	Result Do<InsertText>::perform()
@@ -48,7 +46,7 @@ namespace edit
 		return
 		{
 			make_action<RemoveText>(node, offset, text.size(), caret_move),
-		{ node.get(), offset + (caret_move == Caret::Move::forward ? text.size() : 0) }
+			Position{ node.get(), offset + (caret_move == Caret::Move::forward ? text.size() : 0) }
 		};
 	}
 
@@ -75,7 +73,7 @@ namespace edit
 		return
 		{
 			make_action<UnmergeText>(first, second, caret_move),
-		{ first.get(), first->text().size() - second->text().size() }
+			Position{ first.get(), first->text().size() - second->text().size() }
 		};
 	}
 	Result Do<UnmergeText>::perform()
@@ -162,10 +160,24 @@ namespace edit
 		second->removeFromGroup();
 		return
 		{
-			make_action<SplitPar>(first_end, offset, second),
-		{ first_end.get(), offset }
+			make_action<SplitPar>(first_end, offset, second), 
+			Position{ first_end.get(), offset }
 		};
 	}
+
+
+
+	Result Do<ChangeParType>::perform()
+	{
+		const auto old_type = par->partype();
+		par->partype(new_type);
+		return 
+		{
+			make_action<ChangeParType>(node, offset, par, old_type), 
+			Position{ node, offset }
+		};
+	}
+
 
 
 	static uptr<Action> text_insert_combiner(const Do<InsertText>& a, const Do<InsertText>& b)

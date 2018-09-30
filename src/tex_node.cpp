@@ -126,17 +126,19 @@ namespace tex
 		return result;
 	}
 
+
 	std::vector<nonull<const Node*>> interval(const Node& a, const Node& b)
 	{
-		auto ap = a.parents();
-		auto bp = b.parents();
-
 		std::vector<nonull<const Node*>> result;
 		if (&a == &b)
 		{
 			result.push_back(&a);
 			return result;
 		}
+
+		auto ap = a.parents();
+		auto bp = b.parents();
+
 
 		auto ia = ap.rbegin();
 		auto ib = bp.rbegin();
@@ -281,6 +283,29 @@ namespace tex
 			e.serialize(out);
 	}
 
+	void push(Owner<Line>& head, Owner<Line> value) noexcept
+	{
+		if (head)
+		{
+			head->_prev = value.get();
+			value->_next = move(head);
+		}
+		head = move(value);
+	}
+
+	std::string_view name(Par::Type t)
+	{
+		using namespace std::string_view_literals;
+		constexpr std::array<const string_view, 5> cmd_name =
+		{
+			""sv,
+			"\\title"sv,
+			"\\author"sv,
+			"\\section"sv,
+			"\\subsection"sv
+		};
+		return gsl::at(cmd_name, static_cast<std::underlying_type_t<Par::Type>>(t));
+	}
 	Par::Par(const Word& token)
 	{
 		Expects(token.space().empty());

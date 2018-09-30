@@ -65,8 +65,8 @@ void Caret::render(tex::Context & con)
 
 int Caret::repairOffset(int off) noexcept
 {
-	Expects(node && off < node->text.size());
-	while (off > 0 && utf8len(node->text[off]) == 0)
+	Expects(node && off < int_size(node->text()));
+	while (off > 0 && utf8len(node->text()[off]) == 0)
 		--off;
 	return off;
 }
@@ -74,7 +74,7 @@ int Caret::repairOffset(int off) noexcept
 
 uptr<Action> delete_if_redundant(const Text& node)
 {
-	if (!node.text.empty() ||
+	if (!node.text().empty() ||
 		!text(node.group.prev()) ||
 		!text(node.group.next()))
 		return {};
@@ -89,9 +89,9 @@ uptr<Action> Caret::next()
 	prepare(Move::forward);
 	target_x = no_target;
 
-	if (offset < node->text.size())
+	if (offset < int_size(node->text()))
 	{
-		offset += utf8len(node->text[offset]);
+		offset += utf8len(node->text()[offset]);
 		return {};
 	}
 	if (auto next_text = node->nextText())
@@ -116,7 +116,7 @@ uptr<Action> Caret::prev()
 	}
 	if (auto prev_text = node->prevText())
 	{
-		offset = prev_text->text.size();
+		offset = prev_text->text().size();
 		return delete_if_redundant(*std::exchange(node, prev_text));
 	}
 	return {};
@@ -125,12 +125,12 @@ uptr<Action> Caret::prev()
 void Caret::findPlace(tex::Context & con)
 {
 	const auto font = con.fontData(node->font);
-	const auto textdata = std::string_view(node->text);
+	auto&& textdata = node->text();
 	auto prev_x = node->absLeft();
 
 	for (int i = 0, len = 1; i < int_size(textdata); i += len)
 	{
-		len = utf8len(node->text[i]);
+		len = utf8len(node->text()[i]);
 		const auto x = prev_x + font->offset(textdata.substr(i, len), con.ptsize(node->font));
 		if (x >= target_x)
 		{
@@ -229,7 +229,7 @@ uptr<Action> Caret::end()
 
 	const auto old_node = node;
 	node = &*node->line->rbegin();
-	offset = node->text.size();
+	offset = node->text().size();
 
 	return node == old_node ? nullptr :
 		delete_if_redundant(*old_node);
@@ -257,10 +257,10 @@ uptr<Action> Caret::eraseNext()
 
 	if (offset < maxOffset())
 	{
-		return perform<RemoveText>(claim_mutable(node), offset, utf8len(node->text[offset]), Move::backward);
+		return perform<RemoveText>(claim_mutable(node), offset, utf8len(node->text()[offset]), Move::backward);
 	}
 	uptr<Action> result;
-	if (node->space_after.empty())
+	if (node->space().empty())
 	{
 		return result;
 		//if (!node->group.next())
@@ -285,18 +285,12 @@ uptr<Action> Caret::erasePrev()
 	if (offset > 0)
 	{
 		offset = repairOffset(offset-1);
-		return perform<RemoveText>(claim_mutable(node), offset, utf8len(node->text[offset]), Move::forward);
+		return perform<RemoveText>(claim_mutable(node), offset, utf8len(node->text()[offset]), Move::forward);
 	}
 	uptr<Action> result;
 	if (auto prev = node->group.prev())
 	{
-		if (prev->space_after.empty())
-		{
-			return result;
-			//Expects(!text(*node->group.prev()));
-			//node->group.prev()->removeFromGroup();
-		}
-		else if (auto prevt = as<Text>(prev))
+		if (auto prevt = as<Text>(prev))
 		{
 			return perform<MergeText>(claim_mutable(prevt), claim_mutable(node), Move::forward);
 		}
@@ -319,8 +313,8 @@ uptr<Action> Caret::insertSpace()
 		return {}; // eraseSelection();
 	if (offset <= 0) 
 		return {};
-	if (offset >= node->text.size())
-		return perform<InsertNode>(Text::make("", " "), claim_mutable(node));
+	if (offset >= int_size(node->text()))
+		return perform<InsertNode>(Text::make(" "), claim_mutable(node));
 
 	return perform<SplitText>(claim_mutable(node), offset, " ", Move::forward);
 }
@@ -353,7 +347,7 @@ void Caret::prevStop() noexcept
 	if (auto new_node = node->prevStop())
 	{
 		node = new_node;
-		offset = node->text.size();
+		offset = node->text().size();
 	}
 	resetStart();
 }

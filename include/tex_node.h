@@ -32,7 +32,6 @@ namespace tex
 		using string = SmallString;
 
 		intrusive::list_element<Node, Group> group;
-		string space_after;
 
 		enum class Type : char { text, group, command };
 
@@ -151,7 +150,8 @@ namespace tex
 		const Text* prevTextInclusive() const noexcept override { return !empty() ? rbegin()->prevTextInclusive() : prevText(); }
 		const Text* nextTextInclusive() const noexcept override { return !empty() ?  begin()->nextTextInclusive() : nextText(); }
 
-		static Owner<Group> make(string name) noexcept;
+		static Owner<Group> make(string_view name) noexcept { return make(Word(name)); }
+		static Owner<Group> make(const Word& name) noexcept;
 
 		virtual void tokenize(InputReader& in, Mode mode);
 		void tokenizeText(string_view);
@@ -242,16 +242,16 @@ namespace tex
 	{
 		mutable FontSize _font_size = FontSize::normalsize;
 	public:
-		string cmd;
+		Word cmd;
 
 		Type type() const noexcept final { return Type::command; }
 		Flow flow() const noexcept final { return Flow::line; }
 
 		static auto make() { return Node::make<Command>(); }
-		static auto make(string data)
+		static auto make(Word w)
 		{
 			auto result = make();
-			result->cmd = std::move(data);
+			result->cmd = std::move(w);
 			return result;
 		}
 
@@ -261,8 +261,8 @@ namespace tex
 
 		std::optional<string> asEnd() const noexcept final
 		{
-			if (cmd.size() > 4 && std::string_view(cmd).substr(0,4) == "end ")
-				return cmd.substr(4);
+			if (cmd.text().size() > 4 && string_view(cmd.text()).substr(0,4) == "end ")
+				return cmd.text().substr(4);
 			else
 				return {};
 		}
@@ -279,9 +279,16 @@ namespace tex
 		const Text* prevTextInclusive() const noexcept final { return this; };
 		const Text* nextTextInclusive() const noexcept final { return this; };
 
+		Word _text;
 	public:
-		string text;
 		intrusive::list_element<const Text, Line> line;
+
+		decltype(auto) text()  { return _text.text(); }
+		decltype(auto) space() { return _text.space(); }
+		decltype(auto) text()  const { return _text.text(); }
+		decltype(auto) space() const { return _text.space(); }
+
+		const Word& word() const { return _text; }
 
 		mutable Font font = { FontType::mono, FontSize::normalsize };
 		mutable Mode mode = Mode::text;
@@ -293,29 +300,17 @@ namespace tex
 		static auto make(string text) noexcept
 		{
 			auto result = make();
-			result->text = std::move(text);
-			return result;
-		}
-		static auto make(string text, string space) noexcept
-		{
-			auto result = make();
-			result->text = std::move(text);
-			result->space_after = std::move(space);
+			result->_text = Word{ std::move(text) };
 			return result;
 		}
 
 		void popArgument(Group& dst) final;
 		const Node* getArgument() const noexcept final { return this; }
 
-		void insertSpace(int offset);
-		int insert(int offset, std::string_view text);
-
-		string extract(int offset, int length = -1);
-
 		Box& updateLayout(Context& con) const final;
 		void render(tex::Context& con, oui::Vector offset) const final;
 
-		void serialize(std::ostream& out) const override { out << text << space_after; }
+		void serialize(std::ostream& out) const override { out << _text; }
 	};
 
 	class Line : public intrusive::refcount, public intrusive::list<const Text, Line, &Text::line>
@@ -367,7 +362,8 @@ namespace tex
 	public:
 		string terminator;
 
-		Par(string token);
+		Par(const Word& token);
+		Par(string_view s) : Par(Word(s)) { }
 
 		void enforceRules() noexcept final { _enforce_child_rules(); }
 

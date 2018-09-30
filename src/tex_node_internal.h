@@ -7,7 +7,8 @@
 namespace tex
 {
 	using std::move;
-	inline string_view view(const string& s) noexcept { return string_view{ s }; }
+	template <class A>
+	inline string_view view(const A& s) noexcept { return string_view{ s }; }
 
 	enum class OnEnd : char { pass, match, fail };
 
@@ -35,20 +36,16 @@ namespace tex
 
 		string readCurly();
 
-		Owner<Group> tokenize_group(string type, Mode mode)
+		Owner<Group> tokenize_group(string_view type, Mode mode)
 		{
-			auto result = Group::make(std::move(type));
+			auto result = Group::make(Word(type));
 			result->tokenize(*this, mode);
 			return result;
 		}
 
 		Owner<Node> tokenize_single(const Group& parent, Mode mode, OnEnd on_end)
 		{
-			auto result = _tokenize_single(parent, mode, on_end);
-			if (result)
-				while (*this && **this >= 0 && **this <= ' ')
-					result->space_after.push_back(pop());
-			return result;
+			return _tokenize_single(parent, mode, on_end);
 		}
 	};
 }

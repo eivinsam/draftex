@@ -45,12 +45,12 @@ struct Caret
 	template <class R, class... Args>
 	uptr<Action> perform(Args&&... args);
 
-	int maxOffset() const noexcept { Expects(node != nullptr); return node->text.size(); }
+	int maxOffset() const noexcept { Expects(node != nullptr); return node->text().size(); }
 
 
 	static float offsetXof(tex::Context& con, const tex::Text& n, int o)
 	{
-		return con.fontData(n.font)->offset(subview(n.text, 0, o), con.ptsize(n.font));
+		return con.fontData(n.font)->offset(subview(n.text(), 0, o), con.ptsize(n.font));
 	}
 
 	float offsetX(tex::Context& con) const

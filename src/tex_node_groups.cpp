@@ -10,7 +10,7 @@ namespace tex
 	class Curly : public Group
 	{
 	public:
-		Curly(string) { }
+		Curly(const Word&) { }
 
 		bool collect(Paragraph& out) const override
 		{
@@ -54,7 +54,7 @@ namespace tex
 	class Emph : public Group
 	{
 	public:
-		Emph(string) noexcept { }
+		Emph(const Word&) noexcept { }
 
 		bool terminatedBy(string_view) const noexcept final { return false; }
 
@@ -69,7 +69,7 @@ namespace tex
 	{
 		mutable std::optional<Bib> _data;
 	public:
-		Bibliography(string) noexcept { }
+		Bibliography(const Word&) noexcept { }
 
 		bool terminatedBy(std::string_view) const noexcept final { return false; }
 
@@ -80,9 +80,16 @@ namespace tex
 				const auto text = as<Text>(&*begin());
 				Expects(text && !text->group.next());
 
-				_data.emplace(FileMapping((text->text + ".bib").c_str()).data);
+				_data.emplace(FileMapping((string(text->text()) + ".bib").c_str()).data);
 			}
 			return (*_data)[key];
+		}
+
+		void serialize(std::ostream& out) const final
+		{
+			out << "\\bibliography{";
+			Group::serialize(out);
+			out << '}';
 		}
 	};
 
@@ -178,7 +185,7 @@ namespace tex
 	class Comment : public Float
 	{
 	public:
-		Comment(string) noexcept : Float({ 1, 0.8, 0.1 }) { }
+		Comment(const Word&) noexcept : Float({ 1, 0.8, 0.1 }) { }
 
 		bool terminatedBy(string_view) const noexcept final { return false; }
 
@@ -191,7 +198,6 @@ namespace tex
 		{
 			out << '%';
 			Group::serialize(out);
-			out << space_after;
 		}
 	};
 
@@ -200,7 +206,7 @@ namespace tex
 		mutable string _id;
 		mutable Font _font;
 	public:
-		Footnote(string) : Float(oui::colors::white) { }//Float({ 0.92, 0.98, 1 }) { }
+		Footnote(const Word&) : Float(oui::colors::white) { }//Float({ 0.92, 0.98, 1 }) { }
 
 		bool terminatedBy(string_view) const noexcept final { return false; }
 
@@ -236,24 +242,25 @@ namespace tex
 		{
 			out << "\\footnote{";
 			Group::serialize(out);
-			out << '}' << space_after;
+			out << '}';
 		}
 	};
 
 	class Cite : public Float
 	{
-		string _key;
+		Word _key;
 		mutable Font _font;
 		const Text* _this_or_prev_stop() const noexcept override { return prevStop(); }
 		const Text* _this_or_next_stop() const noexcept override { return nextStop(); }
 	public:
-		Cite(string key) : Float(oui::Color{ 0.8, 1, 0.75 }), _key(key) { }
+		Cite(const Word& key) : Float(oui::Color{ 0.8, 1, 0.75 }), _key(key) { }
 
 		bool terminatedBy(std::string_view) const noexcept final { return false; }
 		
-		const string& key() const { return _key; }
+		string_view key() const { return _key.text(); }
 		
-		void key(string key)
+		void key(string_view key) { this->key(Word(key)); }
+		void key(Word key)
 		{
 			_key = key;
 			while (!empty())
@@ -261,7 +268,7 @@ namespace tex
 
 			if (auto bib = bibliography())
 			{
-				if (auto match = bib->entry(_key))
+				if (auto match = bib->entry(_key.text()))
 				{
 					if (auto author = match->tag("author"))
 						tokenizeText(*author + " ");
@@ -287,18 +294,22 @@ namespace tex
 			Float::updateLayout(con);
 
 			_font = { con.font_type, con.font_size };
-			_box.after = con.fontData(_font)->offset("("+_key+")", con.ptsize(_font));
+			_box.after = con.fontData(_font)->offset("("+_key.data()+")", con.ptsize(_font));
 
 			return _box;
 		}
 		void render(tex::Context& con, oui::Vector offset) const final
 		{
 			const auto em = con.ptsize(_font);
-			con.fontData(_font)->drawLine(offset + _box.min(), "("+_key+")", oui::colors::black, em);
+			con.fontData(_font)->drawLine(offset + _box.min(), "("+_key.data()+")", oui::colors::black, em);
 
 			Float::render(con, offset);
 		}
 
+		void serialize(std::ostream& out) const final
+		{
+			out << "\\cite{" << _key << '}';
+		}
 	};
 	bool refreshCites(Node& n)
 	{
@@ -314,7 +325,7 @@ namespace tex
 	class Math : public Group
 	{
 	public:
-		Math(string) noexcept { }
+		Math(const Word&) noexcept { }
 
 		bool terminatedBy(string_view token) const noexcept final { return token == "$"; }
 
@@ -339,15 +350,15 @@ namespace tex
 		{
 			out << '$';
 			Group::serialize(out);
-			out << '$' << space_after;
+			out << '$';
 		}
 	};
 
 	class CommandGroup : public Group
 	{
-		string _cmd;
+		Word _cmd;
 	public:
-		CommandGroup(string cmd) noexcept : _cmd(std::move(cmd)) { }
+		CommandGroup(const Word& cmd) noexcept : _cmd(cmd) { }
 
 		bool terminatedBy(string_view) const noexcept final { return false; }
 
@@ -356,7 +367,6 @@ namespace tex
 			out << '\\' << _cmd;
 			for (auto&& e : *this)
 				e.serialize(out);
-			out << space_after;
 		}
 	};
 
@@ -414,7 +424,7 @@ namespace tex
 			return _box;
 		}
 	public:
-		VerticalGroup(string) noexcept { }
+		VerticalGroup(const Word&) noexcept { }
 
 		Flow flow() const noexcept final { return Flow::vertical; }
 
@@ -539,14 +549,22 @@ namespace tex
 			if (empty())
 				return this;
 			if (auto tp = as<Text>(&front()); 
-				tp && tp->text.empty() && !tp->space_after.empty())
+				tp && tp->text().empty() && !tp->space().empty())
 			{
-				_initial_space = move(tp->space_after);
+				_initial_space = move(tp->space());
 				tp->removeFromGroup();
 			}
 
 #pragma warning(push)
 #pragma warning(disable: 26430)
+			auto need_new_par = [](Par* prev_par) 
+			{ 
+				return !prev_par ||
+					prev_par->partype() != Par::Type::simple ||
+					!prev_par->terminator.empty();
+			};
+			auto new_par_before = [](auto p) { return p->insertBeforeThis(intrusive::refcount::make<Par>("par")); };
+
 			Par* prev_par = nullptr;
 			while (auto p = prev_par ? prev_par->group.next() : &front())
 			{
@@ -558,10 +576,33 @@ namespace tex
 					continue;
 				}
 
-				if (!prev_par
-					|| prev_par->partype() != Par::Type::simple
-					|| !prev_par->terminator.empty())
-					prev_par = p->insertBeforeThis(intrusive::refcount::make<Par>("par"));
+				if (auto text = as<Text>(p))
+				{
+					if (text->text().empty())
+					{
+						Expects(prev_par != nullptr);
+						Expects(prev_par->terminator.empty());
+						if (count(text->space(), '\n') >= 2 || 
+							prev_par->partype() != Par::Type::simple)
+						{
+							prev_par->terminator = move(text->space());
+							p->removeFromGroup();
+							continue;
+						}
+					}
+					else 
+					{
+						if (need_new_par(prev_par))
+							prev_par = new_par_before(p);
+						if (count(text->space(), '\n') >= 2)
+							prev_par->terminator = move(text->space());
+					}
+				}
+				else
+				{
+					if (need_new_par(prev_par))
+						prev_par = new_par_before(p);
+				}
 				prev_par->append(p->detachFromGroup());
 			}
 #pragma warning(pop)
@@ -604,14 +645,14 @@ namespace tex
 
 
 	template <class G>
-	Owner<Group> make_group(string name)
+	Owner<Group> make_group(const Word& name)
 	{
-		return intrusive::refcount::make<G>(std::move(name));
+		return intrusive::refcount::make<G>(name);
 	}
 
-	Owner<Group> Group::make(string name) noexcept
+	Owner<Group> Group::make(const Word& name) noexcept
 	{
-		static constexpr frozen::unordered_map<string_view, Owner<Group>(*)(string), 13>
+		static constexpr frozen::unordered_map<string_view, Owner<Group>(*)(const Word&), 13>
 			maker_lookup =
 		{
 		{ "%", make_group<Comment> },
@@ -629,7 +670,7 @@ namespace tex
 		{ "bibliography", make_group<Bibliography> }
 		};
 
-		return find(maker_lookup, name, default_value = &make_group<Curly>)(std::move(name));
+		return find(maker_lookup, name.text(), default_value = &make_group<Curly>)(name);
 	}
 
 	static string read_optional_text(string_view data)
@@ -648,22 +689,22 @@ namespace tex
 		if (!next)
 			return {};
 		auto text = as<Text>(next);
-		if (!text || text->text.empty())
+		if (!text || text->text().empty())
 			return {};
 
-		if (text->text.front() != '[')
+		if (text->text().front() != '[')
 			return {};
 
-		auto opt = read_optional_text(text->text);
+		auto opt = read_optional_text(text->text());
 
 		if (opt.empty())
 			return {};
 
-		if (opt.size() == text->text.size())
+		if (opt.size() == text->text().size())
 			return next->detachFromGroup();
 
 		auto result = Text::make(move(opt));
-		text->text.erase(0, result->text.size());
+		text->text().erase(0, result->text().size());
 		return result;
 	}
 
@@ -716,11 +757,10 @@ namespace tex
 			cp->expand();
 			while (!cp->empty())
 				result->append(cp->front().detachFromGroup());
-			result->space_after = move(cp->space_after);
 			cp->removeFromGroup();
 		}
 		else
-			throw IllFormed("missing { after \\", src->cmd);
+			throw IllFormed("missing { after \\", src->cmd.text());
 		return result;
 	}
 
@@ -730,7 +770,7 @@ namespace tex
 		{
 			auto key = as<Text>(&*cp->begin());
 			Expects(key && !key->group.next());
-			auto result = intrusive::refcount::make<Cite>(key->text);
+			auto result = intrusive::refcount::make<Cite>(key->word());
 			cp->removeFromGroup();
 			return result;
 		}
@@ -758,7 +798,7 @@ namespace tex
 		{ "emph", &expand_C }
 		};
 
-		const auto cmd_case = nonull(cases.find(cmd));
+		const auto cmd_case = nonull(cases.find(cmd.text()));
 		if (cmd_case == cases.end())
 			return this;
 

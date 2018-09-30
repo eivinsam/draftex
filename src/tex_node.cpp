@@ -4,6 +4,7 @@
 
 
 using std::move;
+using std::as_const;
 
 using oui::utf8len;
 using oui::popCodepoint;
@@ -17,24 +18,30 @@ namespace tex
 		{
 		case '\\':
 		{
-			string cmd;
+			Word cmd;
 			skip();
 			if (!*this)
 				throw IllFormed("end of input after '\\'");
-			cmd.push_back(pop());
-			while (*this && isalpha(**this))
-				cmd.push_back(pop());
+			if (isalpha(**this))
+			{
+				while (*this && isalpha(**this))
+					cmd.text().push_back(pop());
+				while (*this && isSpace(**this))
+					cmd.space().push_back(pop());
+			}
+			else
+				cmd.text().push_back(pop());
 
-			if (cmd == "begin")
+			if (view(cmd.text()) == "begin")
 			{
 				return tokenize_group(readCurly(), mode);
 			}
-			if (cmd == "end")
+			if (view(cmd.text()) == "end")
 			{
 				auto end_of = readCurly();
 				switch (on_end)
 				{
-				case OnEnd::pass: return Command::make("end " + end_of);
+				case OnEnd::pass: return Command::make(Word("end " + end_of));
 				case OnEnd::fail: throw IllFormed(std::string("unexpected \\end{" + end_of + "}"));
 				case OnEnd::match:
 					if (parent.terminatedBy(end_of))
@@ -54,9 +61,15 @@ namespace tex
 				result->tokenize(*this, mode);
 			else
 			{
-				auto rest_of_line = InputReader{ in.substr(1, next_newline-1) };
+				auto after_space = next_newline+1;
+				if (after_space < in.size() &&
+					((in[after_space] == '\n' && in[next_newline] == '\r') ||
+					 (in[after_space] == '\r' && in[next_newline] == '\n')))
+					++after_space;
+				after_space = in.find_first_not_of(" \t", after_space);
+				auto rest_of_line = InputReader{ in.substr(1, after_space-1) };
 				result->tokenize(rest_of_line, mode);
-				in.remove_prefix(next_newline);
+				in.remove_prefix(after_space);
 			}
 			return result;
 		}
@@ -78,7 +91,9 @@ namespace tex
 		default:
 			auto result = Text::make();
 			while (*this && isregular(**this))
-				result->text.push_back(pop());
+				result->text().push_back(pop());
+			while (*this && isSpace(**this))
+				result->space().push_back(pop());
 			return result;
 		}
 	}
@@ -190,40 +205,6 @@ namespace tex
 		return false;
 	}
 
-	void Text::insertSpace(int offset)
-	{
-		markChange();
-		if (offset >= text.size())
-		{
-			if (!space_after.empty())
-				insertAfterThis(Text::make())
-				->space_after = move(space_after);
-			space_after = " ";
-		}
-		else
-		{
-			insertAfterThis(Text::make(text.substr(offset)))
-				->space_after = move(space_after);
-			text.resize(offset);
-			space_after = " ";
-		}
-	}
-
-	int Text::insert(int offset, std::string_view new_text)
-	{
-		markChange();
-		text.insert(offset, new_text);
-		return int_size(new_text);
-	}
-
-	string Text::extract(int offset, int length)
-	{
-		markChange();
-		string result = text.substr(offset, length);
-		text.erase(offset, length);
-		return result;
-	}
-
 
 
 
@@ -254,20 +235,22 @@ namespace tex
 	}
 	void Text::popArgument(Group & dst)
 	{
-		if (text.empty())
+		if (text().empty())
 		{
-			Expects(group.next() != nullptr);
-			return void(group.next()->popArgument(dst));
+			auto next = group.next();
+			Expects(next != nullptr);
+			dst.append(detachFromGroup());
+			return void(next->popArgument(dst));
 		}
-		const auto frontlen = utf8len(text.front());
-		if (text.size() == frontlen)
+		const auto frontlen = utf8len(text().front());
+		if (text().size() == frontlen)
 		{
 			dst.append(detachFromGroup());
 			return;
 		}
 
-		dst.append(Text::make(text.substr(0, frontlen)));
-		text.erase(0, frontlen);
+		dst.append(Text::make(view(text()).substr(0, frontlen)));
+		text().erase(0, frontlen);
 	}
 
 
@@ -298,8 +281,9 @@ namespace tex
 			e.serialize(out);
 	}
 
-	Par::Par(string token)
+	Par::Par(const Word& token)
 	{
+		Expects(token.space().empty());
 		static constexpr frozen::unordered_map<string_view, Type, 5> type_lookup = 
 		{
 		{ "par", Type::simple },
@@ -308,7 +292,7 @@ namespace tex
 		{ "section", Type::section },
 		{ "subsection", Type::subsection }
 		};
-		auto type = type_lookup.find(token);
+		auto type = type_lookup.find(token.text());
 		if (type == type_lookup.end())
 			throw IllFormed("unknown par type");
 		_type = type->second;

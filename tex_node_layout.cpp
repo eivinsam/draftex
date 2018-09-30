@@ -76,15 +76,19 @@ namespace tex
 		void collectLine()
 		{
 			push(_con.lines, intrusive::refcount::make<Line>());
-			const Node* last = nullptr;
+			const Text* last = nullptr;
 			for (it = rest.begin(); it != rest.end(); ++it)
 			{
 				auto& lbox = it->layoutBox();
 				const auto box_width = lbox.width();
 				if (width_left < box_width && it != rest.begin())
 					break;
-				last = &*it;
-				space_count += it->space_after.empty() ? 0 : 1;
+				if (auto text = as<Text>(&*it))
+				{
+					last = text;
+					if (!text->space().empty())
+						++space_count;
+				}
 				max_above = std::max(max_above, lbox.above);
 				max_below = std::max(max_below, lbox.below);
 				width_left -= box_width;
@@ -92,7 +96,7 @@ namespace tex
 				if (auto text = as<Text>(&*it))
 					_con.lines->append(intrusive::refcount::claim(text));
 			}
-			if (last && !last->space_after.empty())
+			if (last && !last->space().empty())
 				space_count -= 1;
 		}
 		void position(const Align alignment)
@@ -102,13 +106,15 @@ namespace tex
 			{
 				e.layoutOffset(pen);
 				if (space_count > 0 && alignment == Align::justified)
-					if (!e.space_after.empty())
+				{
+					if (auto text = as<Text>(&e); text && !text->space().empty())
 					{
 						const float incr = width_left / space_count;
 						width_left -= incr;
 						space_count -= 1;
 						e.widen(incr);
 					}
+				}
 				pen.x += e.layoutBox().width();
 			}
 			pen.y += max_below;
@@ -145,7 +151,7 @@ namespace tex
 				continue;
 			}
 
-			while (count((it++)->space_after, '\n') < 2) // note the post-increment in the condition 
+			for (++it; ; ++it) 
 			{
 				if (it == p->end() || !it->collect(par))
 					break;
@@ -173,7 +179,7 @@ namespace tex
 		_font_size = con.font_size;
 		const auto em = con.ptsize(_font_size);
 		const auto F = con.fontData(FontType::sans);
-		_box.width(F->offset(cmd, em), align::min);
+		_box.width(F->offset(cmd.text(), em), align::min);
 		_box.height(em, align::center);
 		return _box;
 	}
@@ -182,8 +188,8 @@ namespace tex
 		mode = con.mode;
 		font = con.font();
 		const auto F = con.fontData(font);
-		_box.width(F->offset(text, con.ptsize(font)), align::min);
-		if (!space_after.empty())
+		_box.width(F->offset(text(), con.ptsize(font)), align::min);
+		if (!space().empty())
 			_box.after += F->offset(" ", con.ptsize(font));
 		_box.height(con.ptsize(font), align::center);
 		return _box;
@@ -296,12 +302,12 @@ namespace tex
 
 	void Command::render(Context& con, Vector offset) const
 	{
-		con.fontData(tex::FontType::sans)->drawLine(offset + _box.min(), cmd,
+		con.fontData(tex::FontType::sans)->drawLine(offset + _box.min(), cmd.text(),
 			oui::Color{ .3f, .9f, .1f }, con.ptsize(_font_size));
 	}
 	void Text::render(tex::Context& con, oui::Vector offset) const
 	{
-		con.fontData(font.type)->drawLine(offset + _box.min(), text,
+		con.fontData(font.type)->drawLine(offset + _box.min(), text(),
 			oui::colors::black, con.ptsize(font.size));
 	}
 }

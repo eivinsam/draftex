@@ -7,7 +7,7 @@ using std::move;
 using namespace tex;
 
 Caret start(Text* node) noexcept { return { node, 0 }; }
-Caret end(Text* node) noexcept { return { node, node ? node->text.size() : 0 }; }
+Caret end(Text* node) noexcept { return { node, node ? node->text().size() : 0 }; }
 
 struct pair_hasher
 {
@@ -34,17 +34,20 @@ namespace edit
 
 	Result Do<RemoveText>::perform()
 	{
+		node->markChange();
 		return
 		{
-			make_action<InsertText>(node, offset, node->extract(offset, length), caret_move),
+			make_action<InsertText>(node, offset, node->text().extract(offset, length), caret_move),
 		{ node.get(), offset }
 		};
 	}
 	Result Do<InsertText>::perform()
 	{
+		node->markChange();
+		node->text().insert(offset, text);
 		return
 		{
-			make_action<RemoveText>(node, offset, node->insert(offset, text), caret_move),
+			make_action<RemoveText>(node, offset, text.size(), caret_move),
 		{ node.get(), offset + (caret_move == Caret::Move::forward ? text.size() : 0) }
 		};
 	}
@@ -52,9 +55,10 @@ namespace edit
 
 	Result Do<SplitText>::perform()
 	{
-		Text* next = node->insertAfterThis(Text::make(node->extract(offset)));
+		Text* next = node->insertAfterThis(Text::make(node->text().extract(offset)));
 		node->markChange();
-		node->group.next()->space_after = std::exchange(node->space_after, move(space));
+		next->space() = std::move(node->space());
+		node->space() = move(space);
 		return
 		{
 			make_action<MergeText>(node, claim(next), caret_move),
@@ -65,21 +69,21 @@ namespace edit
 	{
 		first->markChange();
 		second->markChange();
-		first->text.append(second->text);
-		std::swap(first->space_after, second->space_after);
+		first->text().append(second->text());
+		swap(first->space(), second->space());
 		second->removeFromGroup();
 		return
 		{
 			make_action<UnmergeText>(first, second, caret_move),
-		{ first.get(), first->text.size() - second->text.size() }
+		{ first.get(), first->text().size() - second->text().size() }
 		};
 	}
 	Result Do<UnmergeText>::perform()
 	{
 		first->markChange();
 		second->markChange();
-		first->text.resize(first->text.size() - second->text.size());
-		std::swap(first->space_after, second->space_after);
+		first->text().erase(first->text().size() - second->text().size());
+		swap(first->space(), second->space());
 		first->insertAfterThis(second);
 		return
 		{
@@ -93,7 +97,7 @@ namespace edit
 	{
 		prev_to_be->insertAfterThis(node);
 		node->markChange();
-		std::swap(prev_to_be->space_after, node->space_after);
+		//std::swap(prev_to_be->space(), node->space());
 		return
 		{
 			make_action<RemoveNode>(node),
@@ -104,7 +108,7 @@ namespace edit
 	{
 		const auto prev = node->group.prev();
 		Expects(prev != nullptr);
-		std::swap(prev->space_after, node->space_after);
+		//std::swap(prev->space_after, node->space_after);
 		node->markChange();
 		node->removeFromGroup();
 		return
@@ -121,12 +125,15 @@ namespace edit
 		if (!new_par)
 		{
 			new_par = intrusive::refcount::make<Par>("par");
-			new_par->append(Text::make("", "\n\n"));
+			new_par->append(Text::make());
+			new_par->terminator = "\n\n";
 		}
 		auto new_node = as<Text>(&new_par->front());
 		Expects(new_node != nullptr);
-		new_node->text = node->extract(offset);
-		std::swap(new_node->space_after, node->space_after);
+		new_node->text() = node->text().extract(offset);
+		swap(new_node->space(), node->space());
+
+		std::swap(new_par->terminator, par->terminator);
 		while (auto next = node->group.next())
 			new_par->append(next->detachFromGroup());
 		par->insertAfterThis(new_par);
@@ -144,9 +151,10 @@ namespace edit
 		auto first = as<Par>(first_end->group());
 		auto second_start = as<Text>(&second->front());
 		Expects(first != nullptr && second_start != nullptr);
-		std::swap(first_end->space_after, second_start->space_after);
-		const int offset = first_end->text.size();
-		first_end->text.append(second_start->extract(0));
+		std::swap(first->terminator, second->terminator);
+		swap(first_end->space(), second_start->space());
+		const int offset = first_end->text().size();
+		first_end->text().append(second_start->text().extract(0));
 		while (second_start->group.next())
 			first->append(second_start->group.next()->detachFromGroup());
 
@@ -184,9 +192,9 @@ namespace edit
 	}
 	static uptr<Action> text_unmerge_insert_combiner(const Do<UnmergeText>& a, const Do<InsertText>& b)
 	{
-		if (a.second == b.node && b.offset == 0 && a.second->text.size() == 0)
+		if (a.second == b.node && b.offset == 0 && a.second->text().size() == 0)
 		{
-			a.second->text = b.text;
+			a.second->text() = b.text;
 			return make_action<InsertNode>(a.second, a.first);
 		}
 		return {};

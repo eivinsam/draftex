@@ -159,6 +159,8 @@ public:
 
 	void erase(int index, int count = -1) noexcept;
 
+	void clear() noexcept { erase(0); }
+
 	SmallString substr(int pos, int count = -1) const
 	{
 		return view(*this).substr(

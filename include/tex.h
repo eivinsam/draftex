@@ -6,9 +6,8 @@
 
 #include <oui_window.h>
 
-#include "small_string.h"
-
 #include "tex_util.h"
+#include "tex_word.h"
 
 namespace tex
 {
@@ -16,9 +15,6 @@ namespace tex
 	using oui::Point;
 	using oui::Rectangle;
 
-	using std::string_view;
-
-	using string = SmallString;
 
 	template <class C>
 	constexpr int int_size(C&& c) { return narrow<int>(std::size(c)); }

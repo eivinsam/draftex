@@ -149,6 +149,7 @@
     <ClInclude Include="include\tex_node.h" />
     <ClInclude Include="include\tex_paragraph.h" />
     <ClInclude Include="include\tex_util.h" />
+    <ClInclude Include="include\tex_word.h" />
     <ClInclude Include="src\edit.h" />
     <ClInclude Include="src\frozen_with_string_view.h" />
     <ClInclude Include="src\file_mapping.h" />

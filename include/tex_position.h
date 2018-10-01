@@ -20,10 +20,13 @@ namespace tex
 		Position prev() const { auto p = *this; p.recede();  return p; }
 		Position next() const { auto p = *this; p.advance(); return p; }
 
+		Position operator+(int) const;
+
 		float xOffset(tex::Context& con) const;
 
 		string_view character() const;
 		int characterLength() const;
+
 
 		int maxOffset() const noexcept { Expects(node != nullptr); return node->text().size(); }
 
@@ -43,6 +46,19 @@ namespace tex
 		bool atNodeEnd() const { return offset == node->text().size(); }
 	};
 
-	inline Position start(const Text* node) { return { node, 0 }; }
-	inline Position   end(const Text* node) { return { node, node->text().size() }; }
+	template <class PT>
+	struct unwrapper
+	{ 
+		static auto apply(const PT& p) { return p.get(); }
+	};
+	template <class T>
+	struct unwrapper<T*>
+	{
+		static constexpr auto apply(T* p) { return p; }
+	};
+	template <class PT>
+	auto unwrap(const PT& p) { return unwrapper<PT>::apply(p); }
+
+	template <class PT> constexpr Position start(const PT& node) { return { unwrap(node), 0 }; }
+	template <class PT> constexpr Position   end(const PT& node) { return { unwrap(node), node->text().size() }; }
 }

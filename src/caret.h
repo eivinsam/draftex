@@ -77,3 +77,16 @@ struct Caret
 	void nextStop() noexcept;
 	void prevStop() noexcept;
 };
+
+inline tex::Position operator+(tex::Position pos, Caret::Move move)
+{
+	using Move = Caret::Move;
+	switch (move)
+	{
+	case Move::none: break;
+	case Move::backward: pos.recede();  break;
+	case Move::forward:  pos.advance(); break;
+	default: Expects(false);
+	}
+	return pos;
+}

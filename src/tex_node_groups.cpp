@@ -701,7 +701,7 @@ namespace tex
 			return {};
 
 		if (opt.size() == text->text().size())
-			return next->detachFromGroup();
+			return extract(next->detachFromGroup());
 
 		auto result = Text::make(move(opt));
 		text->text().erase(0, result->text().size());

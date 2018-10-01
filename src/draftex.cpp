@@ -223,8 +223,7 @@ struct Draftex
 
 			auto text = oui::utf8(charcode);
 
-			history.add(caret.perform<edit::InsertText>(
-				claim_mutable(caret.current.node), caret.current.offset, 
+			history.add(caret.perform<edit::InsertText>(caret.current, 
 				text, Caret::Move::forward));
 
 			window.redraw();

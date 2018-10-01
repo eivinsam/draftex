@@ -18,6 +18,8 @@ struct pair_hasher
 	}
 };
 
+#pragma warning(disable: 4458)
+
 namespace edit
 {
 
@@ -32,52 +34,59 @@ namespace edit
 
 	Result Do<RemoveText>::perform()
 	{
+		const auto node = as_mutable(pos.node);
 		node->markChange();
 		return
 		{
-			make_action<InsertText>(node, offset, node->text().extract(offset, length), caret_move),
-			Position{ node.get(), offset }
+			make_action<InsertText>(pos, node->text().extract(pos.offset, length), caret_move),
+			pos
 		};
 	}
 	Result Do<InsertText>::perform()
 	{
+		const auto node = as_mutable(pos.node);
 		node->markChange();
-		node->text().insert(offset, text);
+		node->text().insert(pos.offset, text);
 		return
 		{
-			make_action<RemoveText>(node, offset, text.size(), caret_move),
-			Position{ node.get(), offset + (caret_move == Caret::Move::forward ? text.size() : 0) }
+			make_action<RemoveText>(pos, text.size(), caret_move),
+			pos + (caret_move == Caret::Move::forward ? text.size() : 0)
 		};
 	}
 
 
 	Result Do<SplitText>::perform()
 	{
-		Text* next = node->insertAfterThis(Text::make(node->text().extract(offset)));
+		const auto node = as_mutable(pos.node);
+		auto next = Text::make(node->text().extract(pos.offset));
+		node->insertAfterThis(next);
 		node->markChange();
 		next->space() = std::move(node->space());
 		node->space() = move(space);
 		return
 		{
-			make_action<MergeText>(node, claim(next), caret_move),
-			(caret_move == Caret::Move::forward ? start(next) : end(node.get()))
+			make_action<MergeText>(node, next.get(), caret_move),
+			(caret_move == Caret::Move::forward ? start(next) : end(node))
 		};
 	}
 	Result Do<MergeText>::perform()
 	{
-		first->markChange();
-		second->markChange();
-		first->text().append(second->text());
-		swap(first->space(), second->space());
-		second->removeFromGroup();
+		const auto a = as_mutable(first);
+		const auto b = as_mutable(second);
+		a->markChange();
+		b->markChange();
+		a->text().append(b->text());
+		swap(a->space(), b->space());
+		
 		return
 		{
-			make_action<UnmergeText>(first, second, caret_move),
-			Position{ first.get(), first->text().size() - second->text().size() }
+			make_action<UnmergeText>(first, as<Text>(b->detachFromGroup()), caret_move),
+			Position{ first, first->text().size() - second->text().size() }
 		};
 	}
 	Result Do<UnmergeText>::perform()
 	{
+		const auto first = as_mutable(this->first);
 		first->markChange();
 		second->markChange();
 		first->text().erase(first->text().size() - second->text().size());
@@ -85,8 +94,8 @@ namespace edit
 		first->insertAfterThis(second);
 		return
 		{
-			make_action<MergeText>(first, second, caret_move),
-			(caret_move == Caret::Move::forward ? start(second.get()) : end(first.get()))
+			make_action<MergeText>(first, second.get(), caret_move),
+			(caret_move == Caret::Move::forward ? start(second) : end(first))
 		};
 	}
 
@@ -118,7 +127,7 @@ namespace edit
 
 	Result Do<SplitPar>::perform()
 	{
-		const auto par = as<Par>(node->group());
+		const auto par = as<Par>(as_mutable(pos.node->group()));
 		Expects(par != nullptr);
 		if (!new_par)
 		{
@@ -126,9 +135,10 @@ namespace edit
 			new_par->append(Text::make());
 			new_par->terminator = "\n\n";
 		}
+		const auto node = as_mutable(pos.node);
 		auto new_node = as<Text>(&new_par->front());
 		Expects(new_node != nullptr);
-		new_node->text() = node->text().extract(offset);
+		new_node->text() = node->text().extract(pos.offset);
 		swap(new_node->space(), node->space());
 
 		std::swap(new_par->terminator, par->terminator);
@@ -140,7 +150,7 @@ namespace edit
 		new_node->markChange();
 		return
 		{
-			make_action<UnsplitPar>(node, new_par),
+			make_action<UnsplitPar>(node, new_par.get()),
 			start(new_node)
 		};
 	}
@@ -157,11 +167,12 @@ namespace edit
 			first->append(second_start->group.next()->detachFromGroup());
 
 		first_end->markChange();
-		second->removeFromGroup();
+		auto second = as<Par>(this->second->detachFromGroup());
+		Expects(second != nullptr);
 		return
 		{
-			make_action<SplitPar>(first_end, offset, second), 
-			Position{ first_end.get(), offset }
+			make_action<SplitPar>(Position{first_end, offset}, second),
+			Position{ first_end, offset }
 		};
 	}
 
@@ -171,8 +182,8 @@ namespace edit
 	{
 		if (const auto par = [this]
 		{
-			for (auto p = pos.node->group(); p != nullptr; p = p->group())
-				if (auto par = as<Par>(p))
+			for (const Group* p = pos.node->group(); p != nullptr; p = p->group())
+				if (const Par* par = as<Par>(p))
 					return as_mutable(par);
 				return (Par*)nullptr;
 		}())
@@ -193,18 +204,18 @@ namespace edit
 
 	static uptr<Action> text_insert_combiner(const Do<InsertText>& a, const Do<InsertText>& b)
 	{
-		if (a.node != b.node || a.caret_move != b.caret_move)
+		if (a.pos.node != b.pos.node || a.caret_move != b.caret_move)
 			return {};
-		if (a.caret_move == Caret::Move::forward && a.offset + a.text.size() == b.offset)
-			return make_action<InsertText>(a.node, a.offset, a.text + b.text, Caret::Move::forward);
-		if (a.caret_move == Caret::Move::backward && a.offset == b.offset)
-			return make_action<InsertText>(a.node, a.offset, b.text + a.text, Caret::Move::backward);
+		if (a.caret_move == Caret::Move::forward && a.pos.offset + a.text.size() == b.pos.offset)
+			return make_action<InsertText>(a.pos, a.text + b.text, Caret::Move::forward);
+		if (a.caret_move == Caret::Move::backward && a.pos.offset == b.pos.offset)
+			return make_action<InsertText>(a.pos, b.text + a.text, Caret::Move::backward);
 		return {};
 	}
 	static uptr<Action> text_remove_combiner(const Do<RemoveText>& a, const Do<RemoveText>& b)
 	{
-		if (a.node == b.node && b.offset + b.length == a.offset)
-			return make_action<RemoveText>(b.node, b.offset, b.length + a.length);
+		if (a.pos == b.pos + b.length)
+			return make_action<RemoveText>(b.pos, b.length + a.length);
 		return {};
 	}
 	static uptr<Action> node_insert_remove_combiner(const Do<InsertNode>& a, const Do<RemoveNode>& b)
@@ -215,10 +226,10 @@ namespace edit
 	}
 	static uptr<Action> text_unmerge_insert_combiner(const Do<UnmergeText>& a, const Do<InsertText>& b)
 	{
-		if (a.second == b.node && b.offset == 0 && a.second->text().size() == 0)
+		if (a.second == b.pos.node && b.pos.offset == 0 && a.second->text().size() == 0)
 		{
 			a.second->text() = b.text;
-			return make_action<InsertNode>(a.second, a.first);
+			return make_action<InsertNode>(a.second, claim_mutable(a.first));
 		}
 		return {};
 	}

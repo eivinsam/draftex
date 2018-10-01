@@ -77,9 +77,10 @@ namespace intrusive
 		constexpr decltype(auto) operator->() const { return _ptr.operator->(); }
 		constexpr decltype(auto) operator*()  const { return _ptr.operator*(); }
 
-		template <class S, class = if_convertible_t<S, T>> constexpr operator S() & { return _ptr; }
-		template <class S, class = if_convertible_t<S, T>> constexpr operator S() && { return move(_ptr); }
+		template <class S, class = if_convertible_t<S, T>> constexpr operator S()      & { return _ptr; }
 		template <class S, class = if_convertible_t<S, T>> constexpr operator S() const& { return _ptr; }
+
+		[[nodiscard]] friend T extract(nonull&& p) { return move(p._ptr); }
 
 		explicit constexpr operator bool() const { return _ptr != nullptr; }
 	};
@@ -111,10 +112,15 @@ namespace intrusive
 		template <class S>
 		constexpr operator S*() const { return _ptr; }
 
+		[[nodiscard]] friend T* extract(nonull&& n) { return std::exchange(n._ptr, nullptr); }
+
 		explicit constexpr operator bool() const { return _ptr != nullptr; }
 	};
 	template <class T>
 	nonull(T&&)->nonull<std::remove_reference_t<T>>;
+
+	template <class To, class From>
+	auto as(const nonull<From>& from) { return as<To>(static_cast<From>(from)); }
 
 
 #pragma warning(push)

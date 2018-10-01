@@ -58,35 +58,32 @@ namespace edit
 
 	struct RemoveText
 	{
-		tex::Owner<tex::Text> node;
-		int offset;
+		tex::Position pos;
 		int length;
 		Caret::Move caret_move;
 	};
 	struct InsertText
 	{
-		tex::Owner<tex::Text> node;
-		int offset;
+		tex::Position pos;
 		tex::string text;
 		Caret::Move caret_move;
 	};
 
 	struct MergeText
 	{
-		tex::Owner<tex::Text> first;
-		tex::Owner<tex::Text> second;
+		const tex::Text* first;
+		const tex::Text* second;
 		Caret::Move caret_move;
 	};
 	struct SplitText
 	{
-		tex::Owner<tex::Text> node;
-		int offset;
+		tex::Position pos;
 		tex::string space;
 		Caret::Move caret_move;
 	};
 	struct UnmergeText
 	{
-		tex::Owner<tex::Text> first;
+		const tex::Text* first;
 		tex::Owner<tex::Text> second;
 		Caret::Move caret_move;
 	};
@@ -103,14 +100,13 @@ namespace edit
 
 	struct SplitPar
 	{
-		tex::Owner<tex::Text> node;
-		int offset;
+		tex::Position pos;
 		tex::Owner<tex::Par> new_par;
 	};
 	struct UnsplitPar
 	{
-		tex::Owner<tex::Text> first_end;
-		tex::Owner<tex::Par> second;
+		tex::Text* first_end;
+		tex::Par* second;
 	};
 
 	struct ChangeParType

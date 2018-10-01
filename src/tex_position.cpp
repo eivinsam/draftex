@@ -36,6 +36,41 @@ namespace tex
 		}
 	}
 
+	Position Position::operator+(int delta) const
+	{
+		Expects(valid());
+
+		delta += offset;
+
+		if (delta > node->text().size())
+		{
+			auto last = node;
+			while (const auto n = node->nextText())
+			{
+				delta -= last->text().size();
+				if (delta <= n->text().size())
+					return { n, delta };
+				last = n;
+			}
+			return { last, last->text().size() };
+		}
+		else if (delta < 0)
+		{
+			delta += offset;
+			auto last = node;
+			while (const auto n = node->prevText())
+			{
+				delta += n->text().size();
+				if (delta >= 0)
+					return { n, delta };
+				last = n;
+			}
+			return { last, 0 };
+		}
+		else
+			return { node, delta };
+	}
+
 	float Position::xOffset(tex::Context & con) const
 	{
 		return con.fontData(node->font)->offset(subview(node->text(), 0, offset), con.ptsize(node->font));

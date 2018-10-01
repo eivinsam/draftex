@@ -33,6 +33,11 @@ namespace tex
 	{
 		return dynamic_cast<std::conditional_t<std::is_const_v<From>, const To&, To&>>(from);
 	}
+	template <class To, class From>
+	inline auto as(const Owner<From>& from) noexcept
+	{
+		return claim(as<To>(from.get()));
+	}
 
 	template <auto... Values>
 	struct is_any_of_t

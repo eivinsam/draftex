@@ -226,16 +226,15 @@ uptr<Action> Caret::eraseSelection(Move move)
 	{
 		if (start.offset > current.offset)
 			std::swap(start.offset, current.offset);
-		return perform<RemoveText>(claim_mutable(current.node), start.offset,
-								   current.offset - start.offset, move);
+		return perform<RemoveText>(start, current.offset - start.offset, move);
 	}
 	if (start == current.prev())
 	{
-		return perform<MergeText>(claim_mutable(start.node), claim_mutable(current.node), Move::forward);
+		return perform<MergeText>(start.node, current.node, Move::forward);
 	}
 	if (start == current.next())
 	{
-		return perform<MergeText>(claim_mutable(current.node), claim_mutable(start.node), Move::backward);
+		return perform<MergeText>(current.node, start.node, Move::backward);
 	}
 	return {};
 }
@@ -306,7 +305,7 @@ uptr<Action> Caret::insertSpace()
 	if (current.atNodeEnd())
 		return perform<InsertNode>(Text::make(" "), claim_mutable(current.node));
 
-	return perform<SplitText>(claim_mutable(current.node), current.offset, " ", Move::forward);
+	return perform<SplitText>(current, " ", Move::forward);
 }
 
 [[nodiscard]] uptr<Action> Caret::breakParagraph()
@@ -319,7 +318,7 @@ uptr<Action> Caret::insertSpace()
 	if (current.atNodeStart() && !current.node->group->contains(current.node->prevText()))
 		return {};
 	
-	return perform<SplitPar>(claim_mutable(current.node), current.offset);
+	return perform<SplitPar>(current);
 }
 
 void Caret::nextStop() noexcept

@@ -115,9 +115,7 @@ namespace edit
 
 	struct ChangeParType
 	{
-		const tex::Text* node;
-		int offset;
-		tex::Owner<tex::Par> par;
+		tex::Position pos;
 		tex::Par::Type new_type;
 	};
 }

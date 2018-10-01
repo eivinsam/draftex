@@ -280,14 +280,9 @@ struct Draftex
 		insert_group("%");
 	}
 
-	void change_par(tex::Par::Type /*new_type*/)
+	void change_par(tex::Par::Type new_type)
 	{
-		//for (tex::Node* n = caret.node; ; n = n->group())
-		//	if (auto par = tex::as<tex::Par>(n->group()))
-		//	{
-		//		par->partype(new_type);
-		//		return;
-		//	}
+		history.add(caret.perform<edit::ChangeParType>(caret.current, new_type));
 		////TODO: maybe warn if no para parent found?
 	}
 	template <tex::Par::Type NewType>

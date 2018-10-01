@@ -169,13 +169,24 @@ namespace edit
 
 	Result Do<ChangeParType>::perform()
 	{
-		const auto old_type = par->partype();
-		par->partype(new_type);
-		return 
+		if (const auto par = [this]
 		{
-			make_action<ChangeParType>(node, offset, par, old_type), 
-			Position{ node, offset }
-		};
+			for (auto p = pos.node->group(); p != nullptr; p = p->group())
+				if (auto par = as<Par>(p))
+					return as_mutable(par);
+				return (Par*)nullptr;
+		}())
+		{
+			const auto old_type = par->partype();
+			par->partype(new_type);
+			return
+			{
+				make_action<ChangeParType>(pos, old_type),
+				pos
+			};
+		}
+		else
+			return { nullptr, pos };
 	}
 
 

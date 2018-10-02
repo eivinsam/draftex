@@ -32,6 +32,20 @@ namespace edit
 		return std::forward<Result>(result);
 	}
 
+	Result Do<Sequence>::perform()
+	{
+		Expects(not edits.empty());
+		auto undo = make_action<Sequence>();
+		Result result;
+		while (not edits.empty())
+		{
+			result = edits.pop()->perform();
+			undo->edits.push(move(result.undo));
+		}
+		result.undo = move(undo);
+		return result;
+	}
+
 	Result Do<RemoveText>::perform()
 	{
 		const auto node = as_mutable(pos.node);
@@ -102,26 +116,27 @@ namespace edit
 
 	Result Do<InsertNode>::perform()
 	{
-		prev_to_be->insertAfterThis(node);
+		if (prev_to_be)
+			as_mutable(prev_to_be)->insertAfterThis(node);
+		else
+			as_mutable(parent_to_be)->front().insertBeforeThis(node);
 		node->markChange();
-		//std::swap(prev_to_be->space(), node->space());
 		return
 		{
-			make_action<RemoveNode>(node),
+			make_action<RemoveNode>(node.get()),
 			end(node->nextTextInclusive())
 		};
 	}
 	Result Do<RemoveNode>::perform()
 	{
-		const auto prev = node->group.prev();
-		Expects(prev != nullptr);
-		//std::swap(prev->space_after, node->space_after);
+		auto node = as_mutable(this->node);
 		node->markChange();
-		node->removeFromGroup();
+		const auto prev = node->group.prev();
+		const auto parent = node->group();
 		return
 		{
-			make_action<InsertNode>(node, claim(prev)),
-			end(prev->prevTextInclusive())
+			make_action<InsertNode>(extract(node->detachFromGroup()), prev, parent),
+			end(prev ? prev->prevTextInclusive() : parent->prevText())
 		};
 	}
 
@@ -200,6 +215,43 @@ namespace edit
 			return { nullptr, pos };
 	}
 
+	Result Do<EraseRange>::perform()
+	{
+		Expects(start.node != end.node);
+		auto undo = make_action<InsertRange>(start, end);
+		auto to_remove = interval(*start.node, *end.node);
+		
+		if (to_remove.front() == end.node)
+			std::swap(start, end);
+
+		undo->edits.push(Do<RemoveText>(tex::start(end.node), end.offset).perform().undo);
+
+		for (auto&& n : xpr::those.from(to_remove.rbegin()+1).until(to_remove.rend()-1))
+			undo->edits.push(Do<RemoveNode>(extract(move(n))).perform().undo);
+
+		auto sr = Do<RemoveText>(start, start.node->text().size() - start.offset).perform();
+		undo->edits.push(move(sr.undo));
+
+		if (start.node->group() == end.node->group())
+		{
+			sr = Do<MergeText>(start.node, end.node).perform();
+			undo->edits.push(move(sr.undo));
+		}
+		sr.undo = move(undo);
+		return sr;
+	}
+
+	Result Do<InsertRange>::perform()
+	{
+		while (not edits.empty())
+			edits.pop()->perform();
+		return
+		{
+			make_action<EraseRange>(start, end),
+		{ Caret::From(start), end }
+		};
+	}
+
 
 
 	static uptr<Action> text_insert_combiner(const Do<InsertText>& a, const Do<InsertText>& b)
@@ -229,7 +281,7 @@ namespace edit
 		if (a.second == b.pos.node && b.pos.offset == 0 && a.second->text().size() == 0)
 		{
 			a.second->text() = b.text;
-			return make_action<InsertNode>(a.second, claim_mutable(a.first));
+			return make_action<InsertNode>(a.second, a.first);
 		}
 		return {};
 	}

@@ -71,6 +71,7 @@ struct Caret
 	[[nodiscard]] uptr<Action> erasePrev();
 
 	[[nodiscard]] uptr<Action> insertSpace();
+	[[nodiscard]] uptr<Action> insertText(tex::string);
 
 	[[nodiscard]] uptr<Action> breakParagraph();
 

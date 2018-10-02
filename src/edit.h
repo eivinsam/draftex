@@ -56,6 +56,11 @@ namespace edit
 		return std::make_unique<Do<A>>(std::forward<Args>(a)...);
 	}
 
+	struct Sequence
+	{
+		Stack<uptr<Action>> edits;
+	};
+
 	struct RemoveText
 	{
 		tex::Position pos;
@@ -91,11 +96,12 @@ namespace edit
 	struct InsertNode
 	{
 		tex::Owner<tex::Node> node;
-		tex::Owner<tex::Node> prev_to_be;
+		const tex::Node* prev_to_be;
+		const tex::Group* parent_to_be;
 	};
 	struct RemoveNode
 	{
-		tex::Owner<tex::Node> node;
+		const tex::Node* node;
 	};
 
 	struct SplitPar
@@ -113,6 +119,18 @@ namespace edit
 	{
 		tex::Position pos;
 		tex::Par::Type new_type;
+	};
+
+	struct EraseRange
+	{
+		tex::Position start;
+		tex::Position end;
+	};
+	struct InsertRange
+	{
+		tex::Position start;
+		tex::Position end;
+		Stack<uptr<Action>> edits;
 	};
 }
 template <class R, class... Args>

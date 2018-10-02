@@ -39,33 +39,30 @@ void Caret::render(tex::Context & con)
 	oui::set(oui::Color{ 0.9,1,0.5 });
 
 	const auto xe = current.xOffset(con);
-	const auto xs =   start.xOffset(con);
+	const auto xs = start.xOffset(con);
 
-	auto to_mark = interval(*start.node, *current.node);
-	const auto fwd = to_mark.front() == start.node;
 	if (start.node == current.node)
 	{
 		auto box = current.node->absBox();
 
-		(fwd ? box.max.x : box.min.x) = box.min.x + xe;
-		(fwd ? box.min.x : box.max.x) = box.min.x + xs;
+		box.max.x = box.min.x + std::max(xs, xe);
+		box.min.x = box.min.x + std::min(xs, xe);
 		oui::fill(box);
 
 		return;
 	}
-	Expects(to_mark.size() >= 2);
-
+	const auto nodes = interval(*start.node, *current.node);
+	Expects(nodes.size() >= 2);
 	{
-		auto box = current.node->absBox();
-		(fwd ? box.max.x : box.min.x) = box.min.x + xe;
+		auto box = nodes.front()->absBox();
+		box.min.x = box.min.x + (nodes.front() == start.node ? xs : xe);
 		oui::fill(box);
-		box = start.node->absBox();
-		(fwd ? box.min.x : box.max.x) = box.min.x + xs;
+		box = nodes.back()->absBox();
+		box.max.x = box.min.x + (nodes.back() == start.node ? xs : xe);
 		oui::fill(box);
 	}
-
-	for (auto it = ++to_mark.begin(), end = --to_mark.end(); it != end; ++it)
-		oui::fill((*it)->absBox());
+	for (auto&& n : xpr::those.from(nodes.begin()+1).until(nodes.end()-1))
+		oui::fill(n->absBox());
 }
 
 uptr<Action> delete_if_redundant(const Text& node)
@@ -75,7 +72,7 @@ uptr<Action> delete_if_redundant(const Text& node)
 		!text(node.group.next()))
 		return {};
 
-	return Do<RemoveNode>(claim_mutable(&node)).perform().undo;
+	return Do<RemoveNode>(&node).perform().undo;
 }
 
 uptr<Action> Caret::next()
@@ -236,7 +233,7 @@ uptr<Action> Caret::eraseSelection(Move move)
 	{
 		return perform<MergeText>(current.node, start.node, Move::backward);
 	}
-	return {};
+	return perform<EraseRange>(start, current);
 }
 
 uptr<Action> Caret::eraseNext()
@@ -246,26 +243,6 @@ uptr<Action> Caret::eraseNext()
 	if (not hasSelection())
 		start = current.next();
 	return eraseSelection(Move::backward);
-
-	//if (not current.atNodeEnd())
-	//{
-	//	return perform<RemoveText>(claim_mutable(current.node), current.offset, 
-	//							   current.characterLength(), Move::backward);
-	//}
-	//uptr<Action> result;
-	//if (current.node->space().empty())
-	//{
-	//	return result;
-	//	//if (!node->group.next())
-	//	//	return {};
-	//	//Expects(!text(*node->group.next()));
-	//	//node->group.next()->removeFromGroup();
-	//}
-	//else if (auto nextt = as<Text>(current.node->group.next()))
-	//{
-	//	return perform<MergeText>(claim_mutable(current.node), claim_mutable(nextt), Move::backward);
-	//}
-	//return result;
 }
 
 uptr<Action> Caret::erasePrev()
@@ -275,37 +252,35 @@ uptr<Action> Caret::erasePrev()
 	if (not hasSelection())
 		start = current.prev();
 	return eraseSelection(Move::forward);
-
-	//uptr<Action> result;
-	//if (auto prev = node->group.prev())
-	//{
-	//	if (auto prevt = as<Text>(prev))
-	//	{
-	//		return perform<MergeText>(claim_mutable(prevt), claim_mutable(node), Move::forward);
-	//	}
-	//	else
-	//		return result;
-	//}
-	//auto par = as<Par>(node->group());
-	//if (!par) return {};
-	//auto prev_par = as<Par>(par->group.prev());
-	//if (!prev_par) return {};
-	//auto prev_end = as<Text>(&prev_par->back());
-	//Expects(prev_end != nullptr);
-	//
-	//return perform<UnsplitPar>(claim_mutable(prev_end), claim_mutable(par));
 }
 
 uptr<Action> Caret::insertSpace()
 {
 	if (hasSelection())
-		return {}; // eraseSelection();
+	{
+		auto undo = make_action<Sequence>();
+		undo->edits.push(eraseSelection(Move::forward));
+		undo->edits.push(insertSpace());
+		return undo;
+	}
 	if (current.atNodeStart()) 
 		return {};
 	if (current.atNodeEnd())
-		return perform<InsertNode>(Text::make(" "), claim_mutable(current.node));
+		return perform<InsertNode>(Text::make(" "), current.node);
 
 	return perform<SplitText>(current, " ", Move::forward);
+}
+
+uptr<Action> Caret::insertText(string text)
+{
+	if (hasSelection())
+	{
+		auto undo = make_action<Sequence>();
+		undo->edits.push(eraseSelection(Move::forward));
+		undo->edits.push(insertText(move(text)));
+		return undo;
+	}
+	return perform<InsertText>(current, move(text), Move::forward);
 }
 
 [[nodiscard]] uptr<Action> Caret::breakParagraph()

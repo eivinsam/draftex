@@ -139,17 +139,19 @@ namespace tex
 		auto ap = a.parents();
 		auto bp = b.parents();
 
+		if (ap.back() != bp.back())
+			return result;
 
-		auto ia = ap.rbegin();
-		auto ib = bp.rbegin();
-		for (; *ia == *ib; ++ia, ++ib)
-			if (ia == ap.rend() || ib == bp.rend())
-				return result;
+		auto ia = (ap.size() > bp.size() ? ap.size()-bp.size() : 0);
+		auto ib = (bp.size() > ap.size() ? bp.size()-ap.size() : 0);
 
-		for (auto sa = (*ia)->group.next(), sb = (*ib)->group.next(); sb && sa != *ib; sa = sa->group.next(), sb = sb->group.next())
+		while (ap[ia+1] != bp[ib+1])
+			(++ia, ++ib);
+
+		for (auto sa = ap[ia]->group.next(), sb = bp[ib]->group.next(); sb && sa != bp[ib]; sa = sa->group.next(), sb = sb->group.next())
 		{
 			// check if sa is later than sb
-			if (!sa || sb == *ia)
+			if (!sa || sb == ap[ia])
 			{
 				std::swap(ap, bp);
 				std::swap(ia, ib);
@@ -159,17 +161,20 @@ namespace tex
 
 		// add nodes from a branch
 		result.push_back(ap.front()); // including a
-		for (auto ja = --ap.rend(); ja != ia; --ja)
-			for (auto s = (*ja)->group.next(); s; s = s->group.next())
+		for (size_t ja = 0; ja != ia; ++ja)
+			for (auto s = ap[ja]->group.next(); s; s = s->group.next())
 				result.push_back(s);
 		// add nodes between ia and ib
-		for (auto s = (*ia)->group.next(); s != *ib; s = s->group.next())
+		for (auto s = ap[ia]->group.next(); s != bp[ib]; s = s->group.next())
 			result.push_back(s);
-		// then add nodes from b branch
-		for (++ib; ib != bp.rend(); ++ib)
-			for (auto s = &(*ib)->group->front(); s != *ib; s = s->group.next())
+		// then add nodes from b branch, excluding b
+		static_assert(std::is_unsigned_v<decltype(ib)>);
+		for (--ib; ib < bp.size(); --ib) // ib is unsigned, so this keeps the loop going until after we're done with bp[0]
+		{
+			for (auto s = &bp[ib]->group->front(); s != bp[ib]; s = s->group.next())
 				result.push_back(s);
-		result.push_back(bp.front()); // including b
+		}
+		result.push_back(bp.front()); // finally add b
 
 		return result;
 	}

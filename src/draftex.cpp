@@ -195,6 +195,8 @@ struct Draftex
 						history.redo(caret) :
 						history.undo(caret);
 					ignore_char = true;
+					window.redraw();
+					return;
 				}
 				break;
 			default:
@@ -223,8 +225,7 @@ struct Draftex
 
 			auto text = oui::utf8(charcode);
 
-			history.add(caret.perform<edit::InsertText>(caret.current, 
-				text, Caret::Move::forward));
+			history.add(caret.insertText(move(text)));
 
 			window.redraw();
 			return;

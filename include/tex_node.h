@@ -43,6 +43,7 @@ namespace tex
 		template <class T> nonull<T*> insertBeforeThis(Owner<T> p) noexcept{ return insertBeforeThis(nonull{ move(p) }); }
 		template <class T> nonull<T*> insertAfterThis(Owner<T> p)  noexcept{ return insertAfterThis(nonull{ move(p) }); }
 
+		// This node and all parents
 		std::vector<nonull<const Node*>> parents() const;
 
 		constexpr void layoutOffset(Vector offset) const noexcept { _box.offset = offset; }
@@ -353,6 +354,7 @@ namespace tex
 		void serialize(std::ostream& out) const final;
 	};
 
+	// all nodes from a to b inclusive
 	std::vector<nonull<const Node*>> interval(const Node& a, const Node& b);
 
 	Owner<Group> tokenize(std::string_view in);
